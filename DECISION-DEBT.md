@@ -529,3 +529,41 @@ slipping — that is where the logic is and it is at 95%+.
 The alternative considered and rejected was excluding `main.rs` from the
 measurement, which reaches ~71% arithmetically and hides the fact that 940
 lines of it are never executed by anything.
+
+## D-37 — No class describes an internal operator application  (OPEN, recorded not closed)
+`class-registry.yaml` has ten classes and none fits a graphical interface used
+by Paridyum's own staff:
+
+- **`web`** — *"A user-facing web application, served from the cluster"*,
+  `stacks: [typescript]`, `deployable: true`. A locally served interface is not
+  cluster-served and need not be TypeScript.
+- **`tool`** — *"Developer-facing executables"*, `stacks: [rust]`,
+  `deployable: false`. Everything fits except who it faces, and HR is not a
+  developer.
+
+**Deliberately not closed.** The served HR platform
+(`docs/superpowers/specs/2026-08-21-served-hr-platform-design.md`) lives inside
+`tool-docket` as a `docket serve` subcommand, so nothing new is being classed
+and the gap does not block it. Adding a class to describe one subcommand would
+be inventing a concept before its first instance — the empty-glossary state
+`artifact-registry.yaml` records this repository having paid for already.
+
+It becomes real the first time an operator interface needs its own repository.
+`class-registry.yaml`'s own header says that addition should be cheap, and it
+is: a registry entry plus an ADR, which is the mechanism C-0005 created.
+
+## D-38 — The HR platform has no per-operator authorisation  (OPEN, by design for now)
+The served platform binds loopback only and is reached over an SSH tunnel, so
+SSH keys are the authentication and the operating system is the identity. The
+application has **no login of its own**, which is what keeps ADR-0047 from
+engaging: there is no identity system present to be non-compliant.
+
+The cost is stated rather than hidden: **anyone who can tunnel in has full
+write access.** There are no roles, and `--by` names who is acting but does not
+constrain what they may do.
+
+ADR-0047 point 1 already describes *"a separate `paridyum` instance in the home
+region [that] holds staff and operators"* — exactly these users. When
+`platform-identity` exists, OIDC becomes a second authentication adapter beside
+loopback-only, added rather than swapped (ADR-0054). Until then, treat SSH
+access to the HR workstation as equivalent to full access to every record.
