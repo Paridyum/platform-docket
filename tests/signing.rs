@@ -325,6 +325,9 @@ fn status_distinguishes_issued_from_executed() {
 
 #[test]
 fn the_stage_gate_refuses_while_agreements_are_unexecuted() {
+    if skip_without_typesetter("the_stage_gate_refuses_while_agreements_are_unexecuted") {
+        return;
+    }
     // lifecycle.yaml stated "no access until the NDA and policy are signed"
     // as prose and nothing checked it. This is the check.
     let sb = Sandbox::new();

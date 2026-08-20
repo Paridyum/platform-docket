@@ -269,6 +269,9 @@ fn issuing_the_same_document_twice_is_byte_identical() {
 
 #[test]
 fn issuance_is_refused_when_the_unpaid_basis_is_not_evidenced() {
+    if skip_without_typesetter("issuance_is_refused_when_the_unpaid_basis_is_not_evidenced") {
+        return;
+    }
     let sb = Sandbox::new();
     let p = sb.person(
         "t",
@@ -283,6 +286,9 @@ fn issuance_is_refused_when_the_unpaid_basis_is_not_evidenced() {
 
 #[test]
 fn a_conditional_document_is_skipped_until_it_applies() {
+    if skip_without_typesetter("a_conditional_document_is_skipped_until_it_applies") {
+        return;
+    }
     let sb = Sandbox::new();
     let reg = registry();
 
@@ -304,6 +310,9 @@ fn a_conditional_document_is_skipped_until_it_applies() {
 
 #[test]
 fn the_binary_reports_meaningful_exit_codes() {
+    if skip_without_typesetter("the_binary_reports_meaningful_exit_codes") {
+        return;
+    }
     // Exit codes are contractual, because CI reads them.
     let sb = Sandbox::new();
     sb.person("t", &[]);
