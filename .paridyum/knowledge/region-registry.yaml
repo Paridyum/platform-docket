@@ -1,0 +1,272 @@
+# Paridyum regions — the single source of truth, proposed under RFC-0014.
+#
+# PROPOSED, not binding. RFC-0014 is `status: proposed`; this file is the concrete form of
+# its decision 1 and has no authority until that RFC resolves into an ADR.
+#
+# A region is a RESIDENCY boundary — the set of infrastructure within which one tenant's data
+# is permitted to exist. It is a legal boundary, not a latency zone, not a capacity pool, and
+# NOT A BUILDING. A region contains one or more datacentres, which are failure domains.
+#
+#   Adding a datacentre is an operational act. Adding a region is a legal one.
+#
+# GENERATES, rather than duplicates:
+#   the edge routing table       which region serves which hostname (RFC-0016 decision 1)
+#   per-region infrastructure    one Postgres, one Zitadel, one cluster (ADR-0047)
+#   the region picker            the list an operator chooses from (RFC-0015 decision 5)
+#
+# THE ARCHIVE IS WHY THIS FILE EXISTS. `archived/paridyum-docs/REGION-MODEL.md` §7 records
+# eight regions declared in four or more places — DEFAULT_REGIONS in Python, seed SQL, three
+# Helm values files, an OPA values file — with nothing validating that they agreed. This file
+# is the one place. Four further defects from that model are fixed by construction below.
+#
+# FIX 1 — ONLY REGIONS THAT EXIST APPEAR HERE. The archive declared eight and deployed one:
+# all eight seeded rows carried the same `endpoint`, a cluster-local service, and a null
+# `apisix_upstream`. A planned region is not a region; it is a sales conversation. Candidate
+# regions and the trigger that would add one live in RFC-0015 decision 2, not in this file.
+#
+# FIX 2 — NO ENDPOINT COLUMN. The archive's identical endpoints were the visible symptom of
+# declaring runtime addresses as registry data. Addresses are derived from the code by infra
+# convention; a value that must be right per environment does not belong in a governance file.
+#
+# FIX 3 — NO HEALTH COLUMN. The archive carried `status` AND `health_score` here, and a
+# separate `DISABLE_REGION` environment CSV, with nothing reconciling the two. So a region
+# could be `active` in the database and disabled in configuration at the same time. This file
+# declares INTENT. Observed health is runtime state, measured elsewhere, and is never written
+# back — which is what makes "one status authority" enforceable rather than aspirational.
+#
+# FIX 4 — `suggest_for` ORDERS A LIST AND PLACES NOTHING. The archive mapped twenty countries
+# of roughly two hundred and let everything unmapped "fall to whatever default placement
+# pd-core applies". Under RFC-0015 decision 5 the operator chooses their region explicitly;
+# this field may only reorder what they are shown. An unmapped country is therefore not a gap.
+
+# FIX 5 — THE CODE IS THE JURISDICTION, NOT THE GEOGRAPHY. The archive used AWS-shaped codes
+# (`ap-south-1`) and inherited a meaning that contradicts this model: in AWS, `ap-south-1` is
+# Mumbai and `ap-south-2` is Hyderabad, and AWS calls those two REGIONS. Both are India. Here
+# they are one jurisdiction and therefore two DATACENTRES. Borrowing the shape imports the wrong
+# mental model, and it misled us once already.
+#
+# So a region code IS its jurisdiction code, and carries no number:
+#
+#   region      `in`, `eu`, `us`, `sg`      a legal boundary — lowercase ISO 3166-1 alpha-2,
+#                                           or a supranational code where one governs (`eu`)
+#   datacentre  `in-mum-1`, `in-hyd-1`      <region>-<IATA city>-<ordinal>. Buildings.
+#
+# The rule that falls out is self-checking:
+#
+#   A REGION CODE NEVER CARRIES A NUMBER. If you are reaching for one, you want a datacentre.
+#
+# Because two locations in one jurisdiction are, by this model's own definition, two datacentres
+# and never two regions. The number can only ever distinguish buildings.
+#
+# This matches how Google Cloud publishes residency — a jurisdiction column (a country, or a
+# multi-region such as `eu`) separate from the infrastructure identifier.
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# JURISDICTIONS — the namespace. Which legal boundaries we intend to serve.
+#
+# This is NOT a list of regions and nothing infrastructural is generated from it. It exists so
+# that when a region is added, its code, its regime and its scope are already decided rather
+# than invented under contract pressure. A jurisdiction here with no region below is the normal
+# case and is not a gap.
+#
+# Seventeen countries map to fourteen jurisdictions, because the EEA is one: GDPR Art. 1(3)
+# forbids restricting the free movement of personal data within the Union, so a Finnish tenant
+# and a Spanish tenant share a residency boundary.
+#
+# `localization` is the field that matters for planning, and it is mostly `none` — most of these
+# regimes permit cross-border transfer with safeguards, so the market ambition does not imply
+# fourteen regions. The `sectoral` entries are the ones that actually force a region, and they
+# fire on the first customer in that SECTOR rather than in that country.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+jurisdictions:
+  - code: eu
+    name: European Economic Area
+    continent: Europe
+    countries: [FI, SE, PL, ES]
+    regime: GDPR
+    localization: none
+    notes: >
+      One jurisdiction, four of the countries on the market list. GDPR Art. 1(3): the free
+      movement of personal data within the Union may be neither restricted nor prohibited.
+      The countries listed are those currently contemplated, not the limit of the boundary —
+      the whole EEA is in scope once this region exists.
+
+  - code: in
+    name: India
+    continent: Asia
+    countries: [IN]
+    regime: DPDP
+    localization: sectoral
+    notes: >
+      DPDP Rules finalised November 2025 use a negative-list transfer model — permitted except
+      to blacklisted countries, and the list is not yet published. General localization is
+      therefore NOT required. Payment data under RBI rules is, which is the sectoral trigger.
+
+  - code: id
+    name: Indonesia
+    continent: Asia
+    countries: [ID]
+    regime: PDP Law 27/2022
+    localization: sectoral
+    notes: >
+      No general localization mandate. Banking requires both primary and disaster-recovery
+      centres inside Indonesia, and healthcare requires health data held domestically. The
+      strictest constraint on this list, and invisible if you read only the privacy law.
+
+  - code: ae
+    name: United Arab Emirates
+    continent: Asia
+    countries: [AE]
+    regime: Federal PDPL
+    localization: none
+    notes: >
+      Three regimes in one country — federal PDPL, plus DIFC and ADGM free zones with their
+      own. The reason a region code may carry an optional suffix (`ae-difc`); nothing needs it
+      yet and inventing it before a customer does would be the archive's mistake in miniature.
+
+  - code: sg
+    name: Singapore
+    continent: Asia
+    countries: [SG]
+    regime: PDPA
+    localization: none
+
+  - code: jp
+    name: Japan
+    continent: Asia
+    countries: [JP]
+    regime: APPI
+    localization: none
+    notes: Holds EU adequacy, so EEA-to-Japan flows need no additional safeguard.
+
+  - code: kr
+    name: South Korea
+    continent: Asia
+    countries: [KR]
+    regime: PIPA
+    localization: none
+    notes: >
+      Holds EU adequacy. A PIPA amendment takes effect September 2026 raising the penalty
+      ceiling and adding board-level accountability — an obligations change, not a
+      localization one, so it does not move this row.
+
+  - code: tw
+    name: Taiwan
+    continent: Asia
+    countries: [TW]
+    regime: PDPA
+    localization: none
+
+  - code: za
+    name: South Africa
+    continent: Africa
+    countries: [ZA]
+    regime: POPIA
+    localization: none
+    notes: Carries criminal penalties, which raises the cost of getting a transfer wrong.
+
+  - code: us
+    name: United States
+    continent: North America
+    countries: [US]
+    regime: state patchwork
+    localization: none
+    notes: >
+      No federal regime. The obligation set varies by state, which makes `us` the jurisdiction
+      whose boundary is least crisply defined on this list — worth revisiting before it becomes
+      a region rather than after.
+
+  - code: ca
+    name: Canada
+    continent: North America
+    countries: [CA]
+    regime: PIPEDA
+    localization: none
+    notes: Quebec's Law 25 adds obligations above PIPEDA within one jurisdiction.
+
+  - code: br
+    name: Brazil
+    continent: South America
+    countries: [BR]
+    regime: LGPD
+    localization: none
+
+  - code: cl
+    name: Chile
+    continent: South America
+    countries: [CL]
+    regime: Law 21.719
+    localization: none
+
+  - code: au
+    name: Australia
+    continent: Australia
+    countries: [AU]
+    regime: Privacy Act 1988
+    localization: none
+
+# NOT A JURISDICTION: the market list's "Reserved / Future Use" row. That is the archive's IPAM
+# address-space reservation (X octets 208–255), which is a different axis entirely — address
+# space is allocated per COUNTRY, a region is per JURISDICTION, and a country routinely has the
+# first without the second. Carrying a reservation into this file would put a placeholder where
+# a legal boundary belongs.
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# REGIONS — what exists. One entry, and that is the point (FIX 1 above).
+#
+# Every `code` here MUST name a jurisdiction declared above. A region is a jurisdiction that
+# has been built; a jurisdiction is a region that has not.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+regions:
+  - code: in
+    name: India
+    jurisdiction: IN
+    continent: Asia
+    status: live
+    control: true
+    # The control plane lives here: operators, subscriptions, entitlements, this registry,
+    # domain bindings, and the `paridyum` Zitadel instance holding staff (ADR-0047 decision 1).
+    # Being the control region is a property of exactly one region and is not a tier — no tenant is better
+    # or worse served for sharing a region with the control plane.
+    residency:
+      satisfies: [DPDP]
+      # ADR-0041 phase 1 names SOC 2, GDPR and DPDP. DPDP is the regime this jurisdiction
+      # answers; SOC 2 is organisational rather than territorial, so it is not listed per
+      # region. A region never claims a framework as satisfied before an audit says so
+      # (ADR-0041 decision 4) — this field records which regime the placement ADDRESSES.
+    datacentres:
+      - id: in-mum-1
+        status: live
+      - id: in-hyd-1
+        status: live
+        # Two datacentres is what makes RFC-0015 decision 3 work: a synchronous standby and a
+        # near-zero recovery point without a byte crossing a border. One would return that
+        # region to restore-from-backup, which is why this count is per-region data and not a
+        # platform-wide assumption.
+        #
+        # Note what these two would have been called under the archive's scheme: `ap-south-1`
+        # and `ap-south-2` — which AWS calls two regions. Same buildings, and a name that would
+        # have argued for splitting India's data across two residency boundaries for no legal
+        # reason whatsoever.
+    suggest_for: [IN, AE, ID]
+    # Ordering only. Inherited from the archive's grouping, which deliberately routed UAE and
+    # Indonesia to India for latency rather than politics. Never a placement — an operator in
+    # either country chooses their own region (RFC-0015 decision 5), and both have their own
+    # jurisdiction available to them the moment a contract asks for it.
+
+# ────────────────────────────────────────────────────────────────────────────────────────
+# ONE REGION IS THE WHOLE LIST, AND THAT IS THE POINT.
+#
+# RFC-0015 decision 2 runs one region while building the model for many. The archive ran the
+# opposite experiment — eight declared, six probably never exercised locally, two in dev — and
+# its own retrospective judged eight in-house regions "a very large operational surface for a
+# platform at this stage".
+#
+# The trigger for a second region is stated in RFC-0015 decision 2 and is deliberately hard:
+# a signed contract whose residency requirement the live region cannot satisfy. Not a
+# conversation, not a plausible prospect. When it fires, the work is adding an entry here and
+# regenerating what this file generates — which is the entire reason for declaring the shape
+# now and the list short.
+# ────────────────────────────────────────────────────────────────────────────────────────

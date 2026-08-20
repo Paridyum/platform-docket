@@ -1,0 +1,34 @@
+# cargo-deny: the mechanised half of dependency governance (ADR-0008).
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+confidence-threshold = 0.93
+
+# Paridyum's own crates are proprietary (see LICENSE: "PROPRIETARY AND CONFIDENTIAL") and
+# unpublished, so they carry no SPDX `license` field and cargo-deny fails them with
+# `error[unlicensed]`. The `allow` list above governs DEPENDENCIES; it was never about us.
+#
+# `private.ignore` is cargo-deny's mechanism for exactly this: skip the licence check for
+# workspace crates marked `publish = false`. The alternative — inventing a
+# `LicenseRef-Proprietary` and allowing it — would put our own crate in the same list as
+# third-party licences we have actually reviewed, which is the list's whole purpose.
+#
+# Found on tool-forge's first CI run: every Paridyum Rust repository would have failed here.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"          # a wildcard version is an unpinned supply chain
+deny = [
+  { name = "openssl", reason = "use rustls — ADR-0005; avoids a C toolchain in the build image" },
+  { name = "diesel",  reason = "SQLx is the locked data layer — ADR-0005" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/Paridyum"]

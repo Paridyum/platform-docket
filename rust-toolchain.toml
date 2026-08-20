@@ -1,0 +1,6 @@
+# Pinned exactly, never "stable" (STD-0003). A floating channel means the compiler
+# changes under you and CI disagrees with your machine the week a release lands.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy", "rust-src", "llvm-tools-preview"]
+profile = "minimal"

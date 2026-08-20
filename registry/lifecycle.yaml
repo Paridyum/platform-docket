@@ -1,0 +1,269 @@
+# The internship lifecycle: stages, and what each stage owes.
+#
+# This file is the system's memory of the onboarding process. `docket
+# status` reads it to answer "what does this intern still owe?", so the
+# answer lives here rather than in someone's head or a chat thread.
+#
+# Stages are ORDERED and a person moves forward through them. Documents
+# owed are CUMULATIVE: reaching `active` means everything owed at
+# `offered` and `preboarding` is already done.
+version: 1
+
+# kind      -> what the document is for, which decides how it is handled.
+#   issued    Paridyum produces and signs it; it gets a serial and goes in
+#             the register. Verifiable later.
+#   collected Filled in and returned by the intern; no serial. Held, not issued.
+#   signed    Both parties sign. Serial, register, and a countersignature.
+documents:
+  - code: OFR
+    id: internship-offer
+    title: Internship Offer
+    template: templates/letter/internship-offer.tex
+    kind: issued
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: PCK
+    id: pack-cover-sheet
+    title: Read Me First
+    template: templates/letter/pack-cover-sheet.tex
+    kind: issued
+    signed_by: [ceo, cto]
+    retention: personnel
+    note: >
+      Generated from the register, so it cannot describe a pack it was not
+      built from. Issued by `docket pack`, not owed by a stage: it describes
+      the pack rather than being part of what the pack requires.
+
+  - code: LTR
+    id: business-communication
+    title: Official Business Communication
+    template: templates/letter/business-communication.tex
+    kind: issued
+    signed_by: [director]
+    retention: contract
+    note: >
+      Not part of the internship lifecycle -- it is a general letter about
+      Paridyum's status, addressed to whoever asks. It is declared here so
+      it can be issued with a real serial and land in the register, and it
+      is owed by no stage, which `check` reports as a warning rather than an
+      error. That warning is correct and is the intended state.
+
+  - code: AGR
+    id: internship-agreement
+    title: Internship Agreement
+    template: templates/agreement/internship-agreement.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: NDA
+    id: nda
+    title: Non-Disclosure Agreement
+    template: templates/agreement/nda.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: IPA
+    id: ip-assignment
+    title: Intellectual Property Assignment Agreement
+    template: templates/agreement/ip-assignment.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: permanent
+    retention_note: >
+      Outlives the internship by design. This is the document that proves
+      Paridyum owns what the intern built; it must be producible for as
+      long as that code is in use.
+
+  - code: ISP
+    id: infosec-acceptable-use
+    title: Information Security & Acceptable Use Policy
+    template: templates/policy/infosec-acceptable-use.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: PSH
+    id: posh-policy
+    title: Policy on Prevention of Sexual Harassment
+    template: templates/policy/posh-policy.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+    note: >
+      Acknowledgement is the evidence that the awareness obligation was
+      met. Its absence is not a paperwork gap, it is the gap.
+
+  - code: DPN
+    id: data-protection-notice
+    title: Data Protection Notice
+    template: templates/policy/data-protection-notice.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: GRD
+    id: guardian-consent
+    title: Parent / Guardian Consent
+    template: templates/form/guardian-consent.tex
+    kind: collected
+    retention: contract
+    required_if: is_child
+    note: >
+      Owed only where the intern is under eighteen on their start date. DPDP
+      s2(f) defines a child as anyone who has not completed eighteen years,
+      and s9 requires verifiable guardian consent before ANY of their
+      personal data is processed. Without a recorded date of birth the
+      system cannot tell whether this is owed, which is why
+      identity.date_of_birth is a required field for the intern class.
+
+  - code: COC
+    id: code-of-conduct
+    title: Code of Conduct
+    template: templates/policy/code-of-conduct.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+
+  - code: GRV
+    id: grievance-policy
+    title: Grievance Policy
+    template: templates/policy/grievance-policy.tex
+    kind: signed
+    signed_by: [ceo, cto]
+    countersigned_by: intern
+    retention: contract
+    note: >
+      Acknowledged rather than merely published, because the point is that the
+      person knows the route exists and that it does not run through whoever
+      they might need to complain about.
+
+  - code: INS
+    id: institution-confirmation
+    title: Internship Confirmation for the Institution
+    template: templates/letter/institution-confirmation.tex
+    kind: issued
+    signed_by: [ceo, cto]
+    retention: personnel
+    required_if: institution_requires_noc
+    note: >
+      Addressed to the institution, not the intern. Owed only where the
+      institution asks for one, which the onboarding form records.
+
+  - code: PUB
+    id: publicity-consent
+    title: Consent to Use Name, Photograph or Likeness
+    template: templates/form/publicity-consent.tex
+    kind: collected
+    retention: personnel
+    note: >
+      OWED BY NO STAGE, deliberately, and `check` reports that as a warning
+      which is the intended state. Using a person's name or photograph in
+      marketing is not covered by the DPDP s7 employment legitimate use, so it
+      needs specific consent -- and a consent that a lifecycle stage REQUIRES
+      is not freely given. Offer it; never demand it. Issue it on request with
+      `docket issue <slug> PUB`.
+
+  - code: EXF
+    id: exit-feedback
+    title: Exit Feedback
+    template: templates/form/exit-feedback.tex
+    kind: collected
+    retention: personnel
+    note: >
+      Held apart from the personnel record in practice: section 5 of the form
+      promises it is not consulted when a certificate or reference is written,
+      and that promise is only worth something if it is kept.
+
+  - code: ONB
+    id: intern-onboarding
+    title: Intern Onboarding Form
+    template: templates/form/intern-onboarding.tex
+    kind: collected
+    retention: personnel
+
+  - code: EMC
+    id: emergency-contact
+    title: Emergency Contact Form
+    template: templates/form/emergency-contact.tex
+    kind: collected
+    retention: emergency_contact
+
+  - code: EQP
+    id: equipment-acknowledgement
+    title: Equipment Acknowledgement Form
+    template: templates/form/equipment-acknowledgement.tex
+    kind: collected
+    retention: personnel
+    required_if: equipment_issued
+
+  - code: OFB
+    id: offboarding-checklist
+    title: Intern Offboarding Checklist
+    template: templates/form/offboarding-checklist.tex
+    kind: collected
+    retention: personnel
+
+  - code: CRT
+    id: certificate-of-internship
+    title: Certificate of Internship
+    template: templates/certificate/certificate-of-internship.tex
+    kind: issued
+    signed_by: [ceo, cto]
+    retention: permanent
+    retention_note: >
+      A certificate must stay verifiable for as long as anyone might
+      present it. Its register entry never expires.
+
+  - code: REF
+    id: reference-letter
+    title: Letter of Reference
+    template: templates/certificate/reference-letter.tex
+    kind: issued
+    signed_by: [ceo, cto]
+    retention: permanent
+    required_if: reference_requested
+
+stages:
+  - stage: offered
+    description: Offer issued, not yet accepted. Nothing else may proceed.
+    owes: [OFR]
+
+  - stage: preboarding
+    description: >
+      Offer accepted, before the first working day. Every agreement and
+      policy is signed here, and access is NOT granted until they are.
+    owes: [GRD, INS, AGR, NDA, IPA, ISP, PSH, COC, GRV, DPN, ONB, EMC]
+    # ENFORCED, not merely stated. `docket advance` refuses to move a person
+    # out of preboarding until every document listed here is recorded as
+    # executed. This was prose for a while and nothing checked it, which is
+    # how "access granted before the NDA came back" happens.
+    requires_signed: [NDA, ISP, IPA, AGR, COC, GRV]
+    gate: >
+      Access to any Paridyum system requires the agreements and the security
+      policy signed, not merely issued. This is the one ordering constraint in
+      the lifecycle that is not administrative.
+
+  - stage: active
+    description: The internship is running.
+    owes: [EQP]
+
+  - stage: offboarding
+    description: Notice given or end date reached, through to the last working day.
+    owes: [OFB, EXF]
+
+  - stage: alumni
+    description: >
+      Separated. Completion documents are issued here, and the retention
+      clock runs. NDA and IPA obligations continue.
+    owes: [CRT, REF]

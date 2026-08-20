@@ -1,0 +1,26 @@
+Copyright (c) 2026 Paridyum. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL.
+
+This repository and its contents are the property of Paridyum. No licence, express or
+implied, is granted to any person to use, copy, modify, merge, publish, distribute,
+sublicense or sell any part of it, except under a separate written agreement.
+
+Why this file exists in a private repository
+--------------------------------------------
+
+A private repository is not a licensed one. Absent stated terms, a contributor's rights
+and the organisation's rights to a contribution are both governed by default copyright
+law rather than by anything either party agreed to — which is a poor position to
+discover during a dispute rather than before one.
+
+It matters more here than in most repositories, because of ADR-0001. Every repository in
+the organisation carries a read-only snapshot of this one at `.paridyum/knowledge/`. That
+snapshot is a copy, it is committed, and it travels wherever the repository travels —
+including to a contributor's fork under ADR-0012's read-plus-fork model. Terms that apply
+to the original need to apply to the copy, and the only way that happens reliably is if
+the terms are inside the thing being copied.
+
+Third-party dependencies keep their own licences. `deny.toml` in the service template
+enforces an allowlist of permissive licences at build time; nothing here overrides those,
+and nothing here applies to them.

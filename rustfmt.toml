@@ -1,0 +1,7 @@
+# Stable-only options. A nightly-gated setting makes `cargo fmt` silently do nothing
+# different on stable, and the repository drifts without anyone noticing.
+edition = "2024"
+max_width = 100
+use_field_init_shorthand = true
+use_try_shorthand = true
+newline_style = "Unix"

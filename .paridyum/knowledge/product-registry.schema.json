@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/product-registry.schema.json",
+  "title": "Paridyum Product Registry",
+  "description": "The complete set of products Paridyum sells, the lifecycle they move through, and what each owes at each stage. Declared under ADR-0050. A product is a FOURTH governance axis, orthogonal to `scope` (repository class) and `applies_to` (repository name): one product spans several repositories and one repository serves several products, so a product could never have been a scope value. C-0008 decides membership — if tenant traffic can reach it, it is a product — and `kind` decides what evidence it owes. This file does not list repositories; a repository declares its product in manifest.yaml and the mapping is read in that direction only, because a fact has one home (RFC-0015) and cross-repo views are generated rather than hand-authored (ADR-0040).",
+  "type": "object",
+  "required": [
+    "version",
+    "stages",
+    "dossier",
+    "products"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Registry format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The lifecycle, in order. Ordering is semantic: `product.sequencing_respects_second_vertical_rule` reads the position of a product's stage in this list, so reordering entries changes what the gate enforces and is a decision, not a tidy-up.",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "description",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "building",
+              "operated",
+              "franchised",
+              "retired"
+            ],
+            "description": "Machine-readable stage id, locale-independent per ADR-0032."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 12
+          },
+          "declared": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dossier": {
+      "type": "array",
+      "minItems": 1,
+      "description": "What each kind owes at each stage, cumulatively. THE TAXONOMY LIVES HERE RATHER THAN IN THE TYPE SYSTEM: adding a required document kind is one entry in this array, not a directory, a prefix, a schema enum value and five hardcoded sites. That is the same trade ADR-0022 made for artifact types and ADR-0014 made for check ids, applied to the one list a growing company extends most often.",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "stage",
+          "artifacts",
+          "slots"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "capability",
+              "catalogue"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "building",
+              "operated",
+              "franchised",
+              "retired"
+            ]
+          },
+          "artifacts": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Artifact-type PREFIXES from artifact-registry.yaml that a product of this kind must carry, naming it in `product:`, by this stage. An unknown prefix is a hard failure for the reason an unknown check id is (ADR-0014): a dossier requirement nothing can resolve is a requirement nothing enforces.",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]+$"
+            }
+          },
+          "slots": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Things owed that have NO artifact type yet, deliberately. A slot is a named obligation whose first instance does not exist — declaring the type now would produce the empty-directory state `glossary/` was in for the life of the repository, where unvalidated prose sat in a repository whose founding argument is that unenforced prose is a suggestion. A slot becomes a type the day something real has to go in it.",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "products": {
+      "type": "array",
+      "description": "One entry per product, sorted by `product`. MAY BE EMPTY OF ANY GIVEN KIND, and the absence of catalogue products is currently load-bearing: registering a vertical before its selecting evidence exists is what C-0006 anti-goal 6 forbids, and a registry that made it cheap would be the mechanism for the drift it was written to prevent. Uniqueness of `product` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "product",
+          "name",
+          "kind",
+          "stage",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "product": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "The slug. Immutable and never reused, for the reason an artifact id is: it is the permanent handle for this product in frontmatter, manifests and git history. Locale-independent per ADR-0032 — this is a machine identifier and the display name is `name`."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 60,
+            "description": "The human-readable name. May change; the slug may not."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "capability",
+              "catalogue"
+            ],
+            "description": "Decides which dossier binds. `platform` is Paridyum itself, whose market evidence is the org-level artifacts. `capability` is a runtime capability a tenant can buy (C-0008), which owes a tenant-facing interface rather than market research. `catalogue` is a vertical Paridyum operates and franchises (BET-0004, BET-0005), and is the only kind C-0006's evidence obligation binds."
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "building",
+              "operated",
+              "franchised",
+              "retired"
+            ]
+          },
+          "declared": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

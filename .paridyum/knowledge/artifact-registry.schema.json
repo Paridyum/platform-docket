@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/artifact-registry.schema.json",
+  "title": "Paridyum Artifact Type Registry",
+  "description": "The complete set of knowledge artifact types, declared under ADR-0022. The type list was previously hardcoded at twelve sites across knowledge.schema.json, check-knowledge.sh, check-registry.yaml and two markdown layout blocks, eleven of which failed silently when missed. The rule stays in ADR-0022; the list lives here. This is the same move C-0005 made for repository classes and ADR-0014 made for check ids.",
+  "type": "object",
+  "required": [
+    "version",
+    "types"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Registry format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "types": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per artifact type, sorted by `type`. Uniqueness of `type`, `prefix` and `directory` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "prefix",
+          "directory",
+          "lockable",
+          "deferrable",
+          "requires_trigger",
+          "requires_sources",
+          "immutable_when_locked",
+          "description",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "The value artifacts use in `type`. Generates knowledge.schema.json's type enum."
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "^[A-Z]+$",
+            "description": "The id prefix, hyphen excluded. Generates the prefix alternation in knowledge.schema.json's $defs.artifactId and in the gate's cross-reference scanner. A prefix absent from that scanner means references to the type are never resolved, so a typo in one reads as valid — the silent half of the defect ADR-0022 fixes."
+          },
+          "directory": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "The directory holding artifacts of this type, relative to the repository root. Stated rather than derived from `type`, because three of nine directories are not the plural of their type name and a pluralisation rule would have been silently wrong for those three."
+          },
+          "lockable": {
+            "type": "boolean",
+            "description": "True when an artifact of this type may take `status: locked`. False for `rfc`, which resolves to a decision elsewhere, and for `bet`, where locking is a category error: CLAUDE.md defines locked as must-not-be-contradicted, and a bet exists to be contradicted by evidence."
+          },
+          "deferrable": {
+            "type": "boolean",
+            "description": "True when an artifact of this type may take `status: deferred`. True for `requirement` alone (ADR-0018). This replaces the gate's hardcoded `type == requirement` comparison."
+          },
+          "requires_trigger": {
+            "enum": [
+              "never",
+              "when_deferred",
+              "always"
+            ],
+            "description": "When a `trigger` — the falsification or activation condition — is mandatory. `when_deferred` is ADR-0018's rule for requirements; `always` is ADR-0022's rule for bets. One axis at two settings, rather than two special cases in the gate."
+          },
+          "requires_sources": {
+            "enum": [
+              "never",
+              "when_researched",
+              "always"
+            ],
+            "description": "When a `sources` block — the external facts the artifact rests on, each dated — is mandatory. `always` is RFC-0020's rule at the one type whose entire purpose is cited evidence: a market finding with no source is an opinion with frontmatter. `when_researched` is RFC-0027's setting: mandatory only for an artifact the research log shows was written in a session that actually fetched a page, which is the middle case RFC-0020 open question 2 could not express because nothing recorded whether research had happened. NO TYPE SETS IT YET, DELIBERATELY — RFC-0020 asked whether `bet` or `requirement` should oblige sources, and the honest answer is that nobody knows which types rest on web research until the log has counted. The value exists so the answer can be applied from evidence rather than guessed now. Same axis as `requires_trigger`, at its own setting, rather than a special case in the gate. Note the schema CANNOT carry this rule: scripts/lib/validate-schema.py implements no conditional keywords, so an `if`/`then` here would be reported as unsupported and enforce nothing."
+          },
+          "immutable_when_locked": {
+            "type": "boolean",
+            "description": "True when the gate's in-place-modification check covers this type's directory. Generates section 3's directory filter, which today omits `rfc/` and `runbooks/`. That asymmetry is reproduced rather than corrected — changing behaviour while relocating it is how detail gets lost."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 12,
+            "description": "One sentence stating what an artifact of this type contains. If it needs an 'and', it is probably two types."
+          },
+          "declared": {
+            "type": "string",
+            "format": "date",
+            "description": "When the type entered the registry. Never changes."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Hazards, preserved gaps, or the reasoning behind a non-obvious value. Not the rationale for the type existing; that belongs in the artifact that introduced it."
+          }
+        }
+      }
+    }
+  }
+}

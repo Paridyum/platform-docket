@@ -1,0 +1,35 @@
+# Who may sign on behalf of Paridyum. ONE home.
+#
+# WHY THIS FILE EXISTS. The source .docx documents gave three different
+# answers: the Internship Agreement hardcoded a CEO/CTO pair, the NDA and
+# IPA used [CEO Full Legal Name] placeholders, and the business
+# communication letter named a third person as "Founder / Promoter". A
+# document set that cannot state who its officers are is not signable.
+#
+# Corrected 2026-08-19: that third name was not connected to Paridyum and
+# has been removed. Priyanshu Sharma is Director.
+version: 1
+
+signatories:
+  - id: ceo
+    legal_name: RUHANI KHURANA
+    designation: Chief Executive Officer (CEO)
+    short: CEO
+    active: true
+
+  - id: cto
+    legal_name: ROHAN BATRA
+    designation: Chief Technology Officer (CTO)
+    short: CTO
+    active: true
+
+  - id: director
+    legal_name: PRIYANSHU SHARMA
+    designation: Director
+    short: Director
+    active: true
+    note: >
+      Signs the business communication letter, and is the person named in
+      the Internship Agreement's future-incorporation clause as the one
+      currently operating Paridyum. Incorporation is in process, so this is
+      a director designate until the CIN is issued and `org.yaml` records it.

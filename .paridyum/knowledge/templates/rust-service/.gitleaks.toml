@@ -1,0 +1,100 @@
+# Secret scanning config (C-0004).
+#
+# This exists because GitHub's own secret scanning push protection is NOT available
+# on Free private repositories (ADR-0004). gitleaks in pre-commit and CI is the
+# substitute. It is strictly weaker — it cannot stop a --no-verify push — which is
+# one more reason the plan upgrade in ADR-0004 matters.
+
+title = "Paridyum"
+
+[extend]
+useDefault = true   # ~170 upstream provider rules (AWS, GCP, Stripe, Slack, …)
+
+[[rules]]
+id = "paridyum-private-key-file"
+description = "Private key material"
+# Groups non-capturing: the whole marker is the finding, and a capturing group here
+# would make gitleaks report "RSA" as the secret. See the secretGroup note below.
+regex = '''-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)? ?PRIVATE KEY(?: BLOCK)?-----'''
+tags = ["key", "critical"]
+
+[[rules]]
+id = "paridyum-db-url-with-password"
+description = "Connection string with an inline password"
+# Matches postgres://user:secret@host. Two traps here, both previously live:
+#
+# 1. No lookahead. gitleaks compiles with Go's regexp (RE2), which has none. A `(?!...)`
+#    does not narrow the rule — it panics the binary and takes the whole scan with it,
+#    so the pre-commit hook and the CI step both die rather than report.
+# 2. `secretGroup` is required. Without it gitleaks reports capture group 1 as the
+#    secret, which was the scheme — `postgres`. [allowlist].regexes match against the
+#    secret, so the ${VAR} exclusions below silently applied to the word "postgres"
+#    and every placeholder was reported as a leak.
+#
+# The scheme group is therefore non-capturing and the password is group 1.
+regex = '''(?i)\b(?:postgres|postgresql|mysql|mongodb|redis|amqp)://[^:/\s]+:([^@/\s]{6,})@'''
+secretGroup = 1
+tags = ["database", "critical"]
+
+[[rules]]
+id = "paridyum-jwt-secret"
+description = "Hardcoded JWT or session secret"
+# The key name is non-capturing so group 1 is the value — otherwise gitleaks reports
+# "jwt_secret" as the secret and the entropy and allowlist checks apply to the name.
+regex = '''(?i)\b(?:jwt[_-]?secret|session[_-]?secret|signing[_-]?key)\s*[:=]\s*["']([^"'\s${]{12,})["']'''
+secretGroup = 1
+tags = ["auth", "critical"]
+
+[[rules]]
+id = "paridyum-generic-secret-assignment"
+description = "High-entropy value assigned to a secret-shaped key"
+# THE FLOOR IN SIGNATURE-BASED SCANNING, closed. gitleaks' ~170 upstream rules are
+# provider-specific: they know an AKIA... and a ghp_..., and they do not know
+# API_KEY=<40 random chars> because it matches no vendor's shape. An audit on 2026-08-07
+# confirmed the default ruleset misses it entirely, which meant the most ordinary way a
+# credential enters a repository was the one way nothing looked for.
+#
+# entropy = 3.5 on the captured value is what makes this usable rather than noise: it fires on
+# a random-looking string and not on a ${VAR} placeholder or api_key = changeme. Measured
+# before adopting: zero findings across this entire repository and its full history, while
+# catching both cases that got through the audit.
+#
+# secretGroup = 1 for the reason the rules above record. Without it gitleaks reports capture
+# group 1 as the secret, which would be the key NAME, and then both the entropy test and the
+# allowlist would apply to the word "password" rather than to its value.
+regex = '''(?i)\b(?:api[_-]?key|apikey|secret[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|credential)\s*[:=]\s*["']?([A-Za-z0-9+/_-]{24,})["']?'''
+secretGroup = 1
+entropy = 3.5
+tags = ["generic", "entropy", "critical"]
+
+[allowlist]
+description = "Documentation, templates, and this config's own examples"
+
+# ADR-0017 is locked and says `.gitleaksignore` is the SOLE legitimate exception path: a
+# fingerprint naming one finding in one place, with a stated reason. A blanket path allowlist is a
+# second, broader path — not pinned to a line, not countable, and it never lapses. Two such entries
+# were removed on 2026-08-07 after an audit found that a secret in ANY markdown file was invisible
+# (this repository is almost entirely markdown), and that a secret whose value contained the word
+# "example" was suppressed. Removing both produced zero findings, so they were suppressing nothing
+# legitimate — only the ability to detect.
+#
+# The `knowledge/` entry below matches nothing IN this repository: paths here are
+# `constitution/C-0001-...`, with no `knowledge/` prefix. It is retained because it is correct for
+# a consuming repository, where the snapshot lives at `.paridyum/knowledge/`.
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''(^|/)\.env\.example$''',
+  '''(^|/)knowledge/(constitution|adr|standards|runbooks|anti-patterns)/''',
+  '''(^|/)templates?/''',
+]
+
+regexes = [
+  # Placeholder forms that appear in generated config and documentation.
+  '''\$\{[A-Z_][A-Z0-9_]*\}''',
+  '''\$[A-Z_][A-Z0-9_]*''',
+  '''<[A-Za-z-]+>''',
+  # ANCHORED. Unanchored, this matched any secret whose value merely CONTAINED one of these
+  # words: `API_KEY=exampleZ9kR4vN8pL1sW3xY6cF0dG5jU2aB9eH4iQ7` was silently allowlisted. A
+  # placeholder is the whole value, never a prefix of a real one.
+  '''(?i)^(changeme|placeholder|example|dummy|redacted|xxxxx|your[_-]?secret)$''',
+]

@@ -1,0 +1,106 @@
+# One person. Create with `docket new <slug> <class>`, then fill this in.
+#
+# people/ is GITIGNORED. Personal data must not enter git: history cannot be
+# erased, which would make DPDP erasure rights unhonourable.
+#
+# EVERY FIELD BELOW IS DECLARED IN registry/fields.yaml WITH A STATED
+# PURPOSE. A field that is not declared there is rejected by `docket check`,
+# and a field your person class does not permit is rejected too. That is not
+# pedantry: collecting personal data with no purpose is what the DPDP Act's
+# purpose limitation forbids.
+version: 1
+
+engagement:
+  class: intern                          # intern | employee | contractor
+  stage: preboarding                     # offered | preboarding | active | offboarding | alumni
+  role: Software Engineering Intern
+  department: Platform Engineering
+  supervisor: ROHAN BATRA
+  work_arrangement: Remote               # Remote | Hybrid | On-site
+  hours_per_week: 20
+  start_date: 2026-09-01
+  end_date: 2026-11-30                   # required: unpaid must be time-bound
+  project_description: the internal document generation system
+
+identity:
+  legal_name: Asha Verma
+  preferred_name: Asha
+  # Never inferred from a name. Defaults to they/them when omitted.
+  pronouns:
+    subject: they
+    object: them
+    possessive: their
+  # REQUIRED. The DPDP Act defines a child as anyone under eighteen (s2(f))
+  # and s9 requires verifiable guardian consent before processing a child's
+  # data at all. Without this field Paridyum cannot tell whether that applies.
+  date_of_birth: 2005-04-12
+
+# Only where the intern is under eighteen on their start date. Leave the
+# whole block out otherwise -- `docket check` reports it as over-collection.
+# guardian:
+#   name: ...
+#   relationship: Parent
+#   email: ...
+#   phone: ...
+
+contact:
+  email: asha.verma@example.com
+  phone: "+91 90000 00000"
+  address: 12 Rajpur Road, Dehradun, Uttarakhand 248001
+
+education:
+  institution: Graphic Era University
+  degree: B.Tech Computer Science
+  specialization: Software Engineering
+  graduation_year: 2027
+  email: asha.verma@geu.ac.in
+  # THE field the unpaid basis rests on. Issuance is refused without it.
+  currently_enrolled: true
+  academic_credit: true
+  institution_requires_noc: true
+  institution_requires_certificate: true
+
+professional:
+  linkedin: linkedin.com/in/example
+  github: github.com/example
+  skills: Rust, TypeScript, PostgreSQL
+
+device:
+  type: Personal Laptop                  # Personal Laptop | Paridyum-Provided
+  os: Linux
+
+access:
+  company_email: null
+  systems: null                          # recorded as events, not edited here
+
+equipment:
+  issued: false
+  device: null
+  serial: null
+
+# NOT COLLECTED FOR AN INTERN, and `docket check` will refuse them:
+#   statutory:      PAN, Aadhaar, UAN, ESIC, bank account
+#   compensation:   salary
+# No statute requires them for an unpaid student placement.
+
+# ---- document content -------------------------------------------------
+# What the certificate and reference letter actually say. Not personal data
+# so much as work product, but it lives with the record because it is about
+# this person's internship.
+
+certificate:
+  areas:
+    - Rust service development and testing
+    - Deterministic document generation with LaTeX
+    - Version control and code review practice
+
+reference:
+  requested: false
+  contributions:
+    - Built the document register and its verification path
+    - Converted the internship document set to a single typeset system
+    - Wrote the reproducibility checks that guard issued documents
+  qualities: technical ability, problem-solving and clear communication
+  specific_strength: reduce a duplicated document set to one maintainable source
+
+pre_existing_ip: None

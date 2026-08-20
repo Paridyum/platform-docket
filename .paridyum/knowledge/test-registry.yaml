@@ -1,0 +1,1600 @@
+# Paridyum test-type registry — the single source of truth, declared under ADR-0029.
+#
+# FIFTH INSTANCE of a pattern this repository has now used four times. ADR-0014 moved check
+# ids out of code into check-registry.yaml. ADR-0015 moved scope resolution from an
+# enumeration to a rule. C-0005 moved repository classes out of a locked prose table into
+# class-registry.yaml. ADR-0022 moved artifact types out of fifteen hardcoded sites. ADR-0028
+# moved external framework identifiers out of free text. Each time the defect was the same:
+# a list that must be extended, hardcoded where extending it is expensive.
+#
+# The test-type list was the next instance waiting to happen. STD-0001 names four layers —
+# unit, component, integration, mutation — inside a locked artifact, which means adding a
+# fifth costs a supersession. It also means the CI workflow's job names, the nextest profile
+# names and the standard's prose are three copies of one list with nothing comparing them.
+# Fuzzing, contract testing, load testing, tenant-isolation testing and every other kind this
+# platform will need had nowhere to be written down at all, so each would have arrived as a
+# CI job with a name somebody invented that morning.
+#
+# WHAT THIS IS NOT. It is not a plan to build 56 test suites. Most entries are `deferred` and
+# name the event that would start them, exactly as a deferred requirement does (ADR-0018).
+# The value of declaring one now is that the vocabulary exists before the first suite, so the
+# first suite lands under a name the second one can find.
+#
+# THREE INDEPENDENT AXES, and conflating them is what makes most testing taxonomies unusable.
+# `axis` says WHICH KIND OF FAILURE a type addresses. `tier` says WHEN it runs and therefore
+# what it may cost. `status` says WHETHER it binds today. A taxonomy that fuses these produces
+# entries like "security testing" — an axis wearing a test type's clothes, which no repository
+# can own a suite of and no run can evidence. `axes:` below holds those; they are deliberately
+# not test types.
+#
+# EVIDENCE IS A REQUIRED FIELD, and it is the one most likely to be resented. A test type that
+# produces no machine-readable artifact cannot answer "did that run, on that commit" three
+# months later, and this repository's founding argument is that an unverifiable claim is worse
+# than an absent one. `none` is a legal value and is an admission rather than a default.
+#
+# GENERATES nothing. CHECKED against:
+#   check-registry.yaml     every id in `checks:` must resolve (knowledge.test_registry_valid)
+#   framework-registry.yaml every id in `frameworks:` must match its id_pattern (ADR-0028)
+#   class-registry.yaml     every value in `stacks:` must be a declared stack, or `any`
+#   knowledge artifacts     every TST- id in an artifact's `verified_by` must appear here
+#
+# THE SHAPE OF THIS FILE WAS PROPOSED BEFORE IT WAS WRITTEN, and three things changed in the
+# writing. Umbrella entries were removed and became axes, for the reason above. Two pairs that
+# no reviewer could tell apart — end-to-end versus system, smoke versus sanity — were given
+# non-overlapping definitions rather than being carried on trust; where the boundary is still
+# thin the entry says so in `notes` instead of pretending. And numbering restarted at 0001 in
+# axis order, because an id-space with holes where the umbrellas used to be is a permanent
+# question nobody can answer.
+#
+# Schema: test-registry.schema.json. Validated by knowledge.test_registry_valid.
+# Sorted by test_type — verified, not asserted.
+
+version: 1
+
+# --- axes: the dimensions of failure ---------------------------------------
+# Not test types. A repository owns suites, and a suite belongs to exactly one axis; an
+# axis is what makes "we have tests" answerable with something other than a number.
+
+axes:
+  - axis: functional
+    description: The software does what it was specified to do, and keeps doing it.
+    declared: 2026-08-08
+
+  - axis: isolation
+    description: >
+      A boundary between tenants, between accounts inside a tenant, and between a principal
+      and what it is not entitled to, holds under every access path.
+    declared: 2026-08-08
+    notes: >
+      Separated from `security` deliberately, and it is the axis most specific to Paridyum.
+      Tenancy here is NESTED (GLO-0004), so isolation has two boundaries rather than one and
+      the inner one is not our reputation to spend (ADR-0024 cost 2). Folding it into
+      `security` would have buried the platform's single largest failure class inside a
+      category dominated by dependency CVEs.
+
+  - axis: security
+    description: >
+      An attacker's view of the same software — what they would try, and whether the code,
+      its dependencies and its running form resist it.
+    declared: 2026-08-08
+
+  - axis: performance
+    description: Behaviour under load, measured against a budget that was written down first.
+    declared: 2026-08-08
+
+  - axis: resilience
+    description: >
+      Behaviour under failure — of a dependency, a node, a network, a certificate — and
+      whether recovery happens without a human.
+    declared: 2026-08-08
+
+  - axis: data
+    description: >
+      The schema, the migrations that change it, and whether what was stored can be read
+      back after both.
+    declared: 2026-08-08
+
+  - axis: infrastructure
+    description: The configuration that runs the software, tested as the code it is.
+    declared: 2026-08-08
+
+  - axis: compatibility
+    description: The versions of everything we claim to support, against which we claim it.
+    declared: 2026-08-08
+
+  - axis: interface
+    description: >
+      What a person sees, reaches with a keyboard, reads in their own language, and
+      recognises after a deploy.
+    declared: 2026-08-08
+
+  - axis: supply-chain
+    description: What went into the artifact, and whether a consumer can verify it.
+    declared: 2026-08-08
+
+  - axis: release
+    description: The transition to production, and the decision to reverse it.
+    declared: 2026-08-08
+
+  - axis: observability
+    description: >
+      Whether a failure would be detected at all — the signals, the alerts, and the runbook
+      that depends on both.
+    declared: 2026-08-08
+    notes: >
+      Testing the detection layer is the least-performed kind of testing and the one that
+      decides how long every other failure lasts. An alert nobody has seen fire is a belief,
+      which is the same argument REQ-0004 §12 makes about an unrestored backup.
+
+  - axis: architecture
+    description: >
+      Whether the boundaries the estate claims to have are the boundaries it actually has —
+      who owns a table, who may call whom, and whether the declared shape matches the built one.
+    declared: 2026-08-09
+    notes: >
+      The last axis added, and the one whose rules predate it by longest: ANTI-0001, ANTI-0002
+      and ANTI-0003 have been locked since 2026-08-06 with three `domain.*` checks between them
+      and no verification method at all. ADR-0030 named that condition — defended at the diff,
+      unproven at runtime — and this axis is where the second half goes.
+      Separated from `isolation` deliberately, though they are neighbours. Isolation asks
+      whether a boundary HOLDS against an access path; architecture asks whether the boundary
+      is WHERE THE ESTATE SAYS IT IS. A correct answer to the first with a wrong answer to the
+      second is a service faithfully enforcing a boundary nobody agreed to.
+
+# --- tiers: when a type runs, and what it may cost -------------------------
+# The single decision that keeps a large matrix runnable. Running everything on every push
+# is how a suite becomes something people route around; running nothing until release is how
+# a release becomes an event. Both failures are cheaper to prevent than to reverse.
+
+tiers:
+  - tier: pr
+    trigger: Every push to a branch with an open pull request.
+    budget: 10 minutes
+    blocking: true
+    declared: 2026-08-08
+    notes: >
+      The only tier a person waits for, so the budget is a hard constraint on what may be
+      added rather than a target. Anything that cannot meet it belongs one tier down the
+      list, not in a faster form here.
+
+  - tier: merge
+    trigger: A change lands on the default branch.
+    budget: 30 minutes
+    blocking: true
+    declared: 2026-08-08
+    notes: >
+      `blocking: true` means a failure stops the change progressing to the next tier — it
+      cannot mean stopping the merge, because GitHub Free has no required checks on private
+      repositories (ADR-0004). The distinction is stated rather than glossed: on this plan a
+      red merge-tier run is a signal that must be acted on by a person.
+
+  - tier: nightly
+    trigger: A schedule, on the default branch, at a time nobody is waiting.
+    budget: 4 hours
+    blocking: false
+    declared: 2026-08-08
+    notes: >
+      Non-blocking by construction, which makes it the tier most likely to be silently
+      broken for months. A nightly tier needs a failure notification with an owner or it is
+      compute spent on nobody's behalf.
+
+  - tier: pre-release
+    trigger: A release candidate is cut.
+    budget: 2 hours
+    blocking: true
+    declared: 2026-08-08
+
+  - tier: post-deploy
+    trigger: A deployment completes, in any environment including production.
+    budget: 10 minutes
+    blocking: true
+    declared: 2026-08-08
+    notes: >
+      Blocking here means blocking the ROLLOUT, not the deploy that already happened — the
+      failure action is rollback or halted promotion, per REQ-0004 §6.
+
+  - tier: on-demand
+    trigger: A person starts it, or an incident does.
+    budget: unbounded
+    blocking: false
+    declared: 2026-08-08
+    notes: >
+      For types whose value comes from being unscheduled — a penetration test, a recovery
+      drill, a game day. Scheduling them turns them into a rehearsal of the schedule.
+
+# --- test types ------------------------------------------------------------
+
+test_types:
+  # ---- functional ----------------------------------------------------------
+  - test_type: TST-0001
+    name: unit
+    axis: functional
+    tier: pr
+    status: required
+    detects: >
+      Logic that is wrong in isolation — a boundary off by one, an unhandled variant, a
+      predicate inverted — before any other kind of test can reach it.
+    evidence: junit.xml
+    stacks: [rust, typescript]
+    checks: [test.nextest_configured, test.coverage_meets_threshold, test.no_io_in_unit_tier]
+    governed_by: [STD-0001, STD-0008]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+    declared: 2026-08-08
+    notes: >
+      STD-0001 already fixes the shape: `#[cfg(test)] mod tests` beside the code, no I/O, no
+      sleeps, microseconds. The entry exists so the tier and the evidence are declared in the
+      same place as every other type, not to restate the standard.
+
+  - test_type: TST-0002
+    name: component
+    axis: functional
+    tier: pr
+    status: required
+    detects: >
+      A module that is correct internally and wrong at its own public boundary — the wiring
+      between units, exercised without network or database.
+    evidence: junit.xml
+    stacks: [rust, typescript]
+    governed_by: [STD-0001]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      STD-0001's advice is that most behaviour should be pinned here rather than in
+      integration, because this is the fastest tier that exercises a real interface. It is
+      also the layer with no tooling of its own, which is why it is the one most often skipped
+      in favour of a slower integration test that looks more convincing.
+
+  - test_type: TST-0003
+    name: integration
+    axis: functional
+    tier: pr
+    status: required
+    detects: >
+      A query, a transaction or a client call that is valid in a mock and invalid against the
+      real engine — the failure class that produces "tests green, production broken".
+    evidence: junit.xml
+    stacks: [rust, typescript]
+    applies_to: ["svc-*", "platform-*", "lib-*"]
+    checks: [test.integration_tests_use_testcontainers]
+    governed_by: [STD-0001]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      Real Postgres and Redis via testcontainers, never a mocked database — STD-0001's single
+      strongest rule. The `pr` tier is deliberate and is affordable only because the suite is
+      kept small: one per endpoint and per background workflow.
+
+  - test_type: TST-0004
+    name: contract
+    axis: functional
+    tier: merge
+    status: deferred
+    trigger: >
+      A second deployable consumes an interface published by a first — an HTTP endpoint or a
+      subscribed event. Until then the producer and the consumer are the same deploy.
+    detects: >
+      A producer changing a payload shape its consumers still depend on, before the change is
+      deployed rather than after both are live.
+    evidence: pact/contract verification report
+    governed_by: [REQ-0005, REQ-0010]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0005 §7 already owns consumer-driven contract testing for events and REQ-0010 owns
+      API evolution; this entry is the vocabulary they share, not a third rule. The trigger is
+      the SECOND deployable on purpose: a single service publishing to itself needs none of
+      this, and the moment it stops being an internal detail is the last cheap moment to
+      introduce the discipline.
+
+  - test_type: TST-0005
+    name: api
+    axis: functional
+    tier: pr
+    status: deferred
+    trigger: A repository declares `exposes.http` in its manifest.yaml.
+    detects: >
+      An endpoint that is correct on the happy path and wrong everywhere else — missing
+      validation, the wrong status code, unbounded pagination, a non-idempotent write.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [STD-0008, REQ-0010]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+    declared: 2026-08-08
+    notes: >
+      Distinct from TST-0003 by what it asserts rather than by what it runs against: an
+      integration test proves the query works, an API test proves the contract holds
+      including its error cases. STD-0008 lists the cases that must be covered, because
+      "test the API" without that list reliably produces the happy path and nothing else.
+
+  - test_type: TST-0006
+    name: end-to-end
+    axis: functional
+    tier: pre-release
+    status: deferred
+    trigger: >
+      Two deployables must both be running for a user-visible action to complete.
+    detects: >
+      A journey that fails only when the real pieces are assembled — session propagation,
+      cross-service authorisation, an ordering assumption between two correct services.
+    evidence: junit.xml, trace or video artifact
+    governed_by: [STD-0008]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      Scoped to ONE user journey through the assembled system. The neighbouring type is
+      TST-0007, which asserts nothing about a journey and everything about the system's own
+      properties; the boundary is thin and is drawn here rather than left to each author. If a
+      test is hard to place, it is an end-to-end test — that is the more useful default,
+      because it is the one with a named journey to point at when it fails.
+
+  - test_type: TST-0007
+    name: system
+    axis: functional
+    tier: pre-release
+    status: deferred
+    trigger: >
+      The platform has an assembled environment that is not a single service — the first time
+      "the system" names something other than one deployable.
+    detects: >
+      Properties that belong to no single service and to no single journey: startup ordering,
+      configuration completeness, shared-resource contention, a dependency graph that has
+      grown a cycle in practice while every service passes alone.
+    evidence: junit.xml
+    governed_by: [STD-0008]
+    declared: 2026-08-08
+    notes: >
+      The entry most at risk of becoming a synonym for TST-0006. It earns its place only
+      while it asserts something no journey does; if the suite here ever consists of journeys,
+      it should be merged into TST-0006 by superseding ADR-0029 rather than by quietly
+      relabelling.
+
+  - test_type: TST-0008
+    name: smoke
+    axis: functional
+    tier: post-deploy
+    status: deferred
+    trigger: The first deployment to an environment that is not a developer machine.
+    detects: >
+      A build that starts and is nonetheless not serving — wrong configuration, an
+      unreachable dependency, a missing migration, a certificate that expired between the
+      build and the deploy.
+    evidence: junit.xml, deployment gate result
+    governed_by: [STD-0008, REQ-0004]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["DE.CM"]
+    declared: 2026-08-08
+    notes: >
+      Runs against the deployed artifact, in the environment it was deployed to, and its
+      failure action is rollback. That is what separates it from TST-0009, which runs before a
+      deploy and stops one from starting.
+
+  - test_type: TST-0009
+    name: sanity
+    axis: functional
+    tier: pr
+    status: recommended
+    detects: >
+      A change that broke the thing it just touched, in the narrowest possible loop — the
+      re-check a person would run by hand and then forget to run again.
+    evidence: junit.xml
+    governed_by: [STD-0008]
+    declared: 2026-08-08
+    notes: >
+      Deliberately NOT a separate suite. It is the subset of existing suites selected by what
+      the diff touched, and it is listed as a type because the alternative — leaving it
+      unnamed — is what produces a second copy of the regression suite under a different
+      directory. If no selection mechanism exists, the honest state is that this type is not
+      implemented and the full `pr` tier is doing its job.
+
+  - test_type: TST-0010
+    name: regression
+    axis: functional
+    tier: pr
+    status: required
+    detects: >
+      The recurrence of a defect that has already reached a user once. Every entry in this
+      suite is evidence that a specific failure was possible.
+    evidence: junit.xml
+    checks: [test.bugfix_carries_a_regression_test]
+    governed_by: [STD-0008]
+    frameworks:
+      ssdf: ["RV.3.3", "RV.3.4"]
+      cis: ["16.3"]
+    declared: 2026-08-08
+    notes: >
+      `required` today, with nothing deployed and nothing to regress, because the rule is
+      about the SHAPE of a fix rather than about a suite that must pre-exist: a `fix:` commit
+      that changes no test is the violation, and that is checkable from the first fix onward.
+      Maps to SSDF RV.3.3 and RV.3.4, which the ADR-0028 mapping identified as completely
+      unpopulated — this repository governed how code is written far better than what happens
+      after a defect is found.
+
+  - test_type: TST-0011
+    name: property
+    axis: functional
+    tier: pr
+    status: recommended
+    detects: >
+      An input the author did not think of. Where an example test asserts one case, a property
+      asserts an invariant over generated cases and reports the smallest input that breaks it.
+    evidence: junit.xml, failure seed
+    stacks: [rust, typescript]
+    governed_by: [STD-0001, STD-0008]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      STD-0001 already fixes `proptest` as the tool and names the shapes worth it: parsers,
+      encoders, state machines. Add authorisation predicates to that list — "no principal
+      without permission P may reach resource R" is a property, and expressing it as one is
+      how the matrix in STD-0009 stays finite. A failing seed must be committed as a
+      TST-0010 case, or the property has found a bug the suite then forgets.
+
+  - test_type: TST-0012
+    name: fuzz
+    axis: functional
+    tier: nightly
+    status: deferred
+    trigger: >
+      The first crate that parses, decodes or deserialises input it did not produce — a
+      protocol frame, an uploaded file, a webhook body, a token.
+    detects: >
+      Panics, hangs and memory faults on inputs no human would write: empty, enormous,
+      truncated mid-structure, invalid UTF-8, deeply nested, numerically extreme.
+    evidence: crash corpus, coverage report
+    stacks: [rust]
+    governed_by: [STD-0008]
+    frameworks:
+      ssdf: ["PW.8.2", "RV.1.2"]
+      cis: ["16.12"]
+    declared: 2026-08-08
+    notes: >
+      `nightly` because a fuzz run is unbounded by nature and a bounded one on a pull request
+      finds only what the corpus already contains. The corpus is the asset, not the run: it
+      must be committed, and every crash it finds becomes a TST-0010 case with the input as a
+      fixture. Rust makes this unusually cheap — memory-safety bugs surface as panics rather
+      than as silent corruption — which is an argument for doing it, not evidence that there
+      is nothing to find.
+
+  - test_type: TST-0013
+    name: mutation
+    axis: functional
+    tier: nightly
+    status: recommended
+    detects: >
+      A line that is executed but not asserted on. Coverage cannot distinguish a test that
+      checks a result from one that merely calls the function; a surviving mutant can.
+    evidence: mutation report, score
+    stacks: [rust]
+    checks: [test.mutation_score_meets_threshold]
+    governed_by: [STD-0001, STD-0008]
+    frameworks:
+      ssdf: ["PO.4.1"]
+    declared: 2026-08-08
+    notes: >
+      STD-0001 already schedules `cargo-mutants` weekly and states the reason. The threshold
+      exists so the score is a gate rather than a dashboard, and it is scoped to changed files
+      because a whole-workspace mutation run is hours and would be turned off within a month.
+
+  - test_type: TST-0014
+    name: concurrency
+    axis: functional
+    tier: nightly
+    status: deferred
+    trigger: >
+      Two requests can mutate the same row, or the same external resource, at the same time —
+      in practice, the first write path that is not append-only.
+    detects: >
+      Lost updates, double processing, deadlock, and an idempotency key that is checked and
+      then raced. These pass every single-threaded test and fail under real traffic.
+    evidence: junit.xml
+    stacks: [rust]
+    governed_by: [STD-0008, ANTI-0005]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      The defect class that does not appear until the second concurrent user and then never
+      reproduces on demand. Testing it needs deliberate interleaving — a barrier, a repeated
+      run, or a database-level isolation assertion — not a load test, which finds the
+      throughput ceiling and hides the race inside it.
+
+  - test_type: TST-0015
+    name: snapshot
+    axis: functional
+    tier: pr
+    status: recommended
+    detects: >
+      An unintended change in output whose shape matters and whose text is too long to assert
+      by hand — rendered errors, CLI output, serialised payloads.
+    evidence: committed snapshot diff
+    stacks: [rust, typescript]
+    governed_by: [STD-0001]
+    declared: 2026-08-08
+    notes: >
+      STD-0001 fixes `insta`. The hazard is accepting a snapshot without reading it, which
+      converts the suite into a record of what the code does rather than of what it should do;
+      a snapshot update in a diff deserves the same attention as an assertion change.
+
+  # ---- isolation -----------------------------------------------------------
+  - test_type: TST-0016
+    name: tenant-read-isolation
+    axis: isolation
+    tier: pr
+    status: deferred
+    trigger: >
+      The first migration creating a tenant-scoped or account-scoped table (ADR-0024's three
+      categories) — the moment a row belongs to someone.
+    detects: >
+      A read path that returns a row belonging to another tenant, or to another account
+      inside the same tenant. Two boundaries, because tenancy here is nested (GLO-0004).
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    checks: [test.tenant_isolation_suite_covers_owned_tables]
+    governed_by: [STD-0009, ADR-0024]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+      csf: ["PR.AA"]
+    declared: 2026-08-08
+    notes: >
+      Static analysis of a migration proves the policy EXISTS (db.* checks); only running a
+      query as a role proves the policy is CORRECT. That gap is the entire reason this type
+      is separate from the migration gate.
+
+  - test_type: TST-0017
+    name: tenant-write-isolation
+    axis: isolation
+    tier: pr
+    status: deferred
+    trigger: The first migration creating a tenant-scoped or account-scoped table.
+    detects: >
+      A write, update or delete that lands on, or destroys, a row outside the caller's silo —
+      including the case where the policy filters reads correctly and permits the write.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [STD-0009, ADR-0024]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["PR.AA", "PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      Separated from TST-0016 because RLS policies are per-command: `FOR SELECT` and
+      `FOR ALL` are different declarations, and a suite that only reads will never notice that
+      only one of them was written.
+
+  - test_type: TST-0018
+    name: operator-scope
+    axis: isolation
+    tier: pr
+    status: deferred
+    trigger: The first session type that can carry operator scope (GLO-0005).
+    detects: >
+      Breadth of access granted by an absence — a dropped session field, an uninitialised
+      variable, a lookup returning null — rather than by an explicit claim. The query still
+      runs and rows still return, so nothing else in the system reports a problem.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    checks: [test.operator_scope_denial_is_asserted]
+    governed_by: [STD-0009, ADR-0024, GLO-0005]
+    frameworks:
+      ssdf: ["PW.8.2", "PW.9.1"]
+      cis: ["6.8", "16.12"]
+      csf: ["PR.AA"]
+    declared: 2026-08-08
+    notes: >
+      The single most important entry in this registry for this platform. GLO-0005's rule is
+      that operator scope is a grant, never an absence; the test that proves it is the
+      NEGATIVE one — a session with no claim must read zero rows outside its own account, and
+      must do so loudly. A suite that only asserts the operator can see everything passes
+      identically against the dangerous implementation.
+
+  - test_type: TST-0019
+    name: authorization-matrix
+    axis: isolation
+    tier: pr
+    status: deferred
+    trigger: The first endpoint whose behaviour depends on the caller's role.
+    detects: >
+      A permission that is granted where it should be denied. Authorisation fails silently in
+      the permissive direction, which is why it needs an exhaustive matrix rather than the
+      handful of cases an author thinks of.
+    evidence: junit.xml, coverage of the role x resource matrix
+    applies_to: ["svc-*", "platform-*"]
+    checks: [test.authorization_matrix_has_no_untested_cell]
+    governed_by: [STD-0009]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["6.8", "16.12"]
+      csf: ["PR.AA"]
+    declared: 2026-08-08
+    notes: >
+      Every cell, both directions. The combinatorial answer is TST-0011: expressed as a
+      property — "no principal lacking permission P reaches resource R" — the matrix stays
+      finite as roles are added. Enumerating it by hand does not.
+
+  - test_type: TST-0020
+    name: authentication
+    axis: isolation
+    tier: pr
+    status: deferred
+    trigger: The first credential the platform issues or accepts.
+    detects: >
+      A token accepted when it should not be — expired, revoked, replayed, wrong issuer,
+      wrong audience, wrong signature, or valid for a different session that was not
+      invalidated at logout.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [STD-0009]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["6.3", "16.12"]
+      csf: ["PR.AA"]
+    declared: 2026-08-08
+    notes: >
+      "Login works" is one case out of roughly fifteen, and it is the only one an
+      implementation can pass while being wrong. The negative cases are the suite.
+
+  - test_type: TST-0021
+    name: out-of-band-isolation
+    axis: isolation
+    tier: merge
+    status: deferred
+    trigger: >
+      The first code path that touches tenant data without an HTTP request in scope — a
+      background job, a queue consumer, a scheduled task, a cache write, a search index
+      update, an object-storage key, a webhook delivery, an export.
+    detects: >
+      A tenant boundary enforced at the HTTP layer and absent everywhere else. The request
+      carried the session; the job does not, and the tenant identifier arrives as an argument
+      somebody remembered to pass.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [STD-0009]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+      csf: ["PR.AA", "PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      A large share of real multi-tenant breaches are here rather than in the request path,
+      because the request path is where everybody looks. Nested tenancy doubles the surface:
+      a cache key or an object-storage prefix carrying `tenant_id` and not `account_id` leaks
+      between a tenant's own customers while every cross-tenant test passes.
+
+  # ---- security ------------------------------------------------------------
+  - test_type: TST-0022
+    name: static-analysis
+    axis: security
+    tier: pr
+    status: required
+    detects: >
+      Vulnerable and unsound code patterns readable from the source without running it —
+      unchecked arithmetic, unsafe blocks, injection-shaped string building, panicking calls
+      on a request path.
+    evidence: SARIF report
+    checks: [test.static_analysis_runs_on_pull_request]
+    governed_by: [STD-0008]
+    frameworks:
+      ssdf: ["PW.7.1", "PW.7.2", "RV.1.2"]
+      cis: ["16.12"]
+      csf: ["PR.PS-06"]
+    declared: 2026-08-08
+    notes: >
+      `required` and already partly true: `clippy --all-targets --all-features -D warnings`
+      runs today in the shared workflow, and ADR-0005's error and panic rules make it a
+      security control rather than a style one. What is missing is a rule-based scanner and a
+      SARIF artifact — clippy's findings are readable only in a log that expires.
+
+  - test_type: TST-0023
+    name: dependency-scan
+    axis: security
+    tier: pr
+    status: required
+    detects: >
+      A dependency with a published advisory, an unacceptable licence, an unexpected source
+      registry, or a duplicate version pulled in by a transitive edge.
+    evidence: advisory report
+    stacks: [rust, typescript]
+    governed_by: [STD-0008, REQ-0014]
+    frameworks:
+      ssdf: ["PW.4.4", "RV.1.1"]
+      cis: ["7.5", "16.4", "16.5"]
+      csf: ["ID.RA", "GV.SC"]
+    declared: 2026-08-08
+    notes: >
+      Running today via `cargo-deny check bans licenses sources advisories` in the shared
+      workflow. Listed as a test type rather than left as a CI step because REQ-0014 §6 needs
+      it to produce an artifact — knowing what was pulled in transitively at build time is the
+      layer where supply-chain compromises land, and a log line is not an inventory.
+
+  - test_type: TST-0024
+    name: secret-scan
+    axis: security
+    tier: pr
+    status: required
+    detects: >
+      A credential committed to the working tree or present anywhere in history — where it
+      remains after any later commit "removes" it, because history is what an attacker clones.
+    evidence: scan report
+    checks: [repo.secret_scan_clean]
+    governed_by: [C-0004, STD-0008]
+    frameworks:
+      ssdf: ["PW.7.2", "PO.5.2"]
+      cis: ["16.12", "3.3"]
+      csf: ["PR.AA", "PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      The one gate that stops the ADR-0025 checkpoint commit. Already implemented and already
+      proven by a planted defect in scripts/test-checks.sh; recorded here so the security axis
+      is not read as entirely aspirational.
+
+  - test_type: TST-0025
+    name: dynamic-analysis
+    axis: security
+    tier: pre-release
+    status: deferred
+    trigger: The first HTTP surface reachable from outside a developer machine.
+    detects: >
+      What the running application does that the source does not show — a header absent at
+      runtime, a debug route left routable, an error page leaking a stack trace, an
+      authenticated scan reaching what an unauthenticated one could not.
+    evidence: SARIF or scanner report
+    applies_to: ["svc-*", "platform-*", "web-*"]
+    governed_by: [REQ-0018]
+    frameworks:
+      ssdf: ["PW.8.1", "PW.8.2", "RV.1.2"]
+      cis: ["7.6", "16.12"]
+      csf: ["ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      Its value is entirely in being run against a deployed build with real configuration; run
+      against a developer machine it reports the developer machine. This is why it is
+      `pre-release` rather than `pr`.
+
+  - test_type: TST-0026
+    name: penetration
+    axis: security
+    tier: on-demand
+    status: deferred
+    trigger: >
+      The first tenant that is not us, or the first contractual obligation naming a test —
+      whichever comes first.
+    detects: >
+      What an adversary finds that a scanner does not: chained weaknesses, business-logic
+      abuse, and a tenant boundary crossed by a sequence of individually-permitted actions.
+    evidence: engagement report, tracked findings
+    governed_by: [ADR-0045, REQ-0015, REQ-0018]
+    frameworks:
+      ssdf: ["PW.8.2", "RV.1.1"]
+      cis: ["16.13"]
+      csf: ["ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      `on-demand` because scheduling it makes it a rehearsal. The finding is only worth the
+      engagement if each item becomes a TST-0010 case — otherwise the report is a document
+      that expires.
+
+  - test_type: TST-0027
+    name: input-abuse
+    axis: security
+    tier: pr
+    status: deferred
+    trigger: The first handler that accepts input from outside the trust boundary.
+    detects: >
+      A boundary that validates the shape it expected and accepts everything else — oversized
+      bodies, unexpected content types, duplicated parameters, injection payloads, and the
+      identifier a client supplied for a field the server must own.
+    evidence: junit.xml
+    governed_by: [ADR-0045, REQ-0015, STD-0009]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+      csf: ["PR.PS-06"]
+    declared: 2026-08-08
+    notes: >
+      Overlaps TST-0012 in technique and differs in intent: fuzzing looks for a crash,
+      this looks for acceptance. The Paridyum-specific case is ADR-0024 decision 5 — a
+      request that carries its own `tenant_id` or `account_id` must be rejected, not
+      honoured, and that is an assertion rather than a fuzz target.
+
+  # ---- performance ---------------------------------------------------------
+  - test_type: TST-0028
+    name: benchmark
+    axis: performance
+    tier: nightly
+    status: recommended
+    detects: >
+      A regression in a specific operation whose cost was claimed — measured in isolation,
+      where the signal is not buried in system noise.
+    evidence: criterion report
+    stacks: [rust]
+    governed_by: [STD-0001, REQ-0016]
+    declared: 2026-08-08
+    notes: >
+      STD-0001 restricts `criterion` to places where a performance claim is being made, which
+      is the right constraint: a benchmark with no claim behind it is a number that will be
+      defended for no reason. Shared runners are noisy, so a benchmark gate must compare
+      distributions rather than single runs or it becomes a flake generator.
+
+  - test_type: TST-0029
+    name: load
+    axis: performance
+    tier: pre-release
+    status: deferred
+    trigger: >
+      A service declares an `slo` block in its manifest.yaml — the moment a latency or
+      availability number exists to be defended.
+    detects: >
+      Expected traffic producing worse latency than the declared budget, before a user
+      measures it for us.
+    evidence: run summary with percentile table
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0016]
+    frameworks:
+      ssdf: ["PW.8.2", "PO.4.1"]
+      csf: ["ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      `manifest.yaml` already carries `slo.latency_p99_ms` and `slo.availability` (STD-0002),
+      so the budget has a home before the test does. That is the right order: a load test with
+      no declared budget produces a graph, and a graph is not a pass or a fail.
+
+  - test_type: TST-0030
+    name: stress
+    axis: performance
+    tier: on-demand
+    status: deferred
+    trigger: A service declares an `slo` block in its manifest.yaml.
+    detects: >
+      How the system fails when demand exceeds capacity — whether it sheds load, queues
+      without bound, or takes its dependencies down with it.
+    evidence: run summary, error-rate curve
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0016]
+    declared: 2026-08-08
+    notes: >
+      The pass condition is a failure MODE, not a throughput number: degrade predictably,
+      reject cleanly, recover unattended. A stress test whose only output is "it broke at N"
+      has measured the number and skipped the question.
+
+  - test_type: TST-0031
+    name: spike
+    axis: performance
+    tier: on-demand
+    status: deferred
+    trigger: A service declares an `slo` block in its manifest.yaml.
+    detects: >
+      Failure to absorb a sudden multiple of normal traffic — cold caches, connection-pool
+      exhaustion, an autoscaler that reacts after the spike has passed.
+    evidence: run summary, time-to-recover
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0016]
+    declared: 2026-08-08
+
+  - test_type: TST-0032
+    name: soak
+    axis: performance
+    tier: nightly
+    status: deferred
+    trigger: A service is deployed to an environment that runs continuously.
+    detects: >
+      Degradation that only appears with time — a leak, an unbounded cache, a connection
+      never returned, a log file filling a disk, a token that expires mid-run.
+    evidence: resource-usage series over the run
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0016]
+    declared: 2026-08-08
+    notes: >
+      The only type here whose signal is a trend rather than a threshold, which is why it must
+      publish a series rather than a verdict. Hours to days; incompatible with any blocking
+      tier, and that is the reason it is nightly rather than pre-release.
+
+  - test_type: TST-0033
+    name: capacity
+    axis: performance
+    tier: on-demand
+    status: deferred
+    trigger: >
+      A cost ceiling or a headroom question needs an answer — in practice, the first capacity
+      or pricing decision that is not a guess.
+    detects: >
+      The point at which the SLO fails, expressed as a number that can be planned and priced
+      against.
+    evidence: capacity model with the measurements behind it
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0016]
+    frameworks:
+      ssdf: ["PO.4.1"]
+    declared: 2026-08-08
+    notes: >
+      Answers a commercial question as much as a technical one. BET-0002 prices on density,
+      and density is exactly this measurement — an unmeasured capacity assumption is a margin
+      assumption.
+
+  # ---- resilience ----------------------------------------------------------
+  - test_type: TST-0034
+    name: fault-injection
+    axis: resilience
+    tier: merge
+    status: deferred
+    trigger: >
+      The first service with a dependency it does not own — a database, a cache, a queue, an
+      identity provider, an external API.
+    detects: >
+      A failure path that has never executed. Timeouts, retries, circuit breakers and
+      fallbacks are written once and, without injection, are first exercised during an
+      incident.
+    evidence: junit.xml
+    applies_to: ["svc-*", "platform-*"]
+    governed_by: [REQ-0017]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      In-process and deterministic: the dependency is made to fail on purpose, in a test, with
+      an assertion about what the caller does. That is what distinguishes it from TST-0035,
+      which is environmental, probabilistic and cannot be run on a pull request.
+
+  - test_type: TST-0035
+    name: chaos
+    axis: resilience
+    tier: on-demand
+    status: deferred
+    trigger: >
+      A staging environment exists that is shaped like production and can be broken without
+      telling anyone.
+    detects: >
+      Assumptions that only hold when nothing is wrong — a pod that will not reschedule, a
+      probe that reports healthy while failing, a retry storm, a dependency whose latency
+      quietly becomes an outage upstream.
+    evidence: experiment record with the hypothesis and the observed result
+    governed_by: [REQ-0017]
+    frameworks:
+      csf: ["ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      Starts in staging, never in production, and every run states a hypothesis before it
+      starts. A chaos experiment with no prior hypothesis is an outage with better tooling.
+
+  - test_type: TST-0036
+    name: disaster-recovery
+    axis: resilience
+    tier: on-demand
+    status: deferred
+    trigger: The first production database holding data that is not reproducible.
+    detects: >
+      A backup that cannot be restored, restores incompletely, or restores into a system that
+      will not start — and an RPO or RTO that was stated rather than measured.
+    evidence: drill record with measured RPO and RTO
+    governed_by: [REQ-0004, REQ-0017]
+    frameworks:
+      cis: ["11.1", "11.5"]
+      csf: ["RC.RP", "ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0004 §12 already owns the rule — "an unverified backup is a belief". This entry is
+      its verification method, and ADR-0024 cost 4 makes it harder than it looks here: restore
+      forks per tenant AND per account, by row-level extraction from a cluster-wide backup, so
+      a drill that only restores the whole cluster has not tested the product's actual promise.
+
+  - test_type: TST-0037
+    name: rollback
+    axis: resilience
+    tier: pre-release
+    status: deferred
+    trigger: The first deployment that replaces a running version.
+    detects: >
+      A release that cannot be reversed — a migration the previous version cannot read, a
+      config key the old build does not know, a queue message shape only the new consumer
+      understands.
+    evidence: rollback drill record
+    governed_by: [REQ-0004, REQ-0008]
+    frameworks:
+      csf: ["RC.RP"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0008 §3 requires a migration to work with the PREVIOUS application version still
+      serving traffic, and REQ-0004 §6 requires automated rollback. Neither is true until
+      somebody has rolled back on purpose; this is that exercise.
+
+  # ---- data ----------------------------------------------------------------
+  - test_type: TST-0038
+    name: schema
+    axis: data
+    tier: pr
+    status: deferred
+    trigger: The first migration file is written.
+    detects: >
+      A schema that permits a state the application forbids — a missing constraint, an absent
+      unique index, a nullable column the code assumes is present, a foreign key with the
+      wrong cascade.
+    evidence: junit.xml, migration gate output
+    checks: [db.tenant_scoped_tables_declare_tenancy, db.row_level_security_enabled_on_tenant_tables]
+    governed_by: [STD-0006, ADR-0024, REQ-0008]
+    frameworks:
+      ssdf: ["PW.9.1"]
+      csf: ["PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      Partly implemented today and unusually so: scripts/check-migrations.sh reads the SQL
+      statically and rejects six defect classes, each proven by a fixture that must fail. What
+      static analysis cannot do is run a query as a role, which is where TST-0016 to TST-0018
+      begin.
+
+  - test_type: TST-0039
+    name: migration
+    axis: data
+    tier: pr
+    status: deferred
+    trigger: The first migration file is written.
+    detects: >
+      A migration that applies cleanly and is still wrong — it locks a large table, it cannot
+      run while the previous application version serves traffic, or its rollback has never
+      been executed.
+    evidence: junit.xml, applied-and-reverted log
+    checks: [test.migration_is_applied_and_reverted_in_ci]
+    governed_by: [STD-0006, REQ-0008]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      Both directions and both application versions: new schema with old code is the case that
+      breaks a rolling deploy and the one nobody runs. REQ-0008 §4 states it — "an untested
+      down-migration is a comment" — and this is the type that makes it false.
+
+  - test_type: TST-0040
+    name: backup-restore
+    axis: data
+    tier: on-demand
+    status: deferred
+    trigger: The first production database.
+    detects: >
+      Backup content that is present and unusable — wrong scope, missing a role, missing an
+      extension, encrypted with a key nobody can produce.
+    evidence: restore log with an integrity check
+    governed_by: [REQ-0004]
+    frameworks:
+      cis: ["11.2", "11.3", "11.5"]
+      csf: ["RC.RP", "PR.DS"]
+    declared: 2026-08-08
+    notes: >
+      Narrower than TST-0036 on purpose: this proves the artifact restores, that proves the
+      business recovers. Passing here and failing there is the common outcome.
+
+  - test_type: TST-0041
+    name: data-retention
+    axis: data
+    tier: nightly
+    status: deferred
+    trigger: >
+      The first personal or regulated data is stored, or the first retention period is
+      promised — whichever comes first.
+    detects: >
+      Data that outlives its stated retention, an erasure that leaves copies in a cache, a
+      search index, a backup or an export, and a deletion that a soft-delete column hides
+      rather than performs.
+    evidence: junit.xml
+    governed_by: [REQ-0003, REQ-0013]
+    frameworks:
+      csf: ["PR.DS"]
+      cis: ["3.1"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0003 owns the rules and REQ-0013 owns export. The failure this catches is
+      structural: REQ-0008 §7 warns that a soft-delete column with an unfiltered query is a
+      data leak that looks like a bug, and the same column makes "deleted" a claim that only
+      a test can check.
+
+  # ---- infrastructure ------------------------------------------------------
+  - test_type: TST-0042
+    name: iac-static
+    axis: infrastructure
+    tier: pr
+    status: deferred
+    trigger: The first infrastructure repository with something deployable in it.
+    detects: >
+      Configuration that is syntactically valid and operationally wrong — a public bucket, an
+      over-broad IAM grant, an unencrypted volume, a security group open to the world.
+    evidence: SARIF report, plan output
+    stacks: [terraform]
+    applies_to: ["infra-*"]
+    checks: [terraform.fmt_and_validate]
+    governed_by: [REQ-0004]
+    frameworks:
+      ssdf: ["PW.9.1", "PW.9.2"]
+      cis: ["4.1", "16.7"]
+      csf: ["PR.IR"]
+    declared: 2026-08-08
+    notes: >
+      class-registry.yaml records that `infra` has `ci: false` — infrastructure repositories
+      currently have no CI standard at all, which is a real gap preserved rather than fixed
+      during ADR-0010's supersession. This type is where closing it would land.
+
+  - test_type: TST-0043
+    name: policy
+    axis: infrastructure
+    tier: pr
+    status: deferred
+    trigger: The first Kubernetes manifest or Helm chart is written.
+    detects: >
+      A manifest that a cluster will accept and an operator should not — no resource limits,
+      no probes, a privileged security context, a missing network policy, a service account
+      with more than it needs.
+    evidence: policy report
+    applies_to: ["infra-*", "svc-*", "platform-*"]
+    checks:
+      - helm.chart_lints
+      - helm.declares_probes
+      - helm.declares_recommended_labels
+      - helm.declares_resource_limits
+    governed_by: [ADR-0003, ADR-0020, REQ-0004, C-0007]
+    frameworks:
+      ssdf: ["PW.9.1", "PW.9.2"]
+      cis: ["4.1", "16.7"]
+      csf: ["PR.IR", "PR.PS-06"]
+    declared: 2026-08-08
+    notes: >
+      Three of these checks are already declared against ADR-0003. Policy-as-code is the form
+      that scales past three: a rule written once and applied to every chart beats a check per
+      property, and it is the only way the list stays current as the cluster grows.
+
+  - test_type: TST-0044
+    name: container-image
+    axis: infrastructure
+    tier: merge
+    status: deferred
+    trigger: The first container image is built by CI.
+    detects: >
+      An image that runs and should not ship — a known CVE in the base layer, a root user, a
+      writable filesystem, a build secret baked into a layer, a missing healthcheck.
+    evidence: SARIF report, SBOM
+    checks: [docker.image_is_distroless_or_slim]
+    governed_by: [REQ-0004, REQ-0014]
+    frameworks:
+      ssdf: ["PW.9.1", "PW.4.4", "RV.1.1"]
+      cis: ["7.5", "16.7", "16.5"]
+      csf: ["PR.PS-06", "GV.SC"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0004 §2 fixes the baseline and REQ-0014 §1 requires the SBOM. Scanning the image
+      rather than the manifest is the point: the base layer is where the CVEs are, and nothing
+      in the source tree mentions it.
+
+  - test_type: TST-0045
+    name: cluster
+    axis: infrastructure
+    tier: nightly
+    status: deferred
+    trigger: The first Helm chart that must deploy somewhere.
+    detects: >
+      A chart that lints and does not run — a probe that never becomes ready, a rollout that
+      never completes, a PodDisruptionBudget that deadlocks a drain, an autoscaler that never
+      scales.
+    evidence: junit.xml, cluster event log
+    applies_to: ["infra-*", "svc-*", "platform-*"]
+    governed_by: [ADR-0020, REQ-0004]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["PR.IR"]
+    declared: 2026-08-08
+    notes: >
+      An ephemeral cluster created for the run and destroyed after it, so the test cannot pass
+      because of state a previous run left behind. That property is what makes it worth the
+      minutes, and it is the property a shared staging cluster cannot offer.
+
+  # ---- compatibility -------------------------------------------------------
+  - test_type: TST-0046
+    name: api-version
+    axis: compatibility
+    tier: merge
+    status: deferred
+    trigger: The first published API version that a client outside this repository calls.
+    detects: >
+      A breaking change to a shape that was promised — a removed field, a narrowed type, a
+      new required parameter, a status code that changed meaning.
+    evidence: schema diff report
+    applies_to: ["svc-*", "platform-*", "spec-*", "sdk-*"]
+    governed_by: [REQ-0010, REQ-0005]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      Mechanical, and therefore the rare governance rule that costs nothing once wired: the
+      previous schema and the current one are both machine-readable, so "is this breaking" is
+      a computation rather than a judgement. REQ-0005 §2 makes the same argument for events.
+
+  - test_type: TST-0047
+    name: runtime-version
+    axis: compatibility
+    tier: nightly
+    status: recommended
+    detects: >
+      A version of a runtime, toolchain or database we claim to support and do not — the
+      claim being the defect, not the version.
+    evidence: junit.xml per matrix cell
+    checks: [cargo.toolchain_file_pinned]
+    governed_by: [STD-0012, ADR-0005]
+    frameworks:
+      ssdf: ["PW.6.1"]
+    declared: 2026-08-08
+    notes: >
+      The support matrix must be written down before it can be tested, and the failure mode is
+      claiming to support everything — which means nothing is defined and every combination is
+      a bug report waiting to be accepted. The shared workflow already has an `msrv` input;
+      what is missing is the declaration of which versions are supported.
+
+  # ---- interface -----------------------------------------------------------
+  - test_type: TST-0048
+    name: browser
+    axis: interface
+    tier: pre-release
+    status: deferred
+    trigger: >
+      The first user-facing interface exists AND RFC-0008 has been resolved — a browser test
+      suite chosen before the framework decision would be inferring architecture.
+    detects: >
+      What only a real browser sees: a route that does not render, a form that cannot be
+      submitted, a session that does not survive navigation, a tenant switch that leaves
+      stale data on screen.
+    evidence: junit.xml, trace and video artifacts
+    stacks: [typescript]
+    applies_to: ["web-*"]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      `governed_by` is deliberately EMPTY, and that is the accurate state rather than an
+      omission: RFC-0003 and RFC-0008 are both still `proposed`, so no artifact yet states
+      the rules for this type. Naming a tool or a standard here would settle a decision that
+      has not been made, which is the failure CLAUDE.md's "never infer architecture" rule
+      exists to prevent. An RFC is not a governor — it is the question — so it is cited here
+      and not in the field.
+
+  - test_type: TST-0049
+    name: visual-regression
+    axis: interface
+    tier: pre-release
+    status: deferred
+    trigger: The first user-facing interface with more than one visual theme or brand.
+    detects: >
+      A layout or style change nobody intended, in a screen nobody touched — the failure class
+      no assertion catches because nobody writes assertions about spacing.
+    evidence: image diff artifacts
+    stacks: [typescript]
+    applies_to: ["web-*"]
+    declared: 2026-08-08
+    notes: >
+      `governed_by` is empty for the same reason as TST-0048 — RFC-0008 is unresolved, and an
+      open question is not a governor.
+      Worth more here than in most products: BET-0003 and C-0006 point at a white-label
+      surface, where per-tenant branding multiplies the number of renderings and no human
+      reviews them all. The cost is flakiness — font rendering and animation timing — so
+      snapshots must be produced in a fixed container, never on a developer machine.
+
+  - test_type: TST-0050
+    name: accessibility
+    axis: interface
+    tier: pr
+    status: deferred
+    trigger: The first user-facing component is written.
+    detects: >
+      A control that cannot be reached with a keyboard, a contrast ratio below the stated
+      level, a missing label, focus that escapes a modal, information conveyed by colour alone.
+    evidence: axe-style JSON report
+    stacks: [typescript]
+    applies_to: ["web-*", "mobile-*"]
+    governed_by: [REQ-0009]
+    frameworks:
+      ssdf: ["PW.8.2"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0009 §2 owns the rule and states the limit honestly: automated tooling catches
+      roughly a third of real issues. The remaining two thirds are TST-0048's keyboard and
+      screen-reader paths, and treating the automated pass as conformance is the specific
+      mistake REQ-0009 warns about.
+
+  - test_type: TST-0051
+    name: localization
+    axis: interface
+    tier: pr
+    status: deferred
+    trigger: The first user-facing string is written.
+    detects: >
+      A hardcoded string, a layout that breaks when text expands, a date or currency rendered
+      in the author's locale, and a translation key with no translation.
+    evidence: junit.xml, missing-key report
+    stacks: [typescript]
+    applies_to: ["web-*", "mobile-*"]
+    governed_by: [REQ-0009]
+    declared: 2026-08-08
+    notes: >
+      REQ-0009 §6 is the reason the trigger is the first STRING rather than the first
+      language: extraction is nearly free at the start and a full-codebase sweep later. The
+      test that matters before any translation exists is the one that fails on a hardcoded
+      string.
+
+  # ---- supply-chain --------------------------------------------------------
+  - test_type: TST-0052
+    name: provenance-verification
+    axis: supply-chain
+    tier: post-deploy
+    status: deferred
+    trigger: The first artifact is published with an attestation.
+    detects: >
+      An artifact accepted without a valid attestation — which is every artifact, until
+      something on the consuming side actually verifies one.
+    evidence: verification log
+    governed_by: [REQ-0014]
+    frameworks:
+      ssdf: ["PS.2.1", "PW.4.4"]
+      cis: ["16.5"]
+      csf: ["GV.SC"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0014 §4 names this as the item most likely to be skipped, because skipping it is
+      invisible until it matters: a signature nobody checks is a file. Testing it means
+      presenting an unsigned or wrongly-signed artifact and requiring the deploy to refuse.
+
+  - test_type: TST-0053
+    name: build-reproducibility
+    axis: supply-chain
+    tier: nightly
+    status: deferred
+    trigger: >
+      A reproducible-build claim is made — never before, because the claim is what creates the
+      obligation.
+    detects: >
+      A build that does not produce the same artifact twice, and therefore an attestation that
+      cannot be independently confirmed.
+    evidence: digest comparison
+    governed_by: [REQ-0014]
+    frameworks:
+      ssdf: ["PS.3.1"]
+      csf: ["GV.SC"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0014 §5 is explicit that reproducibility must not be claimed without a check that
+      rebuilds and compares. This entry exists to make the absence of that check visible
+      rather than to require the property.
+
+  # ---- release -------------------------------------------------------------
+  - test_type: TST-0054
+    name: release-candidate
+    axis: release
+    tier: pre-release
+    status: deferred
+    trigger: The first release candidate is cut.
+    detects: >
+      A defect in the combination rather than in any change — the state produced by every
+      merge since the last release, which no pull-request run has ever seen together.
+    evidence: aggregate report across the pre-release tier
+    governed_by: [STD-0008, ADR-0010]
+    frameworks:
+      ssdf: ["PO.4.1", "PS.3.1"]
+      csf: ["PR.PS-06"]
+    declared: 2026-08-08
+    notes: >
+      Not a suite of its own: it is the pre-release tier run as one gate with one verdict. It
+      is listed because the verdict needs a name and an owner, and because "we ran the tests"
+      is not a release decision.
+
+  - test_type: TST-0055
+    name: canary-analysis
+    axis: release
+    tier: post-deploy
+    status: deferred
+    trigger: The first progressive rollout — any deploy that reaches some users before all.
+    detects: >
+      A regression visible only under production traffic, while it is still limited to a
+      fraction of users, using error rate and latency rather than a human watching a chart.
+    evidence: analysis verdict with the metrics behind it
+    governed_by: [REQ-0004]
+    frameworks:
+      csf: ["DE.CM"]
+      ssdf: ["RV.1.1"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0004 §6 requires progressive delivery for Tier 0–1 with automated rollback. The
+      analysis is the test: without automatic promotion criteria, a canary is a slower deploy
+      that still needs somebody to be watching.
+
+  - test_type: TST-0056
+    name: production-smoke
+    axis: release
+    tier: post-deploy
+    status: deferred
+    trigger: The first production deployment.
+    detects: >
+      A production-only failure — configuration, secrets, DNS, certificates, network policy —
+      that every prior environment passed.
+    evidence: junit.xml, rollout gate result
+    governed_by: [STD-0008, REQ-0004]
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["DE.CM"]
+    declared: 2026-08-08
+    notes: >
+      Must be safe to run against production, which is a design constraint on the test rather
+      than a warning: read-only where possible, and where a write is unavoidable it is
+      scoped to a tenant that exists for this purpose and is never a real one.
+
+  # ---- observability -------------------------------------------------------
+  - test_type: TST-0057
+    name: telemetry-contract
+    axis: observability
+    tier: pr
+    status: deferred
+    trigger: The first runbook or dashboard depends on a specific signal.
+    detects: >
+      A metric, log field or trace attribute that a runbook depends on and the code no longer
+      emits — a rename that breaks the dashboard, silently, until an incident needs it.
+    evidence: junit.xml
+    governed_by: [REQ-0004]
+    frameworks:
+      csf: ["DE.CM", "DE.AE"]
+      ssdf: ["PO.3.3"]
+    declared: 2026-08-08
+    notes: >
+      A correlation id that is regenerated rather than propagated (REQ-0005 §3) fails exactly
+      here and nowhere else — every service works, and a cross-service failure becomes
+      undebuggable. Treating the signal as a contract is the same move REQ-0005 makes for
+      events.
+
+  - test_type: TST-0058
+    name: alert-rule
+    axis: observability
+    tier: nightly
+    status: deferred
+    trigger: The first alert with a human on the other end.
+    detects: >
+      An alert that cannot fire, fires on a condition nobody acts on, or points at a runbook
+      that does not exist. Each of these is invisible until the incident it was written for.
+    evidence: rule evaluation record
+    governed_by: [REQ-0004]
+    frameworks:
+      csf: ["DE.AE", "ID.IM-02"]
+    declared: 2026-08-08
+    notes: >
+      REQ-0004 §9 states that an alert nobody acts on trains people to ignore the ones that
+      matter. The test is a synthetic condition that must produce the alert and reach the
+      destination — which is the same discipline as restoring a backup, applied to detection.
+
+  # ---- internationalisation ------------------------------------------------
+  - test_type: TST-0059
+    name: locale-neutrality
+    axis: functional
+    tier: merge
+    status: deferred
+    trigger: >
+      The first deployable publishes an HTTP response, an event or a structured log to
+      anything outside its own process.
+    detects: >
+      A rendered sentence, a formatted date, a formatted amount or a display-cased enum value
+      in a payload a machine reads — the point at which English stops being presentation and
+      becomes a contract nobody wrote down.
+    evidence: junit.xml
+    stacks: [rust]
+    applies_to: ["platform-*", "svc-*"]
+    checks: [openapi.enum_values_are_identifiers, openapi.error_responses_declare_a_code, domain.events_carry_no_rendered_text]
+    governed_by: [ADR-0032, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      The counterpart to TST-0051, and the two are deliberately not merged. TST-0051 is
+      `interface` axis and `stacks: [typescript]` — it asks whether what a person sees is
+      translatable. This one is `functional` and `stacks: [rust]`, and asks whether what a
+      machine reads is free of language at all. REQ-0009 covers only the first, which is the
+      gap that made this entry necessary.
+      The three checks catch the decidable subset at the schema. What the suite adds is the
+      runtime half a schema cannot see: a handler that interpolates a sentence into a field
+      the schema declares as free-form, which is where this defect actually arrives.
+
+  - test_type: TST-0060
+    name: locale-resolution
+    axis: functional
+    tier: merge
+    status: deferred
+    trigger: >
+      The first output rendered by a backend for a person — an email, an SMS, a push
+      notification, an invoice or an export.
+    detects: >
+      A locale resolved from the wrong level of the tenancy chain, from the actor instead of
+      the recipient, or from an ambient default; and a reader's locale reinterpreting a
+      record's own currency or instant rather than only rendering it.
+    evidence: junit.xml
+    stacks: [rust]
+    applies_to: ["platform-*", "svc-*"]
+    governed_by: [ADR-0034]
+    declared: 2026-08-08
+    notes: >
+      ADR-0034's three most important rules — the resolution order, the reader-renders-but-
+      does-not-reinterpret split, and resolution against the recipient — are all runtime
+      behaviour that no static check reaches. That is why the ADR carries `verified_by` as
+      well as `enforced_by`; this is the other half of the bridge.
+      The assertion that matters is the NEGATIVE one, as in STD-0009: a principal with
+      operator scope reading another account's invoice must see it in THEIR language and in
+      the RECORD's currency, and a suite that only asserts the language is passed by the
+      implementation that redenominates.
+
+  - test_type: TST-0061
+    name: boundary-conformance
+    axis: architecture
+    tier: pr
+    status: required
+    detects: >
+      A repository writing a table another repository declares in `owns`, a synchronous
+      dependency cycle between services, and a reference to a database the repository does
+      not own — the three shapes ANTI-0001, ANTI-0002 and ANTI-0003 forbid.
+    evidence: policy report
+    applies_to: ["platform-*", "svc-*"]
+    checks:
+      - domain.entity_has_single_owner
+      - domain.no_service_dependency_cycles
+      - domain.no_foreign_database_access
+    governed_by: [ANTI-0001, ANTI-0002, ANTI-0003, ADR-0040]
+    frameworks:
+      cis: ["16.10"]
+      csf: ["PR.AA"]
+    declared: 2026-08-09
+    notes: >
+      `status: required` rather than deferred, which is unusual for a type naming no existing
+      suite. It is justified because all three checks are already declared and one —
+      domain.entity_has_single_owner — is fully implemented in check-knowledge.sh today. The
+      type is not a promise; it is a name for enforcement that already runs.
+      The three anti-patterns are LOCKED and can therefore never gain `verified_by`. ADR-0030
+      point 3 makes naming them from here the normal path rather than an exception, so this
+      entry is the only side the mapping will ever have. Do not read the one-sidedness as drift.
+      WHAT THIS DOES NOT PROVE, stated because the checks themselves say so and a green result
+      here will otherwise be read as more. `domain.entity_has_single_owner` verifies that
+      declarations and grants AGREE; the database grant is what stops a foreign write.
+      `domain.no_foreign_database_access` is static and misses a connection string assembled at
+      runtime. `domain.no_service_dependency_cycles` sees only DECLARED edges, so a hard-coded
+      URL is invisible to it. All three verify the declared architecture, and REQ-0001's
+      per-service credentials are what make the declaration binding.
+
+  - test_type: TST-0062
+    name: fleet-manager-independence
+    axis: resilience
+    tier: post-deploy
+    status: deferred
+    trigger: >
+      RFC-0025 stage B1 — the first hosting customer's workload is serving traffic on a fleet.
+      Before that there is nothing to keep serving and the assertion has no subject.
+    detects: >
+      The fleet manager having drifted onto the request path. A hosted workload that stops
+      serving when the fleet manager is stopped — because a shared ingress, an auth callback,
+      a synchronous metering write, a per-request entitlement lookup, authoritative DNS or
+      certificate renewal was routed through it.
+    evidence: experiment record with the hypothesis and the observed result
+    applies_to: ["svc-fleet"]
+    governed_by: [RFC-0025]
+    declared: 2026-08-18
+    notes: >
+      THE ASSERTION IS A DENIAL, which is STD-0009's shape applied to availability rather than
+      isolation: stop the fleet manager, then prove a customer's workload still serves. A test
+      that only ever runs with everything healthy cannot see this property at all.
+      WHY THIS IS NOT TST-0035. Chaos is `on-demand` and `deferred` against a staging
+      environment that can be broken without telling anyone. This is narrower, has one
+      hypothesis, and belongs in `post-deploy` because the property it protects decays on any
+      deployment that adds a feature — which is exactly when nobody thinks to run a chaos
+      experiment.
+      WHY IT MATTERS MORE THAN IT LOOKS. RFC-0025 decision 3 permits the fleet manager to be
+      seeded on a residential machine with no availability of any kind, and the entire
+      justification is that its outage stops provisioning without stopping serving. That is an
+      architectural claim holding up a hardware decision. Unverified, it is an assumption that
+      the first power cut converts into a customer-facing outage.
+      THE CERTIFICATE PATH IS THE ONE THIS WILL MISS. A renewal brokered through the fleet
+      manager fails silently and surfaces at expiry, well outside any test window. Decision 10
+      forbids it structurally — the rented edge issues per-hostname certificates under
+      RFC-0016 — because no reasonable test catches a fault whose latency is measured in weeks.

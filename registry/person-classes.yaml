@@ -1,0 +1,146 @@
+# What Paridyum may record about a person, and what it owes them.
+#
+# THE RULE THIS FILE EXISTS TO ENFORCE. Collecting a field is not free. Under
+# the DPDP Act personal data may be processed for a stated purpose and no
+# other, so a field that is not needed for THIS person's class must not be
+# collected at all. An unpaid student intern needs no PAN, no Aadhaar, no
+# UAN and no bank account -- none of the statutes that require them apply.
+# Asking anyway is over-collection, and `docket check` refuses it.
+#
+# A class therefore declares three things: the fields it permits, the fields
+# it requires, and the identifier prefix its people are issued.
+version: 1
+
+classes:
+  - class: intern
+    prefix: INT
+    description: >
+      An unpaid student intern. Not an employee under Indian law. The
+      statutory apparatus of employment -- EPF, ESI, gratuity, TDS -- does
+      not apply, and its identifiers are therefore forbidden rather than
+      merely unnecessary.
+    permits:
+      - identity            # legal name, preferred name, pronouns, date of birth
+      - guardian            # only where the intern is under eighteen
+      - contact             # personal email, phone, address
+      - engagement          # role, dates, supervisor, arrangement, hours
+      - education           # institution, programme, enrolment
+      - professional        # portfolio links the person chose to share
+      - device              # what they work on
+      - emergency_contact   # held separately; see storage below
+      - equipment
+      - access
+    requires:
+      - identity.legal_name
+      - identity.date_of_birth    # decides whether DPDP s9 applies at all
+      - contact.email
+      - engagement.role
+      - engagement.start_date
+      - engagement.end_date       # unpaid must be time-bound
+      - education.institution
+      - education.currently_enrolled
+    forbids:
+      - statutory           # PAN, Aadhaar, UAN, ESIC, bank -- see note above
+      - compensation.salary
+    unpaid: true
+
+  - class: employee
+    prefix: EMP
+    description: >
+      A paid employee. Declared now so the model does not need reworking on
+      the first hire, NOT because anyone is employed yet. Nothing in this
+      class may be collected until someone actually holds it.
+    permits:
+      - identity
+      - guardian
+      - contact
+      - engagement
+      - education
+      - professional
+      - device
+      - emergency_contact
+      - equipment
+      - access
+      - compensation
+      - statutory
+      - employment_history
+    requires:
+      - identity.legal_name
+      - identity.date_of_birth    # age checks, and statutory returns
+      - contact.email
+      - contact.address
+      - engagement.role
+      - engagement.start_date
+      - compensation.basis
+      - statutory.pan
+    forbids: []
+    unpaid: false
+    note: >
+      `statutory` becomes collectable here because the obligations that
+      require it attach: EPF Form 11 and UAN, ESIC where the wage threshold
+      is met, TDS against PAN, and gratuity nomination. Each is required BY
+      something; none is collected because it might be useful later.
+
+  - class: contractor
+    prefix: CON
+    description: >
+      An independent contractor engaged for defined work. Not an employee;
+      no EPF or ESI. PAN is permitted because TDS under section 194J may
+      apply to professional fees.
+    permits:
+      - identity
+      - contact
+      - engagement
+      - professional
+      - device
+      - equipment
+      - access
+      - compensation
+      - statutory
+    requires:
+      - identity.legal_name
+      - contact.email
+      - engagement.role
+      - engagement.start_date
+      - compensation.basis
+    forbids:
+      - statutory.uan       # EPF does not apply to a contractor
+      - statutory.esic
+    unpaid: false
+
+# WHERE A RECORD IS KEPT. Not one file. Split by who may read it and why,
+# because a single personnel file forces the most sensitive item in it to set
+# the access level for everything else.
+storage:
+  - store: personnel
+    path: people/
+    holds: identity, contact, engagement, education, professional, device
+    access: Paridyum officers and the person's supervisor
+    note: The ordinary record. Everything needed to run the internship.
+
+  - store: emergency
+    path: restricted/emergency/
+    holds: emergency_contact
+    access: officers only, and only in an emergency
+    note: >
+      Separated because it is data about a THIRD PARTY who is not Paridyum's
+      intern and who has no relationship with Paridyum at all. It is also the
+      shortest-retained class in the system.
+
+  - store: statutory
+    path: restricted/statutory/
+    holds: statutory, compensation
+    access: officers only
+    note: >
+      PAN, bank details and identifiers. Empty while every person is an
+      unpaid intern, and it must stay empty until someone is not.
+
+  - store: confidential
+    path: restricted/confidential/
+    holds: medical, disciplinary, grievance, posh
+    access: officers only, case by case
+    note: >
+      NEVER in the general record. A POSH complaint in a personnel file is
+      readable by whoever can read the file, which defeats the
+      confidentiality the Act requires. Medical information is separated for
+      the same reason. This store is written by hand, not by this tool.

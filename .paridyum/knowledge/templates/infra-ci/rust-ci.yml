@@ -1,0 +1,450 @@
+# Paridyum shared Rust CI (ADR-0010).
+#
+# Destination: Paridyum/infra-ci/.github/workflows/rust-ci.yml
+# Callers pin a major tag:
+#
+#   jobs:
+#     ci:
+#       uses: Paridyum/infra-ci/.github/workflows/rust-ci.yml@v1
+#       with: { integration: true }
+#
+# Third-party actions are pinned to commit SHAs, not tags (ADR-0010). A tag is
+# mutable; depending on one means an upstream compromise runs arbitrary code with
+# this repository's GITHUB_TOKEN. Renovate keeps the pins current — the trailing
+# `# vX.Y.Z` comment is what it matches on, so do not remove it.
+
+# WHY THE SCRIPTS COME FROM THE CALLER'S VENDORED SNAPSHOT, NOT FROM THIS REPOSITORY.
+#
+# Five jobs used to `actions/checkout` Paridyum/infra-ci at the pinned ref to get `scripts/`.
+# That cannot work: the default GITHUB_TOKEN carries `Contents: read` for the CALLING repository
+# only, so every one of them failed with `remote: Repository not found` — and the fix normally
+# reached for is a PAT, which REQ-0001 has no home for and which GitHub Free cannot provide as
+# an organisation secret for private repositories (ADR-0004).
+#
+# The scripts already exist in every caller, at
+# `.paridyum/knowledge/templates/infra-ci/scripts/`, because ADR-0001 vendors the knowledge
+# base into each repository. Using that copy removes the cross-repo checkout, removes a
+# duplicate of every script, and version-matches the script to the snapshot the caller is
+# actually governed by. Found on the first real CI run, 2026-08-09.
+
+name: rust-ci
+
+on:
+  workflow_call:
+    inputs:
+      tier:
+        # STD-0008. The tier decides what may run and therefore what a caller waits for.
+        # `pr` must fit a 10-minute budget; `nightly` is where anything unbounded lives.
+        # A caller schedules the nightly tier with its own `on: schedule` and passes
+        # `tier: nightly` — the job list here is the single place that mapping exists.
+        description: "Test tier: pr | merge | nightly | pre-release (STD-0008)"
+        type: string
+        default: pr
+      integration:
+        description: Run integration tests (requires testcontainers)
+        type: boolean
+        default: false
+      coverage-total:
+        description: Minimum total line coverage (STD-0001)
+        type: number
+        default: 70
+      coverage-patch:
+        description: Minimum coverage of changed lines (STD-0001)
+        type: number
+        default: 80
+      msrv:
+        description: Also build against this Rust version
+        type: string
+        default: ""
+
+permissions:
+  contents: read          # ADR-0010: least privilege by default; jobs widen if needed
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0    # incremental artifacts are pure cache bloat in CI
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── fast, parallel, independent ──────────────────────────────────────────
+  # Every job reports. A formatting failure must not mask a test failure, or the
+  # developer fixes one thing per push instead of seeing the whole picture at once.
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}", components: rustfmt }
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}", components: clippy }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      # --all-targets so tests and benches are linted too; they rot fastest.
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # TST-0022 static-analysis. clippy IS the static application security analysis for the
+      # Rust stack — ADR-0005's error and panic rules make several of its lint categories
+      # security controls rather than style ones — but its findings lived only in a log that
+      # expires, which fails the second half of test.static_analysis_runs_on_pull_request.
+      # A machine-readable report is the evidence test-registry.yaml declares for this type.
+      # No new tool: the same lints, re-emitted as JSON from a warm cache.
+      - name: Static-analysis report (TST-0022)
+        if: always()
+        run: cargo clippy --all-targets --all-features --message-format=json > clippy.json || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: static-analysis, path: clippy.json }
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}" }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a # v2
+        with: { tool: cargo-nextest }
+
+      - name: Unit and component tests
+        run: cargo nextest run --profile ci --all-features
+
+      # nextest does not run doc tests. STD-0002 makes doc examples the mechanism
+      # that keeps documentation honest, so they must actually execute.
+      # `cargo test --doc` ERRORS on a binary-only crate — there is no library target to
+      # document-test, and tool-forge is exactly that. The workflow assumed every Rust
+      # repository has a lib. Skipped when there is none, rather than made non-blocking:
+      # where a lib exists the doc tests must still run and still block.
+      - name: Doc tests
+        run: |
+          if cargo metadata --no-deps --format-version 1 \
+             | grep -q '"kind":\["lib"\]\|"kind":\["rlib"\]'; then
+            cargo test --doc --all-features
+          else
+            echo "no library target — doc tests skipped (binary-only crate)"
+          fi
+
+      - name: Integration tests
+        if: inputs.integration
+        run: cargo nextest run --profile integration --all-features --run-ignored all -E 'test(/^it::/)'
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: junit
+          path: target/nextest/ci/junit.xml
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }   # patch coverage needs the merge base
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}", components: llvm-tools-preview }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a # v2
+      # QUOTED, and the quotes are load-bearing. Inside a YAML flow mapping an unquoted comma
+      # separates KEYS, so `{ tool: cargo-llvm-cov,cargo-nextest }` parsed as
+      # `{tool: cargo-llvm-cov, cargo-nextest: null}` — a silently bogus key, and nextest never
+      # installed. The job then failed with `no such command: nextest` three steps later, which
+      # points at the wrong place entirely.
+        with: { tool: "cargo-llvm-cov,cargo-nextest" }
+
+      - name: Collect coverage
+        run: cargo llvm-cov nextest --all-features --lcov --output-path lcov.info
+
+      - name: Enforce total threshold
+        run: |
+          cargo llvm-cov report --summary-only --fail-under-lines ${{ inputs.coverage-total }}
+
+      # Patch coverage is stricter than total (STD-0001): new code carries the
+      # burden, not the inherited backlog.
+      # The reusable workflow's own repo carries the script, so callers get fixes
+      # by moving the @v1 tag rather than copying logic into every repository.
+      - name: Enforce patch threshold
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 .paridyum/knowledge/templates/infra-ci/scripts/patch-coverage.py \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ inputs.coverage-patch }}" \
+            lcov.info
+
+      # STD-0008: every blocking tier publishes a machine-readable artifact. A coverage
+      # number in a log cannot answer "what did that commit cover" three months later, and a
+      # tier that blocks a change while leaving nothing behind is indistinguishable
+      # afterwards from a tier that was skipped.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: coverage, path: lcov.info }
+
+  # ── STD-0008: a fix carries a regression test ────────────────────────────
+  # The only moment anybody knows how to reproduce a defect is the moment it is fixed.
+  # Mechanical half only — a `fix:` commit whose diff contains no test change. It cannot
+  # tell a real regression test from a touched test file and does not claim to.
+  regression:
+    name: regression test on a fix
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          .paridyum/knowledge/templates/infra-ci/scripts/check-regression.sh "origin/${{ github.base_ref }}..HEAD"
+
+  # ── nightly tier (STD-0008) ──────────────────────────────────────────────
+  # Unbounded by nature, so it never runs where a person is waiting. Non-blocking, which
+  # makes it the tier most likely to be silently broken for months — a caller scheduling it
+  # owes it a failure notification with a named owner, or the schedule should be deleted.
+  mutants:
+    name: mutation (TST-0013)
+    if: inputs.tier == 'nightly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}" }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a # v2
+        with: { tool: cargo-mutants }
+      # A surviving mutant means a line is executed and nothing asserts on it, which coverage
+      # percentage cannot tell you (STD-0001). Reported, never gated: the score is noisy and a
+      # hard gate on a noisy metric is a gate that gets disabled.
+      - run: cargo mutants --in-place --no-shuffle --output mutants.out || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: mutants, path: mutants.out }
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # dtolnay/rust-toolchain derives its version from the REF (`@stable`, `@1.90.0`). ADR-0010
+      # requires a SHA pin, which carries no version — so the action's "Parse toolchain version"
+      # step fails with an empty input, and every job that omitted it died at Set up job. Passing
+      # `stable` is not the fix either: components would install for stable while
+      # rust-toolchain.toml selects a different compiler, and `cargo clippy` would then be missing.
+      # So the version comes from the caller's own pin, which is what STD-0003 says governs.
+      - id: pin
+        run: |
+          v=$(sed -nE 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' rust-toolchain.toml | head -1)
+          [ -n "$v" ] || { echo "no channel in rust-toolchain.toml (STD-0003)" >&2; exit 1; }
+          echo "channel=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ steps.pin.outputs.channel }}" }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      # Broken intra-doc links are the most common silent documentation rot (STD-0002).
+      - run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: "-D warnings -D rustdoc::broken_intra_doc_links"
+
+      - name: Required documentation files (STD-0002)
+        run: |
+          missing=""
+          for f in README.md ARCHITECTURE.md CHANGELOG.md manifest.yaml; do
+            [ -f "$f" ] || missing="$missing $f"
+          done
+          case "${{ github.repository }}" in
+            */svc-*|*/platform-*)
+              for f in API.md RUNBOOK.md; do [ -f "$f" ] || missing="$missing $f"; done ;;
+          esac
+          if [ -n "$missing" ]; then
+            echo "::error::missing required documentation (STD-0002):$missing"; exit 1
+          fi
+
+      # TESTING.md and its four sections are NOT checked here. They are
+      # test.testing_md_declares_untested_surface, implemented once in check-repo.sh and run by
+      # the `governance` job below. An inline copy was written here first and removed the same
+      # day: two implementations of one rule, with nothing comparing them, is the defect this
+      # repository has now found in six other places.
+
+  # ── the gates every repository runs, from the vendored snapshot ──────────
+  # THIS JOB DID NOT EXIST, and its absence meant the shared workflow itself violated
+  # `repo.ci_runs_knowledge_check` — an `error` check declared against every class. Every Rust
+  # repository would have called a workflow that ran neither the knowledge gate nor the
+  # repository gate, while the `docs` job above reimplemented one slice of STD-0002 inline. The
+  # inline copy is left there deliberately for now and is a known duplicate: it runs earlier and
+  # gives a better message on the most common failure, and removing it is a separate change from
+  # noticing the gap.
+  #
+  # Runs from `.paridyum/knowledge/`, the read-only vendored snapshot (ADR-0001), so a repository
+  # is checked against the rules it actually carries rather than against whatever `main` says
+  # today. A missing snapshot fails loudly here rather than skipping — `repo.has_vendored_knowledge`
+  # is the check that should have caught it, and a gate that silently passes when its own input is
+  # absent is the failure mode this repository has found four times.
+  governance:
+    name: knowledge and repository gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - name: Vendored knowledge is present (ADR-0001)
+        run: |
+          if [ ! -d .paridyum/knowledge/scripts ]; then
+            echo "::error::.paridyum/knowledge/ is absent — run 'forge knowledge sync' (ADR-0001)"
+            exit 1
+          fi
+      # H3 (2026-08-09): check-knowledge.sh was absent here, so a repository that correctly
+      # called this shared workflow — exactly as locked ADR-0021 requires — failed the live
+      # `repo.ci_runs_knowledge_check`, which greps a workflow for that string. The compliant
+      # design failed a compliant check, and it is fixed in one line rather than by exempting
+      # anybody.
+      - run: .paridyum/knowledge/scripts/check-knowledge.sh
+      - run: .paridyum/knowledge/scripts/check-repo.sh --root .
+      - run: .paridyum/knowledge/scripts/check-migrations.sh
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Full history: a secret added and later "removed" is still in the history,
+          # and history is what an attacker clones. gitleaks on a shallow clone scans
+          # only the commits present and still reports success.
+          fetch-depth: 0
+      # This job did not exist, so every Rust repository had NO secret scan at all
+      # while C-0004 declared repo.secret_scan_clean an `error` for all of them.
+      # GitHub's own scanning is unavailable on Free private repos (ADR-0004).
+      - run: .paridyum/knowledge/templates/infra-ci/scripts/secret-scan.sh --history
+
+  changelog:
+    name: changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Format only. STD-0005 deliberately does NOT require an entry per PR: gating
+      # every change on a changelog line teaches people to add noise to pass the check.
+      - run: .paridyum/knowledge/templates/infra-ci/scripts/check-changelog.sh CHANGELOG.md
+
+  lifecycle:
+    name: change lifecycle
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      # Significance is computed from the diff, never self-declared (ADR-0013).
+      - run: |
+          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          .paridyum/knowledge/templates/infra-ci/scripts/check-significance.sh \
+            "origin/${{ github.base_ref }}" /tmp/pr-body.txt
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+  deny:
+    name: licences and advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # The action runs in a musl container, and rust-toolchain.toml makes cargo demand a
+      # toolchain that container does not have: `override toolchain '<pin>-x86_64-unknown-linux-musl'
+      # is not installed`. Setting RUSTUP_TOOLCHAIN=stable only moved the failure to
+      # `stable-x86_64-unknown-linux-musl`. The file itself must not apply — so it is moved aside
+      # for this job and restored after.
+      #
+      # Safe because licence and advisory checking reads Cargo.lock and compiles nothing. In every
+      # other job the pinned compiler is the entire point; here it is irrelevant.
+      - name: Hide the toolchain pin from the musl container
+        run: test -f rust-toolchain.toml && mv rust-toolchain.toml rust-toolchain.toml.ci-hidden || true
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with: { command: check bans licenses sources advisories }
+      - name: Restore the toolchain pin
+        if: always()
+        run: test -f rust-toolchain.toml.ci-hidden && mv rust-toolchain.toml.ci-hidden rust-toolchain.toml || true
+
+  msrv:
+    name: msrv
+    if: inputs.msrv != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with: { toolchain: "${{ inputs.msrv }}" }
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - run: cargo check --all-features --all-targets
+
+  # Single gate for callers to reference, so a required-check list does not need
+  # updating every time a job is added. Matters on plan upgrade (ADR-0004).
+  ci-passed:
+    name: ci
+    if: always()
+    # `mutants` is deliberately absent: it belongs to the non-blocking nightly tier
+    # (STD-0008), and a tier declared non-blocking that gates the release is a table
+    # claiming something the pipeline contradicts. `regression` is present and skips
+    # cleanly outside a pull request, which the `skipped` result below tolerates.
+    needs: [fmt, clippy, test, coverage, docs, deny, changelog, regression, governance]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs succeeded
+        run: |
+          if echo '${{ toJSON(needs) }}' | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "::error::one or more CI jobs failed"; exit 1
+          fi
+          echo "all jobs passed"

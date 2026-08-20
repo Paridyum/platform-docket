@@ -1,0 +1,88 @@
+# External framework identifiers a Paridyum control may map to.
+#
+# WHY THIS EXISTS RATHER THAN FREE-TEXT MAPPINGS
+#
+# The whole value of a framework mapping is that it is checkable. A control claiming
+# `ssdf: [PW.99]` when no such task exists is worse than an unmapped control: it reads as
+# coverage, survives review, and produces a compliance percentage that is a fiction. This
+# repository has found that failure mode five times in other guises — a check verifying
+# less than its name implied — and a mapping is the easiest place yet to introduce it,
+# because nobody has the framework memorised.
+#
+# So the same pattern applies as everywhere else: the identifier space is registry data,
+# the rule lives in the artifact, and an id outside this file is a hard failure
+# (`knowledge.framework_ids_resolve`).
+#
+# THE DIRECTION OF THE MAPPING MATTERS
+#
+# A Paridyum control maps OUT to framework ids. Frameworks are never the source of truth
+# and no policy is written to satisfy one. That is deliberate: writing a NIST policy, a CIS
+# policy and a SOC 2 policy produces three documents that drift, and the drift is invisible
+# because each looks complete on its own. One internal control, many mappings.
+#
+# COVERAGE IS NOT COMPLIANCE
+#
+# A mapping says "this control contributes to that outcome". It does not say the outcome is
+# met — most framework outcomes need several controls plus operational evidence this
+# repository does not yet collect (REQ-0012). Do not derive a compliance percentage from
+# this file. That number would be the most confidently wrong artifact in the system.
+#
+# Only frameworks actually used for mapping are listed. Adding one is an entry here plus
+# the mappings; ISO 27001 and SOC 2 are deliberately absent until REQ-0012 triggers.
+
+version: 1
+
+frameworks:
+  - framework: ssdf
+    title: NIST SP 800-218, Secure Software Development Framework v1.1
+    id_pattern: '^(PO|PS|PW|RV)\.[0-9]+\.[0-9]+$'
+    declared: 2026-08-08
+    notes: >
+      Four practice groups — Prepare the Organization, Protect Software, Produce
+      Well-Secured Software, Respond to Vulnerabilities — over 19 practices and 42 tasks.
+      Task ids are the mapping target because a practice id is too coarse to be checkable.
+      Chosen as the primary mapping because it governs the software development lifecycle,
+      which is what this repository actually governs. A newer Rev. 1 draft (SSDF 1.2)
+      exists; mapping to task ids rather than restating practice text is what lets that
+      change without rewriting a single control.
+
+  - framework: cis
+    title: CIS Critical Security Controls v8.1
+    id_pattern: '^(1[0-8]|[1-9])(\.[0-9]+)?$'
+    declared: 2026-08-08
+    notes: >
+      18 controls, 153 safeguards. Either a control number ("16") or a safeguard
+      ("16.11"). v8.1 added alignment with CSF 2.0's Govern function.
+      Used as the practical baseline rather than SP 800-53, which is a 1000-control
+      catalogue sized for federal systems and would take longer to map than to implement.
+
+  - framework: csf
+    title: NIST Cybersecurity Framework 2.0
+    id_pattern: '^(GV|ID|PR|DE|RS|RC)\.[A-Z]{2}(-[0-9]{2})?$'
+    declared: 2026-08-08
+    notes: >
+      Six functions — Govern, Identify, Protect, Detect, Respond, Recover — with Govern
+      added in 2.0, which is why it works as the top-level taxonomy for a repository whose
+      subject is governance. Category (PR.AA) or subcategory (PR.AA-01).
+      CSF is a taxonomy of OUTCOMES rather than an implementation, so a mapping here says
+      which outcome a control contributes to, never that the outcome is achieved.
+
+  - framework: asvs
+    title: OWASP Application Security Verification Standard
+    id_pattern: '^V[0-9]+(\.[0-9]+)*$'
+    declared: 2026-08-08
+    mapping_deferred_to: REQ-0015
+    notes: >
+      Application-layer security requirements. Almost nothing in this repository maps to
+      it yet, and that is the honest state: ASVS governs running applications and there
+      are none. Registered now so the first service can map without inventing a scheme.
+
+  - framework: slsa
+    title: Supply-chain Levels for Software Artifacts
+    id_pattern: '^(L[0-4]|[a-z-]+)$'
+    declared: 2026-08-08
+    mapping_deferred_to: REQ-0014
+    notes: >
+      Build integrity and provenance. A level (L2) or a named requirement.
+      Currently unmapped: SLSA is about the build pipeline producing signed provenance for
+      release artifacts, and this repository produces no artifacts. Tracked in REQ-0014.

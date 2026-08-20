@@ -1,0 +1,328 @@
+# Paridyum product registry — the single source of truth, declared under ADR-0050.
+#
+# FIFTH INSTANCE of a pattern this repository has now used four times. ADR-0014 moved check
+# ids out of code into check-registry.yaml. ADR-0015 moved scope resolution from an
+# enumeration to a rule. C-0005 moved repository classes out of a locked prose table into
+# class-registry.yaml. ADR-0022 moved the artifact-type list out of fifteen hardcoded sites.
+# Each time, the defect was the same: a list that must be extended, held somewhere extending
+# it is expensive. The product list is the next one, and it is being written before it is
+# long rather than after — which is the only difference between this instance and the four
+# that preceded it.
+#
+# WHY A FOURTH AXIS. `scope` selects repository classes (ADR-0015) and `applies_to` narrows
+# to repository names. Both address the estate by how it is BUILT. Neither can express "the
+# artifacts binding the invoicing product", because one product spans a platform service, a
+# spec- contract and a web repository, while one repository — platform-tenancy — serves every
+# product there will ever be. A product is therefore not a class and must never become a
+# scope value. artifact-registry.yaml's header states the general form of this mistake:
+# conflating independent axes is what made the old rules special-cased.
+#
+# GENERATES, rather than duplicates:
+#   knowledge.schema.json   nothing — `product` is a free slug array, validated by
+#                           membership here rather than by an enum, because an enum in the
+#                           schema would put the product list back in a second place.
+#
+# CHECKED against this file:
+#   knowledge.product_slugs_resolve       every `product:` entry in frontmatter is registered
+#   product.stage_dossier_complete        each product carries what its kind and stage require
+#   product.sequencing_respects_second_vertical_rule   C-0006 anti-goal 6, as registry state
+#
+# THIS FILE DOES NOT LIST REPOSITORIES, and the omission is deliberate. A repository declares
+# which product it serves in its own manifest.yaml, and the mapping is read in that direction
+# only. RFC-0015 — a fact has one home. ADR-0040 already decided that cross-repo views are
+# GENERATED from manifests rather than hand-authored, and a `repos:` key here would be exactly
+# the hand-authored view it forbids, kept correct by nothing but attention.
+#
+# WHAT A `kind` IS FOR. C-0008 makes every runtime capability a product and gives the boundary
+# test: if tenant traffic can reach it, it is a product; if it only runs at build time or in a
+# pipeline, it is not. That test decides MEMBERSHIP of this file. It does not decide what
+# evidence each member owes, and treating it as though it did produces ceremony with no
+# customer at the end of it — demanding a TAM analysis from `platform-identity` is not
+# governance, it is paperwork. So `kind` carries the dossier, and the three kinds owe
+# genuinely different things:
+#
+#   platform    Paridyum itself. Its market is already argued at org level — C-0006 states
+#               the posture, BET-0006 the segment, BET-0007 the price shape. It owes no
+#               separate MKT-, because the org-level artifacts ARE its market evidence.
+#   capability  A runtime capability a tenant can buy (C-0008). It owes the tenant-facing
+#               interface, not market research; the buyer is already established.
+#   catalogue   A vertical application Paridyum operates and franchises (BET-0004, BET-0005).
+#               This is the kind C-0006's obligation is about, and the only kind that owes an
+#               MKT- before it may be built.
+#
+# Schema: product-registry.schema.json. Validated by knowledge.product_registry_valid.
+# Sorted by product.
+
+version: 1
+
+# The lifecycle. Stages are ordered and a product moves forward through them; `retired` is
+# reachable from any stage. The ordering is not decoration — two of the transitions are the
+# mechanical form of a C-0006 anti-goal, and they are the reason this block exists at all.
+stages:
+  - stage: proposed
+    description: A candidate. Nothing is being built.
+    declared: 2026-08-17
+
+  - stage: building
+    description: Chosen and under construction. No paying customer yet.
+    declared: 2026-08-17
+    notes: >
+      Entry to this stage from `proposed` is the gate C-0006's anti-goal 6 describes — no
+      second vertical before the first has a renewed paying customer. That is checkable as
+      registry state and nothing else about the anti-goal is; see the honesty note below.
+
+  - stage: operated
+    description: Paridyum runs it as a real business, with real end customers of its own.
+    declared: 2026-08-17
+    notes: >
+      BET-0005's precondition and C-0006 anti-goal 1's sequencing rule: a vertical Paridyum
+      will not run itself is one it may not sell to someone else.
+
+  - stage: franchised
+    description: Sold to tenants, who run it as their own business under their own brand.
+    declared: 2026-08-17
+    notes: >
+      Unreachable except from `operated`. This is the single most valuable transition in the
+      file, because the pressure to skip it — a customer asking to buy the vertical before
+      Paridyum has run it — arrives exactly when refusing is most expensive.
+
+  - stage: retired
+    description: No longer sold or operated. The record stays; the product does not.
+    declared: 2026-08-17
+
+# What each kind owes at each stage, cumulatively. A doc kind is a line here, NOT an artifact
+# type — that is the whole design. Adding "the franchise pack needs a support runbook" is one
+# entry below; it is not a directory, a prefix, a schema enum value and five hardcoded sites.
+#
+# `artifacts` names artifact-type prefixes from artifact-registry.yaml. `slots` names things
+# that are owed but have no artifact type yet, and deliberately so: nothing has reached the
+# stage that needs them, and a type declared before its first instance is the empty-glossary
+# state this repository has already paid for once. A slot becomes a type the day something
+# real has to go in it, and that promotion is a registry edit plus a directory.
+dossier:
+  - kind: platform
+    stage: proposed
+    artifacts: []
+    slots: []
+    notes: >
+      Empty, and not by oversight. Paridyum's own market evidence is C-0006, BET-0006 and
+      BET-0007, which are org-scoped and bind every product including this one. Requiring a
+      duplicate MKT- here would be RFC-0015's second home for a fact that already has one.
+
+  - kind: platform
+    stage: building
+    artifacts: [REQ]
+    slots: []
+
+  - kind: platform
+    stage: operated
+    artifacts: [REQ, RUN]
+    slots: [metrics-framework]
+
+  - kind: capability
+    stage: proposed
+    artifacts: []
+    slots: []
+
+  - kind: capability
+    stage: building
+    artifacts: [REQ]
+    slots: [tenant-facing-interface]
+    notes: >
+      `tenant-facing-interface` is C-0008's rule stated as a dossier obligation: no runtime
+      capability is built that only Paridyum could consume, so the interface a tenant would
+      buy it through is owed at build time rather than retrofitted. It is a slot rather than
+      an artifact type because the interface is a spec- repository, not a knowledge artifact —
+      ADR-0049 carries the mechanical half.
+
+  - kind: capability
+    stage: operated
+    artifacts: [REQ, RUN]
+    slots: [tenant-facing-interface]
+
+  - kind: catalogue
+    stage: proposed
+    artifacts: [MKT]
+    slots: []
+    notes: >
+      THE OBLIGATION THIS WHOLE REGISTRY WAS WRITTEN TO SATISFY. C-0006 requires that every
+      vertical Paridyum enters "must be recorded in an artifact naming the evidence that
+      selected it, and that evidence may not be tenant-derived." Before MKT- existed there
+      was nowhere to record it, so the requirement was live and unsatisfiable — written into
+      the constitution and binding on nobody.
+
+  - kind: catalogue
+    stage: building
+    artifacts: [MKT, REQ]
+    slots: [product-contract]
+    notes: >
+      `product-contract` is the spec- repository RFC-0009 Revision 2 moved the contract into:
+      what a catalogue product declares about its Zitadel project, role vocabulary, audience
+      and tenancy scope.
+
+  - kind: catalogue
+    stage: operated
+    artifacts: [MKT, REQ, BET, RUN]
+    slots: [product-contract]
+    notes: >
+      The BET- is the price. BET-0007 decides the SHAPE org-wide — a floor plus a royalty —
+      and a per-product bet decides the numbers under it. That is the product axis doing the
+      work it was added for: the same artifact type, at two levels, without a second type.
+
+  - kind: catalogue
+    stage: franchised
+    artifacts: [MKT, REQ, BET, RUN]
+    slots: [product-contract, go-to-market, sales-playbook, support-sla, renewal-evidence]
+    notes: >
+      Four of the five slots are the umbrellas a generic startup documentation stack would
+      have demanded on day one. They are owed HERE, at the stage where a franchisee exists to
+      read them, and nowhere earlier. `renewal-evidence` is the one that is not a document
+      about selling but the fact that makes selling permissible — C-0006 anti-goal 6 counts
+      renewed customers, not signed ones.
+
+products:
+  - product: paridyum
+    name: Paridyum
+    kind: platform
+    stage: building
+    declared: 2026-08-17
+    notes: >
+      PRODUCT ZERO, and the entry that makes this registry honest rather than a list of other
+      people's software. C-0008 states that Paridyum is tenant zero and never a privileged
+      one; this is the same principle one level up. Paridyum is a product in the registry that
+      governs products, carrying the dossier its kind owes, addressable by the same
+      `product: [paridyum]` selector any other product uses.
+      The alternative was an unregistered operator governing a registry of the things it
+      sells, which is precisely the asymmetry C-0008 exists to forbid — and it would have been
+      invisible, because nothing looks more natural than the platform being the exception.
+      `stage: building` is the honest reading of the ROADMAP: knowledge, tool-forge and
+      infra-ci exist, no runtime capability is deployed, and there is no paying customer. It
+      is not `operated` — Paridyum does not yet run a business on its own runtime, which is
+      the whole content of phase 3b.
+
+  - product: entitlement
+    name: Entitlement
+    kind: capability
+    stage: proposed
+    declared: 2026-08-17
+    notes: >
+      Plan, quota, usage meter and the enforcement of them. C-0006 non-commodity item 1 names
+      this as ours to build; ADR-0042 makes it one of the five first-wave contexts. Registered
+      at `proposed` because nothing is built — the registry records the product space as it
+      is, not only the parts that are populated, which is the rule artifact-registry.yaml
+      already applies to `pattern`.
+
+  - product: identity
+    name: Identity
+    kind: capability
+    stage: proposed
+    declared: 2026-08-17
+    notes: >
+      RFC-0012 — identity is a product built on Zitadel — is the artifact that first stated
+      the thing this registry generalises. C-0008 uses it as the worked example: identity is
+      not Paridyum's authentication that tenants are permitted to borrow, it is a product, and
+      Paridyum happens to be the first tenant to buy it.
+
+  - product: routing
+    name: Routing
+    kind: capability
+    stage: proposed
+    declared: 2026-08-17
+    notes: >
+      Domain, tenant resolution and the request path into a product. ADR-0042, first wave.
+
+  - product: tenancy
+    name: Tenancy
+    kind: capability
+    stage: proposed
+    declared: 2026-08-17
+    notes: >
+      The nested isolation model — ADR-0023, ADR-0024, GLO-0004. C-0006 non-commodity item 2
+      calls provable isolation the clearest difference between selling infrastructure and
+      selling a runtime, which makes this the capability whose tenant-facing interface matters
+      most and the one most likely to be built as an internal mechanism first.
+
+  - product: hosting
+    name: Managed application hosting
+    kind: catalogue
+    stage: proposed
+    declared: 2026-08-18
+    notes: >
+      THE FIRST CATALOGUE PRODUCT REGISTERED, and it is registered at `proposed` deliberately.
+      A catalogue of hosted applications — WordPress and similar containerised software — run
+      for end customers and priced per running workload, per BET-0009.
+      THE DOSSIER OBLIGATION IS MET, which is why this is registerable at all. `catalogue` at
+      `proposed` owes MKT- artifacts naming the evidence that selected the market, and C-0006
+      requires that evidence not be tenant-derived. MKT-0001 measures the cost of a gigabyte
+      across four substrates, MKT-0002 records how infrastructure is monetised and how small
+      providers fail, and MKT-0003 bounds the India residency claim. All three are external and
+      dated; none is tenant-derived, because there are no tenants.
+      `stage: proposed` AND NOT `building`, and the distinction is the whole point of this
+      entry. Entry to `building` is the gate C-0006 anti-goal 6 describes, and this file's own
+      footer warns that the registry counts and is not neutral about breadth. Nothing is being
+      built here yet: RFC-0025 is `proposed` and its three blocking questions are open.
+      ⚠️ PROMOTING THIS TO `building` PROBABLY ANSWERS T-0.6. The ROADMAP's phase 0 exit gate
+      reads "vertical one chosen" and treats that as an open question. If hosting becomes a
+      catalogue product under construction, it is either vertical one or it competes with
+      whatever vertical one turns out to be — and under anti-goal 6 the second of those is
+      forbidden until the first has a renewed paying customer. That is a strategy decision and
+      it is deliberately not taken by registering this entry.
+      ON WHETHER IT IS EVER FRANCHISED. `catalogue` admits the `franchised` stage and nothing
+      requires reaching it. BET-0009 sells hosting directly; BET-0005's operate-then-franchise
+      sequencing would still apply if that ever changed.
+
+  - product: veer-entitlements
+    name: Veer — entitlement navigation
+    kind: catalogue
+    stage: proposed
+    declared: 2026-08-18
+    notes: >
+      C-0009 OBLIGATION IV, AND THE ONLY PRODUCT IN THIS REGISTRY WHOSE REASON FOR EXISTING IS
+      CONSTITUTIONAL RATHER THAN COMMERCIAL. It is registered under exactly the same rules as
+      every other product, and that is deliberate: a covenant product exempted from the rules
+      that keep products good would be a worse product, served on the population least able to
+      absorb another well-meant one.
+      WHAT IT IS. Navigation of the entitlement estate for covenant beneficiaries (GLO-0010) —
+      the KSB / RSB / ZSB / DESW / ECHS / DGR path, where MKT-0004 finds the characteristic
+      failure is not absence of entitlement but inability to reach it, with documented eleven-year
+      and thirty-year waits caused by a Pension Payment Order routed to the wrong authority and by
+      a casualty classification nobody could see or contest.
+      THE SHAPE IS A FINDING, NOT A DECISION. MKT-0004 points at entitlement navigation; the
+      decision of what is actually built is taken when the trigger fires, in an artifact written
+      then, against evidence that is current then. Recording the shape here without recording that
+      caveat is how a market observation quietly becomes a product specification.
+      THE DOSSIER OBLIGATION IS MET. `catalogue` at `proposed` owes an MKT-, and C-0006 requires
+      the evidence not be tenant-derived. MKT-0004 is external, dated, sourced to the departments'
+      own pages and to press reporting whose bounds it states — and it is not tenant-derived,
+      because there are no tenants.
+      `stage: proposed` AND NOT `building`. Promotion is gated on C-0006 anti-goal 6 exactly as
+      hosting's is: no second vertical before the first has a paying customer who RENEWED. C-0009
+      obligation IV states the trigger in those terms and does not grant itself an exception —
+      which is the point at which a founder's personal commitment either respects the company's
+      own rules or reveals that they were only ever for other people's ideas.
+      ⚠️ THIS ENTRY DOES NOT MAKE IT VERTICAL ONE. The ROADMAP's phase 0 exit gate — "vertical one
+      chosen" — is untouched by registering this, in the same way it is untouched by `hosting`.
+      Two catalogue products now sit at `proposed` and anti-goal 6 permits at most one to move.
+      That choice is not taken here.
+      ON PRICE. BET-0007's floor-plus-royalty shape does not apply and no per-product BET- will
+      set numbers under it. C-0009 obligation III already fixes the price at zero for
+      beneficiaries, permanently, which is a constitutional constraint rather than a pricing
+      decision — so the `operated` dossier's BET- obligation, when this ever reaches that stage,
+      is satisfied by recording that the price is fixed elsewhere and why.
+
+# THE FIRST CATALOGUE PRODUCT IS NOW REGISTERED — see `hosting` above, added 2026-08-18. The
+# paragraph below is preserved because its argument is what made that registration legitimate
+# rather than cheap, and because it still binds every product registered after this one.
+#
+# NO CATALOGUE PRODUCT WAS REGISTERED on 2026-08-17, and that absence was a statement rather
+# than a gap.
+#
+# The ROADMAP's phase 3 exit gate reads "vertical one chosen" and it is not met. BET-0005
+# supplies the criterion — which vertical can Paridyum plausibly operate as a real business,
+# in India — and C-0006 requires the evidence that answers it to be written down and not
+# tenant-derived. Registering a vertical here before that MKT- exists would invert the order
+# the dossier just declared, in the file that declares it, on its first day.
+#
+# This is also the failure mode a product registry invites and should be named where it will
+# be read: it makes registering products cheap, and cheap registration of verticals is exactly
+# what C-0006 anti-goal 6 forbids. The registry is not neutral about breadth. It counts.

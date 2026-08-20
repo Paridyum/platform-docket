@@ -1,0 +1,3268 @@
+# Paridyum check registry — the complete id-space, declared under ADR-0014.
+#
+# Every id named in any artifact's `enforced_by` must appear here. `tool-forge`'s
+# implemented registry is a SUBSET of this file:
+#
+#   cited + here + implemented  -> run it at the citing artifact's severity
+#   cited + here + not built    -> declared; reported by --audit, not a build break
+#   cited + not here            -> unresolved; hard failure, this is the typo case
+#   not cited + here            -> orphan declaration; warn
+#
+# Severity is deliberately NOT stored here. It lives in each citing artifact's
+# `enforced_by` and is preserved across declared -> implemented, so a check begins
+# enforcing at the severity that was declared for it with no second decision.
+#
+# `owner` names the component that implements it. Five values today. An entry whose
+# owner is NOT tool-forge is already implemented somewhere:
+#
+#   tool-forge          — not yet built. The bulk.
+#   infra-ci            — a CI step or a script under templates/infra-ci/.
+#   check-knowledge.sh  — the bash knowledge gate; runs in CI and pre-commit.
+#   check-repo.sh       — repository hygiene; runs in CI and pre-commit.
+#   check-migrations.sh — the ADR-0024 nested-tenancy gate; runs in CI and pre-commit.
+#   check-commits.sh    — the C-0003 identity gate; runs in CI and pre-commit.
+#   paridyum-platform   — a PreToolUse hook in the plugin; enforced live in-session.
+#
+# TWENTY CHECKS MOVED OFF tool-forge ON 2026-08-07 WITHOUT ANYTHING BEING BUILT IN RUST. They
+# had been declared `owner: tool-forge` and none of them needed Rust — they read files in a
+# checkout, which the bash gates already do. So 79 checks were waiting on one dependency while
+# roughly twenty were waiting on nothing. A check that could run today and does not is ADR-0002's
+# gap in a more comfortable form.
+#
+# `owner` is now a claim that scripts/test-checks.sh backs: a check counts as implemented only if
+# that suite plants the defect it claims to reject and watches it fail. That is the rule which
+# stops this column drifting back into a wish, and it is the audit finding from 2026-08-06 —
+# four checks reporting success while enforcing nothing — turned into a build step.
+#
+# The per-owner counts used to be written here in parentheses. They were wrong when
+# measured: the header claimed 11 for check-knowledge.sh and 3 for paridyum-platform
+# against actual values of 14 and 4, and the totals below were 111/36 against an actual
+# 113/40. Nobody had introduced an error — the counts simply were not maintained, which is
+# the third time this repository has been caught by a hand-maintained number and the reason
+# README.md now refuses to state one. The gate prints every count live in section 9 on each
+# run, so the authoritative figures are always one command away and never in a comment.
+#
+# Two distinct kinds of "implemented" hide under infra-ci, and the difference matters:
+#
+#   Running today in .github/workflows/knowledge-check.yml against this repository —
+#   the changelog.* set, repo.secret_scan_clean, repo.scripts_are_lf_only.
+#
+#   Implemented in templates/infra-ci/rust-ci.yml but running NOWHERE, because that
+#   reusable workflow is only invoked by Rust repositories and none exist yet —
+#   rustfmt.check_passes, clippy.clean_with_all_targets_all_features, docs.doc_tests_pass,
+#   rustdoc.builds_without_warnings, test.coverage_meets_threshold, and both pr.* checks.
+#   These are written and untested. Distribution, not implementation, is their gap.
+#
+# Schema: check-registry.schema.json. Validated by knowledge.declared_checks_manifest_valid.
+# Sorted by id — verified, not asserted. For the declared/implemented split, run the gate;
+# it prints it. See the note on counts above.
+
+version: 1
+
+checks:
+  # --- agent.* — live enforcement in the agent harness (ADR-0007) ------------
+  - check: agent.dangerous_commands_escalate
+    spec: >
+      Fails when a Bash command matching C-0004's protected-operation patterns is
+      permitted by the harness without escalating to a human decision.
+    owner: paridyum-platform
+    blocks: [C-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.5.1"]
+      cis: ["4.1"]
+      csf: ["PR.AA"]
+    notes: >
+      Implemented as the guard-commands PreToolUse hook. Testable only by driving
+      the hook with synthetic tool-call JSON, not by inspecting a repository — so
+      its implementation lives with the plugin and its test is a fixture suite.
+
+  - check: agent.generated_code_immutable
+    spec: >
+      Fails when the harness permits a write to a path C-0004 marks as generated
+      output rather than source.
+    owner: paridyum-platform
+    blocks: [C-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      csf: ["PR.DS"]
+
+  - check: agent.governance_files_escalate
+    spec: >
+      Fails when the harness permits an edit to a governance file — CI workflows,
+      hook registries, gate scripts, plugin manifests, the knowledge schema —
+      without escalating to a human decision.
+    owner: paridyum-platform
+    blocks: [C-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      csf: ["GV.PO"]
+    notes: >
+      guard-locked-decisions.sh escalates a superset of C-0004's enumeration,
+      which fails safe. The check must assert the enumeration is covered, not that
+      the two lists are equal, or extending the guard would break the check.
+
+  - check: agent.service_creation_escalates
+    spec: >
+      Fails when the harness permits creation of a new manifest.yaml, or a new Cargo.toml
+      under a class-prefixed repository, without escalating to a human decision.
+    owner: paridyum-platform
+    blocks: [ADR-0019]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PW.1.1", "PW.2.1"]
+      cis: ["16.10"]
+    notes: >
+      ADR-0013 rejected a PreToolUse guard on implementation because an agent cannot know
+      at first write whether a diff will be significant, so the guard fires constantly and
+      gets disabled. That reasoning does not reach service creation, which IS knowable at
+      first write and is the irreversible act. The check must therefore assert the guard
+      fires on CREATION only — a guard that also fired on editing an existing manifest
+      would reintroduce exactly the objection ADR-0013 raised.
+      `ask`, never `deny`: a spike is legitimate (ADR-0008).
+
+  # --- cargo.* — workspace and manifest shape -------------------------------
+  - check: cargo.edition_is_current
+    spec: >
+      Fails when a Cargo.toml declares an `edition` older than the current pinned
+      edition, or omits it and inherits an older default.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.6.1"]
+    notes: >
+      ADR-0005 names no edition and no args set one. Templates use 2024
+      (templates/rust-service/rustfmt.toml). The value must come from one place —
+      probably the toolchain file — or this check and the templates will drift.
+
+  - check: cargo.lib_crates_have_no_binaries
+    spec: >
+      Fails when a crate in a `lib-*` repository declares a `[[bin]]` target or
+      contains src/main.rs.
+    owner: tool-forge
+    blocks: [C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+
+  - check: cargo.members_inherit_workspace_lints
+    spec: >
+      Fails when a workspace member's Cargo.toml omits `lints.workspace = true`.
+    owner: tool-forge
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1", "PW.6.2"]
+
+  - check: cargo.no_diesel_dependency
+    spec: >
+      Fails when `diesel` or `sea-orm` appears anywhere in the dependency graph,
+      including as a transitive dependency.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.4.1"]
+      cis: ["16.4"]
+      csf: ["GV.SC"]
+    notes: >
+      Direct-dependency-only would miss the case that matters, but transitive
+      scanning will eventually false-positive on an unrelated crate that vendors
+      one. Report the dependency path so the judgement is possible.
+
+  - check: cargo.package_name_matches_repo
+    spec: >
+      Fails when a crate's `package.name` is not the repository name with its
+      class prefix replaced by `paridyum-`.
+    owner: tool-forge
+    blocks: [C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+
+  - check: cargo.toolchain_file_pinned
+    spec: >
+      Fails when rust-toolchain.toml names a channel that is not an exact version
+      — `stable`, `beta` or `nightly` rather than a pinned `1.NN.N`.
+    owner: tool-forge
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2", "PW.6.1"]
+      cis: ["16.5"]
+      csf: ["GV.SC"]
+
+  - check: cargo.toolchain_file_present
+    spec: >
+      Fails when a repository containing a Cargo.toml has no rust-toolchain.toml.
+    owner: forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2", "PW.6.1"]
+
+  - check: cargo.workspace_lints_defined
+    spec: >
+      Fails when the root Cargo.toml of a workspace declares no
+      `[workspace.lints]` table.
+    owner: tool-forge
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1", "PW.6.2"]
+
+  - check: cargo.workspace_lints_inherited
+    spec: >
+      Fails when a crate sets its own `[lints]` table instead of inheriting the
+      workspace's, silently overriding the org-wide lint set.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1"]
+    notes: >
+      Overlaps cargo.members_inherit_workspace_lints from the other direction —
+      that one catches omission, this one catches override. Keep both; either
+      alone leaves a hole.
+
+  # --- changelog.* — STD-0005, format only, never per-PR content ------------
+  - check: changelog.dates_are_iso
+    spec: >
+      Fails when a version heading in CHANGELOG.md carries a date that is not in
+      YYYY-MM-DD form.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+
+  - check: changelog.file_present
+    spec: >
+      Fails when a repository has no CHANGELOG.md at its root.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+
+  - check: changelog.format_valid
+    spec: >
+      Fails when CHANGELOG.md does not parse as Keep a Changelog 2.0.0 — missing the
+      top-level title, carrying version headings that do not match the
+      `## [x.y.z] - DATE` shape, or repeating a category heading within one version.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+    notes: >
+      Category uniqueness is folded in here rather than given its own id, and the
+      reason is a real constraint of the model: a new check id must be cited by some
+      artifact's `enforced_by`, STD-0005 is locked, so minting `changelog.
+      category_appears_once_per_version` would have left it an orphan declaration
+      until STD-0005 was superseded. New enforcement therefore either folds into an
+      already-cited check or waits for a supersession. A duplicated section is
+      genuinely a format defect, so this is the honest home rather than a workaround.
+      Found the hard way: a duplicated `### Added` was committed to this repository's
+      own CHANGELOG and only `only_canonical_categories` looked, which checks names.
+
+  - check: changelog.no_raw_commit_dump
+    spec: >
+      Fails when a changelog entry carries a commit hash or opens with a bare
+      Conventional Commit prefix such as `feat:` or `fix(scope):`.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+
+  - check: changelog.only_canonical_categories
+    spec: >
+      Fails when a `###` heading under a version is not one of exactly Added,
+      Changed, Deprecated, Removed, Fixed, Security.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+
+  - check: changelog.removed_was_deprecated_first
+    spec: >
+      Fails when a Removed entry names a feature that appears in no earlier
+      release's Deprecated section.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+    notes: >
+      Matching a Removed entry to an earlier Deprecated one is prose comparison,
+      not parsing — it will be approximate at best. Declared `warn` for that
+      reason; a strict implementation would be wrong more often than right.
+
+  - check: changelog.unreleased_section_present
+    spec: >
+      Fails when CHANGELOG.md has no `## [Unreleased]` section.
+    owner: infra-ci
+    blocks: [STD-0005]
+    declared: 2026-08-06
+
+  # --- ci.* — workflow shape and fork safety --------------------------------
+  - check: ci.actions_pinned_to_sha
+    spec: >
+      Fails when a `uses:` step references a third-party action by tag or branch
+      rather than a full-length commit SHA.
+    owner: tool-forge
+    blocks: [ADR-0010, ADR-0021]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2", "PW.4.1"]
+      cis: ["16.5"]
+      csf: ["GV.SC"]
+    notes: >
+      Must exempt first-party `Paridyum/*` reusable workflows, which are
+      referenced by ref deliberately so a fix propagates — see
+      ci.calls_shared_workflow. Without that exemption the two checks conflict.
+
+  - check: ci.calls_shared_workflow
+    spec: >
+      Fails when a repository's CI workflow defines its own build, test and lint
+      jobs instead of calling the shared reusable workflow ADR-0021 specifies.
+    owner: tool-forge
+    blocks: [ADR-0010, ADR-0021, ADR-0046]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.1"]
+
+  - check: ci.no_actions_rs_actions
+    spec: >
+      Fails when any workflow step uses an action under the `actions-rs/`
+      namespace.
+    owner: tool-forge
+    blocks: [ADR-0010, ADR-0021]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.4.4"]
+      cis: ["16.5"]
+      csf: ["GV.SC"]
+
+  - check: ci.no_pull_request_target
+    spec: >
+      Fails when any workflow declares a `pull_request_target` trigger.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.5.1"]
+      cis: ["16.7"]
+    notes: >
+      Currently passes across this repository and the templates. Cheap to
+      implement and the highest-severity thing in the ci namespace — a good
+      candidate for an early declared -> implemented move.
+
+  - check: ci.permissions_declared
+    spec: >
+      Fails when a workflow or a job within it declares no `permissions:` block,
+      inheriting the token's default scope rather than the least privilege
+      ADR-0021 sets.
+    owner: forge
+    blocks: [ADR-0010, ADR-0021]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.5.1"]
+      cis: ["6.8"]
+      csf: ["PR.AA"]
+
+  - check: ci.secret_jobs_guarded_on_fork
+    spec: >
+      Fails when a job referencing `secrets.` has no condition excluding pull
+      requests from forks, so it fails opaquely rather than skipping.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.5.1", "PS.1.1"]
+      csf: ["PR.DS"]
+
+  # --- clippy.* -------------------------------------------------------------
+  - check: clippy.clean_with_all_targets_all_features
+    spec: >
+      Fails when `cargo clippy` run with the flags STD-0012 specifies emits any
+      warning or error.
+    owner: infra-ci
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.7.2", "PW.8.2"]
+      cis: ["16.12"]
+
+  - check: clippy.cognitive_complexity_within_threshold
+    spec: >
+      Fails when clippy's cognitive_complexity lint fires, meaning a function
+      exceeds the threshold set in clippy.toml.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1"]
+    notes: >
+      Threshold is 20 in templates/rust-service/clippy.toml, alongside
+      too-many-arguments-threshold 8. STD-0004 cites the check without restating
+      the number, so clippy.toml is the single source — do not hardcode it here.
+
+  # --- crate.* --------------------------------------------------------------
+  - check: config.env_vars_match_scheme
+    spec: >
+      Fails when an environment variable set in a Helm values file, a Dockerfile or a
+      CI workflow of a `deployable: true` repository is not
+      PARIDYUM_<CAPABILITY>_<SETTING> in SCREAMING_SNAKE_CASE, or names a capability
+      that is not the repository's own.
+    owner: tool-forge
+    blocks: [C-0007]
+    declared: 2026-08-09
+    notes: >
+      A NEW NAMESPACE, and the reason it is not `repo.` is that `repo.` is repository
+      SHAPE. An environment variable appears in three file types owned by three
+      different gates, and overloading the shape namespace with configuration content
+      would make the largest namespace in the registry the least predictable.
+      ONE check spanning three file types rather than three narrow ones, following
+      module.no_grabbag_names, which spans repository, crate and module names in one id
+      and says so. The cost is the same: a failure names the rule rather than the file
+      type, so the message must carry the path or it is not actionable.
+      Binds `deployable: true` from class-registry.yaml, not a prefix glob — an SDK is a
+      published artifact and a mobile app bakes configuration at build time. Neither
+      reads a process environment.
+      Third-party variables are out of scope: `PATH`, `HOME` and a vendor's own
+      documented name are not Paridyum configuration and must not be rewritten to satisfy
+      this. Only variables this platform defines are in scope, which is a judgement the
+      implementation has to encode rather than infer.
+
+  - check: covenant.disbursement_record_current
+    spec: >
+      Fails when COVENANT.md has no ledger entry, or when the most recent `declared:` date in
+      it is more than 365 days old.
+    owner: check-knowledge.sh
+    blocks: [C-0009]
+    declared: 2026-08-18
+    notes: >
+      A NEW NAMESPACE, and it is not `knowledge.` because this check is not about artifact
+      integrity. `knowledge.` verifies that the repository's rules are well-formed and resolve;
+      this verifies that an obligation OUTSIDE the repository was discharged and recorded. Filing
+      it under `knowledge.` would make the largest namespace in the registry mean two things,
+      which is the argument `config.` already won.
+      WHAT IT CANNOT DO, stated here because the gap is larger than usual and C-0009's
+      `enforced_by` rationale points at this note. It cannot verify the amount, the revenue base,
+      the eligibility of recipients under GLO-0010, or whether obligation III was honoured for
+      anyone who asked. It verifies that a dated entry exists and is under a year old. The value
+      is narrow and real: the failure mode of a commitment like this is silence rather than
+      repeal — a tight year, nobody deciding anything, no entry written — and silence is exactly
+      what a staleness check converts into a red gate. A false entry becomes a deliberate lie
+      instead of a drift. That is the whole claim; nothing more should be read into it passing.
+      NO SUBJECT YET, and this is the ADR-0002 hazard the CHANGELOG already records this
+      repository walking into twice: two of the three ADR-0050 checks ran against empty inputs
+      and reported success while having nothing to check. This one has an opening ledger entry
+      dated 2026-08-18, so a staleness check has something to read from day one — but there is no
+      revenue and therefore no disbursement to be right or wrong about. C-0009 is `accepted`
+      rather than `locked` for precisely this reason, and is promoted on first revenue.
+      `owner: check-knowledge.sh` because it needs no Rust: it reads one file in the checkout and
+      compares a date, which the bash gates already do. Per the header's twenty-checks note, a
+      check that could run today and does not is ADR-0002's gap in a more comfortable form.
+      THE 365-DAY WINDOW IS ANNUAL BY INTENT, matching the financial year the tithe is computed
+      over. A shorter window would fail during the ordinary gap between year end and the accounts
+      being final; a longer one would let a full year pass unrecorded, which is the exact event
+      this exists to catch.
+
+  - check: crate.public_api_is_documented
+    spec: >
+      Fails when a `pub` item reachable from the crate root has no doc comment.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+    notes: >
+      Duplicates rustdoc.missing_docs_denied in effect. Both are declared because
+      two artifacts named them independently; whichever is implemented first
+      should make the other an alias rather than a second traversal.
+
+  # --- data.* ---------------------------------------------------------------
+  - check: data.regulated_class_requires_control_evidence
+    spec: >
+      Fails when a migration classifies a column as `phi`, `pci` or `financial-record`
+      and the repository's manifest names no control framework, or names one for which
+      no evidence artifact exists.
+    owner: check-migrations.sh
+    blocks: [ADR-0041, ANTI-0007, STD-0006]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PO.1.2", "PO.4.2"]
+      cis: ["3.1"]
+      csf: ["GV.OC", "ID.RA"]
+    notes: >
+      The one part of ANTI-0007 that is mechanically decidable. Whether a template is
+      "regulated" is a judgement — whether a migration wrote a column claiming to hold
+      protected health information is not, and that declaration is the point where the
+      liability attaches.
+      Deliberately keyed on the CLASSIFICATION rather than on column names. A `diagnosis`
+      column is obvious and a `notes` column holding the same text is not, so guessing
+      from names would produce false confidence in exactly the case that matters. REQ-0003
+      makes classification mandatory at the migration that creates the column; this check
+      is worth nothing until that requirement is current, and it says so rather than
+      shipping a name heuristic that looks like enforcement.
+
+  # --- db.* -----------------------------------------------------------------
+  - check: db.account_scoped_tables_carry_tenant_id
+    spec: >
+      Fails when a table declares an `account_id` column without also declaring `tenant_id`,
+      or when a query predicate filters on `account_id` without also constraining `tenant_id`.
+    owner: check-migrations.sh
+    partial: true
+    blocks: [ADR-0024]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["3.3"]
+      csf: ["PR.DS", "PR.AA"]
+    notes: >
+      Account surrogate values are unique within a tenant, not globally, so two tenants can hold
+      accounts with the same id. A predicate on `account_id` alone therefore crosses the OUTER
+      silo — a business reading another business's data — while looking like a correctly scoped
+      inner-silo query. That is the worst combination available: maximum severity, minimum
+      visibility in review.
+      The schema half is easy and the query half is not. Static detection of predicates needs
+      either a typed query builder the check can inspect or SQL parsing; the honest position is
+      that the schema half ships first and the query half depends on how the data layer is
+      built. Declaring both in one id rather than two keeps the rule whole, and the partial
+      implementation must be recorded as `partial: true` rather than reported as complete.
+
+  - check: db.locale_columns_are_bcp47_text
+    spec: >
+      Fails when a migration declares a column named locale, language, lang or with a
+      _locale or _language suffix using a fixed-width character type narrower than a BCP 47
+      tag — char(n) or varchar(n) — rather than text.
+    owner: check-migrations.sh
+    blocks: [GLO-0006, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      Keyed on the column NAME, which is the same compromise data.regulated_class... makes in
+      the opposite direction and with the opposite risk profile: a locale column called
+      something else is missed, but a false positive is impossible and the fix is free.
+      `char(2)` is the case that matters — it truncates `en-IN` to `en` at write time, so the
+      region is gone before any migration could recover it. The threshold is a width, not a
+      type: `varchar(64)` holds every legal tag and is only rejected for tidiness, so the
+      check tests n < 35 rather than rejecting varchar outright. 35 is RFC 5646 §4.4.1's
+      RECOMMENDED BUFFER SIZE, not a maximum — the ABNF imposes no upper bound and extension or
+      private-use subtags legitimately exceed it, so `varchar(35)` passes this check and can still
+      truncate a legal tag. `text` is the rule; the threshold only decides what is loud.
+
+  - check: db.money_amounts_are_integral
+    spec: >
+      Fails when a migration declares a monetary column — one whose name ends in _minor, or
+      is amount, price, cost, fee, total, subtotal or balance, or carries those as a suffix —
+      using real, double precision, float, numeric, decimal or the Postgres money type.
+    owner: check-migrations.sh
+    blocks: [ADR-0033]
+    declared: 2026-08-08
+    notes: >
+      `numeric` is rejected alongside the floating-point types even though it is exact. That
+      is deliberate and it is the entry most likely to be argued with: numeric says nothing
+      about scale, so it needs the _minor convention anyway, and permitting it means a
+      reviewer has to distinguish `numeric` from `real` by eye on every migration. The
+      Postgres `money` type is rejected for a different reason — its input and output are
+      locale-dependent and its scale comes from a server setting.
+
+  - check: db.money_columns_declare_currency
+    spec: >
+      Fails when a migration declares a monetary column on a table that carries no currency
+      column, or when the monetary column does not use the mandatory _minor suffix.
+    owner: check-migrations.sh
+    blocks: [ADR-0033, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      This repository's own `pass` fixture violated this on the day the check was declared —
+      `invoices.amount bigint` with no currency anywhere on the table — which is the argument
+      for the check rather than a coincidence: the fixture is what a new service is pattern
+      matched against. Adjacency is checked at table granularity, not column granularity, so
+      a table with two amounts in different currencies passes while being wrong. That case
+      needs a per-amount currency and no check can tell it from the correct one.
+
+  - check: db.no_non_unicode_encoding
+    spec: >
+      Fails when a migration or an accompanying database-creation statement declares an
+      encoding, LC_COLLATE, LC_CTYPE or collation that is not UTF-8 — SQL_ASCII, LATIN1 and
+      any single-byte encoding.
+    owner: check-migrations.sh
+    blocks: [STD-0010]
+    declared: 2026-08-08
+    notes: >
+      The narrowest check in this set and the one whose failure is least recoverable, which
+      is why it exists despite the narrowness. It can only see an encoding a migration
+      STATES, and the common case is a database created by infrastructure rather than by SQL
+      — so a green result here is not evidence the database is UTF-8. STD-0010 cost 2 records
+      that hole rather than leaving it implied. SQL_ASCII is the specific target: it is not
+      "ASCII only", it is no encoding at all, so it accepts every insert and corrupts on the
+      first comparison.
+
+  - check: db.no_tenant_id_from_client_input
+    spec: >
+      Fails when a `tenant_id` or `account_id` value reaching a query originates from a request
+      body, query string, path segment or client-supplied header rather than from the verified
+      session context.
+    owner: tool-forge
+    blocks: [ADR-0023, ADR-0024, ADR-0038]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PW.5.1"]
+      cis: ["16.10"]
+      csf: ["PR.AA"]
+    notes: >
+      The whole tenancy model rests on one value being untrusted from the client, and this
+      is the check for it. Row-level security is enforced against a session variable; if an
+      attacker can set that variable by naming it in a JSON body, RLS is applied correctly
+      to the wrong tenant and every other control still reports healthy.
+      Cheaper and more reliable in the framework than in a linter: the session context type
+      should be the only thing that can produce a tenant id, so the type system rejects the
+      alternative and this check becomes a defence against the type being bypassed rather
+      than the primary control. Declared at `error` because a warn-level severity on a
+      cross-tenant read is not a severity anyone would choose deliberately.
+
+  - check: db.operator_scope_is_an_explicit_grant
+    spec: >
+      Fails when operator scope — a session permitted to read every account of a tenant — is
+      derived from a missing, null, empty or wildcard `account_id` rather than from an explicit
+      positive claim in the verified session.
+    owner: check-migrations.sh
+    blocks: [ADR-0024]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["6.8"]
+      csf: ["PR.AA"]
+    notes: >
+      The load-bearing check of ADR-0024 and the one genuinely new hazard over ADR-0023.
+      ADR-0023's risk was a MISSING column, which is an omission a check sees directly. This
+      risk is a PERMISSIVE DEFAULT, and absence is what every kind of bug produces: a dropped
+      session field, an uninitialised variable, a lookup returning null, a middleware ordering
+      mistake. Each of those escalates an end user to read the entire tenant, and none of them
+      errors — the query runs, the rows return, and row-level security is applied exactly as
+      written to the wrong scope.
+      Encoded as a positive claim the same bugs fail closed and loud. So the check is about the
+      REPRESENTATION of a grant, not about whether a grant exists, which makes it unusual: it can
+      be satisfied on paper by code that still leaks. It is worth having anyway, because the
+      representation is what makes the leak possible.
+      Same argument shape as ADR-0023's ENABLE-versus-FORCE and as the guard-locked-decisions.sh
+      hole ADR-0022 found: a default that grants is a guard narrower than it looks.
+
+  - check: db.row_level_security_enabled_on_tenant_tables
+    spec: >
+      Fails when a table declaring a `tenant_id` column does not have ROW LEVEL SECURITY
+      enabled and FORCED, has no policy referencing the session tenant variable, or — on a table
+      also declaring `account_id` — has no second predicate constraining the account.
+    owner: check-migrations.sh
+    blocks: [ADR-0023, ADR-0024, ADR-0045]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["3.3", "6.8"]
+      csf: ["PR.DS", "PR.AA"]
+    notes: >
+      `ENABLE` without `FORCE` exempts the table owner, and migrations usually run as the
+      owner — so a table can have RLS enabled, policies defined, and no isolation at all
+      for the role the application actually connects as. That gap is the reason this check
+      names both keywords rather than testing for the feature.
+      Verifiable against a live schema by querying pg_class.relrowsecurity and
+      relforcerowsecurity, which is more trustworthy than parsing migrations, because it
+      measures the state that exists rather than the state the files intended.
+
+  - check: db.session_context_accessors_fail_closed
+    spec: >
+      Fails when a migration defines paridyum.current_tenant, paridyum.current_account or
+      paridyum.has_operator_scope with a body that can return NULL — no RAISE on an unset or
+      empty current_setting, or a COALESCE/default that substitutes a value for an absent one.
+    owner: check-migrations.sh
+    blocks: [ADR-0038, ADR-0045, ADR-0047]
+    declared: 2026-08-08
+    notes: >
+      One line of SQL carries ADR-0024's entire isolation model. A `RETURN NULL` where a `RAISE`
+      belongs makes `tenant_id = current_tenant()` never true — which reads as fail-closed and is
+      luck, not design — while `has_operator_scope()` returning NULL makes the operator branch of
+      an OR *unknown*, and any policy written as `NOT has_operator_scope()` inverts.
+      This is GLO-0005's hazard at the root: absence must never produce breadth. Decidable by
+      reading the function body, which is why it is an error rather than a review note.
+      It cannot see a function created outside a migration — the same hole STD-0006 cost 2
+      records for the whole gate.
+
+  - check: db.tables_are_plural_snake_case
+    spec: >
+      Fails when a CREATE TABLE in a migration names a table that is not plural
+      snake_case, or when a primary key is not `id`, a foreign key is not
+      `<singular>_id`, or a timestamp column is not one of created_at,
+      updated_at, deleted_at typed timestamptz.
+    owner: check-migrations.sh
+    partial: true
+    blocks: [C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+    notes: >
+      Pluralisation cannot be decided lexically — `data`, `metadata`, `series`
+      have no distinct plural. Needs an allowlist of accepted-as-plural nouns or
+      it will false-positive on the first schema that uses one.
+
+  - check: db.tables_declare_their_plane
+    spec: >
+      Fails when a CREATE TABLE in a migration declares neither `control` nor `regional` as
+      its plane, via a `-- paridyum:plane` line comment immediately above it.
+    owner: check-migrations.sh
+    blocks: [RFC-0014]
+    declared: 2026-08-11
+    frameworks:
+      cis: ["3.1"]
+      csf: ["ID.AM"]
+    notes: >
+      The second declaration a table carries, and independent of the first. ADR-0024's `scope`
+      says WHOSE a row is; this says WHICH DATABASE the table is in. Once residency puts tenants
+      in per-region databases and every global fact in one, neither answers the other.
+      Not inferable, by the same argument ADR-0024 makes one level in: nothing about a table's
+      name or columns says whether it is one global row set or one set per region.
+      The failure this catches is silent and expensive — a `pii` column landing in the control
+      plane instead of a region is a cross-border transfer that every other check reports as
+      green, and REQ-0003 item 8 is the requirement it breaches.
+      Declared and implemented on the same day, and the implementation was verified by planting
+      a table with no plane directive and watching the gate reject it, per CLAUDE.md's rule that
+      a green check is unproven until it has been seen to fail.
+
+  - check: db.tenant_scoped_tables_are_regional
+    spec: >
+      Fails when a table declared tenant-scoped or account-scoped is also declared
+      `control` plane.
+    owner: check-migrations.sh
+    blocks: [RFC-0014]
+    declared: 2026-08-11
+    frameworks:
+      cis: ["3.1"]
+      csf: ["PR.DS"]
+    notes: >
+      Keyed on the DECLARED category, never on the presence of a `tenant_id` column, and the
+      distinction is load-bearing. A platform-owned table may legitimately carry a tenant id as
+      a key without being tenant-scoped — the domain-binding table that maps a hostname to a
+      region is exactly that, and ADR-0024 already treats `regions` the same way. Keying on the
+      column would reject the routing table, which must be global for the edge to work at all.
+      So this fires on what the author asserted rather than on what the schema suggests, which
+      also means it cannot catch a table declared platform-owned that is really tenant data.
+      That gap is real and is the same one ADR-0024 accepts for its own three categories.
+
+  - check: db.tenant_scoped_tables_declare_tenancy
+    spec: >
+      Fails when a CREATE TABLE in a migration does not declare exactly one of the three
+      categories ADR-0024 defines — platform-owned via the migration's explicit allowlist,
+      tenant-scoped via `tenant_id`, or account-scoped via `tenant_id` and `account_id`.
+    owner: check-migrations.sh
+    blocks: [ADR-0023, ADR-0024, STD-0006]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["3.1"]
+      csf: ["ID.AM"]
+    notes: >
+      An allowlist rather than an inference, because the two cases are genuinely
+      indistinguishable from the schema alone: `plans` is platform-owned and `invoices` is
+      tenant-scoped, and nothing about either name says which. Requiring the author to
+      declare it means the default is tenant-scoped and the exception is visible in review.
+      `blocks` names both ADR-0023 and ADR-0024. A superseded artifact keeps its `enforced_by`,
+      because only `status`, `superseded_by` and `locked_at` may move in a supersession — so
+      blocks lists ACCUMULATE across supersessions rather than transferring, and
+      knowledge.orphan_check_declarations is what makes that visible instead of silent. Three
+      entries here carry the same doubling for the same reason.
+      An outer-only policy on an account-scoped table isolates businesses from each other and
+      nobody's customers, which every dashboard reports as healthy.
+      This is the check that makes ADR-0024 survive its own success. One forgotten
+      `tenant_id` on one table is a permanent cross-tenant data leak in a shared database,
+      it cannot be detected by any test that queries as a single tenant, and it is
+      unrecoverable once real rows exist — the same shape as REQ-0003's argument about
+      personal data in year-old backups.
+
+  - check: db.timestamps_are_timestamptz
+    spec: >
+      Fails when a migration declares a column whose name ends in _at using timestamp
+      without time zone, or using a bare `timestamp`, which Postgres treats as the same
+      thing.
+    owner: check-migrations.sh
+    blocks: [ADR-0041, ADR-0044, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      C-0005 has required this since it was written and nothing enforced it: the only check
+      citing C-0005's column rules is db.tables_are_plural_snake_case, which is `partial` and
+      implements the pluralisation half only. This is the other half, declared as its own id
+      rather than by widening that one, so the partial flag there stays accurate.
+      `blocks` names STD-0010 and NOT C-0005, which is the rule this file states rather than
+      an oversight: blocks mirrors citations, and C-0005 is locked so it cannot acquire one.
+      The consequence is that a constitutional rule is enforced by a check declared under a
+      standard — legal, and worth knowing when tracing why this exists.
+      Bare `timestamp` is the dangerous spelling — it LOOKS like it carries a zone and does
+      not, and it is what most ORMs and most examples emit.
+      `date` is deliberately not rejected: a calendar date with no instant is legitimate, and
+      the check cannot tell a birth date from a misuse.
+
+  # --- docker.* -------------------------------------------------------------
+  - check: docker.image_is_distroless_or_slim
+    spec: >
+      Fails when the final stage of a Dockerfile derives from a base image that is
+      neither distroless nor a `-slim` or `-alpine` variant.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.9.1"]
+      cis: ["4.1", "16.7"]
+
+  # --- docs.* — STD-0002 ----------------------------------------------------
+  - check: docker.image_name_matches_repo
+    spec: >
+      Fails when the image name a repository builds or pushes is not
+      ghcr.io/paridyum/<repository name with the class prefix removed>.
+    owner: tool-forge
+    blocks: [C-0007]
+    declared: 2026-08-09
+    notes: >
+      The third derivation from a repository name, after cargo.package_name_matches_repo
+      and the Helm release rule. Identical in shape to the first, which is the argument
+      for it: two of the three already had checks and the untested one is the string that
+      ends up in every consumer's pull command.
+      Scope is the image NAME. Tag and digest policy belongs to REQ-0004 §2, which owns
+      the container baseline including `no :latest`, and this check must not grow into a
+      second opinion on it.
+      The registry namespace is coupled to the GitHub organisation because ghcr.io offers
+      no alternative. C-0007 records the rename consequence as an accepted cost.
+
+  - check: docket.engagement_identifier_carries_class_and_year
+    spec: >
+      Fails when an engagement identifier omits the class prefix or the year,
+      or when its class prefix is not one declared in person-classes.yaml.
+      Class is immutable for an engagement -- an engagement that was an
+      internship was one permanently -- so encoding it here is safe where
+      encoding it in a person identifier is not.
+    owner: tool-docket
+    blocks: [ADR-0051]
+    declared: 2026-08-19
+  - check: docket.identifiers_are_never_reused
+    spec: >
+      Fails when an allocated person or engagement identifier is issued a
+      second time, including after erasure. Sequence allocation takes the
+      MAXIMUM of those already used rather than a count, so removing a ledger
+      row cannot cause a reissue, and a slug stays reserved forever because
+      erasure appends rather than edits.
+    owner: tool-docket
+    blocks: [ADR-0051]
+    declared: 2026-08-19
+    notes: >
+      Reuse is the defect that makes an archive unreadable: a certificate
+      issued to an identifier in 2026 must still name the same person in 2036.
+  - check: docket.person_identifier_is_opaque
+    spec: >
+      Fails when a person identifier encodes a class, a year, a name, or any
+      other attribute that can change or become misleading. A person
+      identifier is PAR-P-<six digits>-<ISO 7064 MOD 11-2 check character>
+      and nothing else. Implemented as PersonId::new plus PersonId::parse in
+      tool-docket, and swept over ~400 identifiers by the crate's tests.
+    owner: tool-docket
+    blocks: [ADR-0051]
+    declared: 2026-08-19
+    notes: >
+      The failure this prevents is not cosmetic. An identifier carrying a
+      mutable fact stops being true -- an intern who is hired keeps a folder
+      labelled INT forever, or gets a second identifier and a split archive.
+      Enforced by construction rather than by scanning: there is no code path
+      that builds a person identifier from anything but a sequence number.
+
+  - check: docs.diagram_parses
+    spec: >
+      Fails when a fenced mermaid block in any committed markdown file does not
+      parse, or when ARCHITECTURE.md contains no mermaid block at all.
+    owner: tool-forge
+    blocks: [ADR-0040]
+    declared: 2026-08-09
+    notes: >
+      STD-0002 has required "one diagram, Mermaid, in the file" since 2026-08-06 and
+      nothing has ever parsed it. A Mermaid block with a syntax error renders on GitHub
+      as a grey box that looks like GitHub's fault, so the defect survives review.
+      `blocks: [ADR-0040]` rather than STD-0002, which is the artifact whose rule this
+      really enforces. STD-0002 is locked and a new id cannot be added to its
+      `enforced_by` without superseding it — the fourth time that constraint has forced
+      a check to be attached to a neighbouring artifact rather than its natural owner
+      (see domain.entity_has_single_owner's note for the third). ADR-0040 restates the
+      obligation in its own item 6 so the attachment is honest rather than a technicality.
+      The second clause is not redundant with docs.required_files_present: that check
+      proves the FILE exists, and a file with the diagram deleted passes it.
+
+  - check: docs.doc_tests_pass
+    spec: >
+      Fails when `cargo test --doc` reports any failure.
+    owner: infra-ci
+    blocks: [STD-0002]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.8.2"]
+
+  - check: docs.manifest_schema_valid
+    spec: >
+      Fails when manifest.yaml is absent or does not validate against
+      manifest.schema.json — including `class` and `lifecycle` being drawn from their
+      enums, `exposes.events` being a subset of `owns.events`, and `provides` declaring
+      the capability and entrypoints STD-0013 requires.
+    owner: check-knowledge.sh
+    blocks: [STD-0002, STD-0013]
+    declared: 2026-08-06
+    notes: >
+      manifest.schema.json needed no supersession: STD-0002 shows an example and
+      makes no exhaustiveness claim about its fields.
+      FULLY implemented as of 2026-08-07 against that schema via
+      scripts/lib/validate-schema.py. The bash field and enum checks are retained as
+      the fallback for when the validator cannot run, plus the one cross-field
+      invariant a JSON Schema cannot express — exposes.events must be a subset of
+      owns.events, because a service cannot publish an event it does not own.
+
+  - check: docs.no_hand_authored_architecture_model
+    spec: >
+      Fails when a repository contains a file declaring architecture systems,
+      containers or relationships in a modelling language — Structurizr DSL,
+      PlantUML C4, or D2 — outside a directory marked as generated output.
+    owner: tool-forge
+    blocks: [ADR-0040]
+    declared: 2026-08-09
+    notes: >
+      The negative half of ADR-0040. The model is manifest.yaml; a workspace.dsl is a
+      second copy of facts the manifests already own, and a second copy of an
+      enumeration is the defect this repository has been caught by five times.
+      Deliberately keyed on FILE SHAPE rather than on content, because deciding whether
+      a diagram "declares a model" is not mechanically decidable and a check that tried
+      would fail on a legitimate Mermaid rendering. The tractable subset is an
+      architecture modelling language present as hand-maintained source.
+      Generated output is exempt by directory, not by marker, because the marker is
+      C-0004's concern and this check must not become a second opinion on it.
+
+  - check: docs.no_stale_readme_commands
+    spec: >
+      Fails when a shell command in a fenced block in README.md exits non-zero
+      when executed in a clean checkout.
+    owner: tool-forge
+    blocks: [STD-0002]
+    declared: 2026-08-06
+    notes: >
+      Executing README commands is the only honest implementation and also a
+      remote-code-execution surface pointed at ourselves. Needs a sandbox and an
+      opt-out marker for commands that legitimately cannot run in CI.
+
+  - check: docs.required_files_present
+    spec: >
+      Fails when a repository is missing any file named in the check's `files`
+      argument — README.md, ARCHITECTURE.md, CHANGELOG.md, manifest.yaml.
+    owner: check-repo.sh
+    blocks: [STD-0002]
+    declared: 2026-08-06
+
+  - check: docs.service_files_present
+    spec: >
+      Fails when a repository matching `applies_to` — `svc-*` or `platform-*` —
+      is missing API.md or RUNBOOK.md.
+    owner: check-repo.sh
+    blocks: [STD-0002]
+    declared: 2026-08-06
+    notes: >
+      STD-0002 also states API.md is generated from specs/openapi.yaml and that
+      hand-editing it is a CI failure. Nothing in the id-space checks that;
+      presence is checked, provenance is not. A gap worth a future check id.
+
+  - check: docs.sop_covers_every_entrypoint
+    spec: >
+      Fails when a name declared in manifest.yaml `provides.entrypoints` does not
+      appear in SOP.md under a task heading carrying a fenced command block.
+    owner: tool-forge
+    blocks: [STD-0013]
+    declared: 2026-08-19
+    notes: >
+      This is the half that stops a stub satisfying docs.sop_present, and it is openly a
+      proxy: it proves the entrypoint is mentioned beside a command, never that the
+      mention is useful. Declared `warn` by STD-0013 and it should stay warn — STD-0011
+      states the reason, an error-severity heuristic over prose is routed around within a
+      week and then carries the appearance of a control while being none.
+      IT READS A DECLARATION RATHER THAN A DERIVATION. `provides.entrypoints` is written
+      by hand, so a binary that gains a subcommand nobody declares passes. Closing that
+      needs the command table read out of the binary itself, which is why the owner is
+      tool-forge and not check-repo.sh.
+
+  - check: docs.sop_present
+    spec: >
+      Fails when a repository declaring a `class` in manifest.yaml has no SOP.md.
+      Class-less repositories are exempt, per ADR-0015 point 6.
+    owner: check-repo.sh
+    blocks: [STD-0013]
+    declared: 2026-08-19
+    notes: >
+      A separate id rather than docs.required_files_present cited a second time with
+      different `args`: knowledge.checks_have_consistent_parameters rejects one id cited
+      with two argument sets and no recorded resolution, and STD-0002 already set the
+      precedent by minting docs.service_files_present for exactly this shape.
+      Presence only. Depth is docs.sop_covers_every_entrypoint's half, and neither of
+      them can tell whether the procedure is correct.
+
+  # --- domain.* — service boundary integrity (ANTI-0001..0003) ---------------
+  - check: docs.system_view_is_current
+    spec: >
+      Fails when a committed generated architecture view differs from the view
+      regenerated from the current set of manifest.yaml files.
+    owner: tool-forge
+    blocks: [ADR-0040]
+    declared: 2026-08-09
+    notes: >
+      Generated output fails by going stale rather than by being wrong, so regenerate-
+      and-compare is the only claim worth making. Identical in shape to the API.md rule
+      STD-0002 already models, and to knowledge.vendored_snapshot_current.
+      REQUIRES A CROSS-REPOSITORY VIEW, which makes it the one check here that cannot
+      run from a single checkout — it needs every manifest in the estate, the same input
+      domain.entity_has_single_owner's cross-repository half needs. Both are vacuous
+      while one manifest exists. Declared now so it is armed when the second appears;
+      a check that arrives after the drift is worth nothing.
+      Says nothing about whether the view is TRUE. It compares the view to the manifests,
+      and the manifests to reality is what nothing checks — see ADR-0040 cost 2.
+
+  - check: domain.entity_has_single_owner
+    spec: >
+      Fails when two repositories' manifest.yaml `owns:` blocks both declare the same
+      table, or when a repository's declared `owns.tables` and its db/grants.sql write
+      grants disagree in either direction.
+    owner: check-knowledge.sh
+    blocks: [ADR-0042, ANTI-0001]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["16.10"]
+    notes: >
+      FULLY implemented as of 2026-08-07, both halves. Declaration-versus-grants runs
+      in either direction; two repositories declaring one table is detected by scanning
+      every manifest.yaml reachable from the root. The cross-repository half is vacuous
+      while only one manifest exists and is implemented rather than deferred so it is
+      armed the moment a second appears — a check that arrives after the violation is
+      worth nothing.
+      The grants half was folded in here rather than given its own id because ANTI-0001
+      is locked and a new id could not be added to its `enforced_by` without superseding
+      it — the third time that constraint has forced a fold (see also changelog category
+      uniqueness). Evidence for REQ-0002.
+      The declaration is NOT the enforcement. Industry enforces single-writer with a
+      distinct database user per service granted write access only on owned tables
+      (Martin Thompson's Single Writer Principle). This check verifies declarations and
+      grants agree; the grant is what stops the write. Do not present a green result
+      here as proof no foreign write happened.
+
+  - check: domain.events_carry_no_rendered_text
+    spec: >
+      Fails when a published event schema declares a field named message, text, body,
+      summary, title or description whose value is a rendered sentence rather than an
+      identifier or a parameter — or when an event schema declares no event_type.
+    owner: tool-forge
+    blocks: [ADR-0032, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      The asymmetry with the API case is what justifies a separate check rather than reusing
+      the OpenAPI one: an API response can be re-rendered on the next call, and an event
+      cannot — its parameters were discarded at publish time and no consumer can ever produce
+      that sentence in another language. So this is the one place where the cost of a false
+      negative is permanent.
+      Distinguishing a rendered sentence from a legitimate identifier is not decidable in
+      general, and ANTI-0008 says so. The tractable subset is the field NAME on a payload
+      that carries no corresponding parameters — `message` with no `actor_id` is the shape.
+
+  - check: domain.no_foreign_database_access
+    spec: >
+      Fails when a repository references a database, schema or connection string for a
+      table it does not declare in `owns:`.
+    owner: tool-forge
+    blocks: [ANTI-0003]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["16.10"]
+      csf: ["PR.AA"]
+    notes: >
+      Static detection is weak and should be described as such: a connection string
+      assembled at runtime or read from a secret may be invisible. Expect it to catch
+      the careless case and miss the determined one. The real control is the per-service
+      database grant, same as ANTI-0001 — which is why REQ-0001 (per-service credential
+      delivery) is a prerequisite for enforcing this properly rather than an unrelated
+      concern.
+
+  - check: domain.no_operator_only_capability
+    spec: >
+      Fails when a repository whose class is `deployable: true` carries no declaration in
+      `manifest.yaml` of the tenant-facing interface through which its capability is bought.
+    owner: tool-forge
+    blocks: [ADR-0049]
+    declared: 2026-08-17
+    notes: >
+      C-0008's second half — no runtime capability exists that only Paridyum could consume.
+      The decidable part is the DECLARATION, not the capability: a manifest either names how a
+      tenant buys this or it does not. Whether the named interface is real is judgement, and
+      ANTI-0007's status section makes the same distinction for regulated data — the check
+      catches the moment liability attaches, not the thing itself.
+
+      SCOPED TO deployable CLASSES ON PURPOSE. ADR-0049 decision 4 exempts `tool-*` and
+      `infra-*`: they run at build time, no tenant traffic reaches them, and forcing a buyer
+      declaration onto a pipeline is ceremony with no customer at the end of it.
+
+  - check: domain.no_service_dependency_cycles
+    spec: >
+      Fails when the graph formed by every manifest.yaml `depends.services` contains a
+      cycle.
+    owner: tool-forge
+    blocks: [ADR-0042, ANTI-0002]
+    declared: 2026-08-07
+    frameworks:
+      cis: ["16.10"]
+    notes: >
+      The cheapest of the three: the graph is already declared, so this needs a check
+      rather than a mechanism. Two limits. It sees only DECLARED dependencies, so a
+      hard-coded URL is invisible. And event edges must NOT count as cycles —
+      publish/subscribe loops are legal and are the recommended fix for a synchronous
+      cycle, so a check that flagged them would forbid its own remedy. Only
+      `depends.services` participates.
+
+  - check: domain.no_tenantless_request_path
+    spec: >
+      Fails when a handler in a deployable repository reaches a data access or a domain
+      operation without a `tenant_id` derived from the verified session per ADR-0038.
+    owner: tool-forge
+    blocks: [ADR-0049]
+    declared: 2026-08-17
+    notes: >
+      ADR-0049 decision 1. THE HARDEST OF THE THREE TO BUILD and the one most worth building:
+      an operator bypass never looks like an exception at the time, it looks like the obvious
+      way to get the first thing working, and it is invisible in review afterwards because it
+      simply reads as the code.
+
+      A first implementation can be shallow — a handler that constructs a repository or query
+      without a tenant-scoped context is already the common case — and shallow is worth having
+      before deep. It cannot catch a bypass reached through indirection, which is the residue
+      ADR-0049 consequence 3 accepts as judgement.
+
+  - check: domain.operator_tenant_holds_no_extra_grant
+    spec: >
+      Fails when the tenant Paridyum operates under holds a capability grant that is not
+      published and available to any other tenant on the same terms.
+    owner: tool-forge
+    blocks: [ADR-0049]
+    declared: 2026-08-17
+    notes: >
+      ADR-0049 decision 2, and the check a prospective franchisee would actually ask to see.
+      GLO-0005 already makes operator scope a grant rather than an absence; this names the one
+      principal for whom nobody would otherwise think to check, because it is the principal
+      writing the checks.
+
+      Pairs with STD-0009: the assertion is the DENIAL. Under BET-0005, with every commercial
+      boundary declined, this and RFC-0022's access log are the whole mitigation — so this is
+      the check whose absence is most expensive, and the one most likely to pass while
+      enforcing nothing if it is written to confirm rather than to reject.
+
+  - check: domain.saga_steps_declare_compensation
+    spec: >
+      Fails when a declared cross-service workflow step has no corresponding compensating
+      operation, or when a saga declares no terminal state distinguishing a completed rollback
+      from a failed one.
+    owner: tool-forge
+    blocks: [ADR-0039]
+    declared: 2026-08-08
+    notes: >
+      ANTI-0005 requires a compensating path and does not require it to be written down, so
+      "we will compensate" has been satisfiable by intention since it was locked. The step whose
+      compensation is missing is identified during the first partial failure, which is the worst
+      moment to design one.
+      The second clause is the one most designs fail: collapsing `failed` and
+      `compensation_failed` makes a rollback that left a live Zitadel instance and a bound
+      custom domain indistinguishable from a clean one, so orphaned resources accumulate
+      invisibly.
+      Needs a machine-readable workflow declaration to check against; that shape does not exist
+      yet, which is why the owner is tool-forge rather than a bash gate.
+
+  # --- editor.* -------------------------------------------------------------
+  - check: editor.vscode_settings_committed
+    spec: >
+      Fails when .vscode/settings.json is absent from a Rust repository, or is
+      present but gitignored.
+    owner: tool-forge
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2"]
+
+  # --- git.* — C-0003 identity and attribution ------------------------------
+  - check: git.author_email_allowlisted
+    spec: >
+      Fails when a commit's author email is not in the allowlist C-0003
+      establishes.
+    owner: check-commits.sh
+    blocks: [C-0003]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      cis: ["5.1"]
+      csf: ["PR.AA"]
+
+  - check: git.commits_are_signed
+    spec: >
+      Fails when a commit carries no valid cryptographic signature.
+    owner: check-commits.sh
+    blocks: [C-0003]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      csf: ["PR.DS"]
+    notes: >
+      `warn` only while GitHub Free cannot require signatures on private repos.
+      C-0003 states the promotion to `error` happens on the plan upgrade — the
+      same coupling as org.branch_protection_reconciled.
+
+  - check: git.conventional_commit_subject
+    spec: >
+      Fails when a commit subject does not match the Conventional Commits shape
+      `type(optional-scope)!: description`, with type drawn from the accepted set.
+    owner: check-commits.sh
+    blocks: [C-0003]
+    declared: 2026-08-06
+    notes: >
+      Must exempt merge and revert commits, which git generates and whose
+      subjects cannot be made conforming.
+
+  - check: git.identity_range_non_empty
+    spec: >
+      Fails when the identity gate is invoked with an explicitly supplied commit
+      range that resolves to zero commits.
+    owner: check-commits.sh
+    blocks: [ADR-0016]
+    declared: 2026-08-06
+    notes: >
+      Exists because `origin/main..HEAD` is always empty on a push — origin/main
+      already contains the pushed commit — so the CI identity step reported success
+      having examined nothing, on every push, for the life of the workflow. An empty
+      range is still legitimate when no range was requested (the local default and
+      the --staged path); only an explicit one is an error. This is the half of the
+      fix that generalises: correcting one caller fixes one bug, refusing to pass on
+      nothing prevents the next caller reintroducing it.
+
+  - check: git.no_ai_authored_as_human
+    spec: >
+      Fails when a commit's Author is an AI identity rather than a human, where
+      AI contribution belongs in a Co-Authored-By trailer.
+    owner: check-commits.sh
+    blocks: [C-0003]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      csf: ["GV.RR"]
+
+  # --- helm.* — ADR-0003 ----------------------------------------------------
+  - check: helm.chart_lints
+    spec: >
+      Fails when `helm lint` reports an error for the chart under helm/.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+
+  - check: helm.declares_probes
+    spec: >
+      Fails when a rendered workload template declares no livenessProbe or no
+      readinessProbe.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+    notes: >
+      Must check the rendered manifest, not the template source — a probe set
+      from values.yaml is invisible to a text scan of the template.
+
+  - check: helm.declares_recommended_labels
+    spec: >
+      Fails when a rendered workload template omits any of the six recommended labels —
+      app.kubernetes.io/name, instance, version, component, part-of, managed-by — or
+      when part-of is not `paridyum`.
+    owner: tool-forge
+    blocks: [C-0007]
+    declared: 2026-08-09
+    frameworks:
+      cis: ["1.1"]
+    notes: >
+      Must inspect the RENDERED manifest, for the reason helm.declares_probes already
+      records: a value set from values.yaml is invisible to a text scan of the template.
+      C-0005 named two of the six. The four added are what cost attribution, fleet
+      queries and incident tooling group by, and the asymmetry in fixing this later is
+      why it is an error rather than a warning — a label added to metadata is a rolling
+      update, but one belonging in spec.selector cannot be added at all, because that
+      field is immutable on an apps/v1 Deployment.
+      Values are DERIVED, not chosen, so this is checkable without taste: name from the
+      release, component from the repository class, version from the chart appVersion,
+      managed-by from the tool. Only part-of is a constant.
+
+  - check: helm.declares_resource_limits
+    spec: >
+      Fails when a rendered container spec declares no resources.limits for both
+      cpu and memory.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+    frameworks:
+      cis: ["16.7"]
+      csf: ["PR.IR"]
+
+  # --- knowledge.* — the gate checking itself -------------------------------
+  - check: knowledge.artifact_registry_valid
+    spec: >
+      Fails when artifact-registry.yaml does not validate against
+      artifact-registry.schema.json, when two entries share a `type`, `prefix` or
+      `directory` value, when the `type` enum and the four artifact-id patterns in
+      knowledge.schema.json disagree with the registry in either direction, or when a site
+      that carries the list hardcoded — check-registry.schema.json's `blocks` pattern,
+      capture-open-loops.sh's id scanner, or guard-locked-decisions.sh's immutable-directory
+      list — disagrees with the registry.
+    owner: check-knowledge.sh
+    blocks: [ADR-0022]
+    declared: 2026-08-07
+    notes: >
+      Implemented in check-knowledge.sh section 8b. The same argument as
+      knowledge.class_registry_valid: moving a list out of code makes it easier to change,
+      which is both the intent and the risk, so data needs a check or it is less protected
+      than the hardcoded lists it replaced.
+      The BIDIRECTIONAL comparison is the load-bearing part. A prefix in the registry but
+      not the schema means artifacts of that type cannot validate — loud, and therefore
+      harmless. A prefix in the schema but not the registry is the dangerous direction: ids
+      that validate individually while the cross-reference scanner never resolves them, so
+      a typo in a reference reads as correct. That is the silent half of the defect ADR-0022
+      exists to fix, and it is why "generates" had to become a check rather than a comment.
+      Also verifies all FOUR id patterns carry the same prefix set. They could diverge
+      silently before: a prefix accepted by `id` but rejected by `supersedes` produces an
+      artifact that validates and can never be superseded, which is a one-way door built by
+      a typo.
+      Counts pattern OCCURRENCES, not distinct pattern strings. The first implementation
+      counted distinct values and therefore reported 1 when all four agreed — the healthy
+      case — and would have reported 1 just as happily if three had been deleted. Caught by
+      running it, which is the lesson this repository keeps relearning.
+      Section 8c covers the three sites ADR-0022 could not derive. Two are hooks that must
+      stay fast and dependency-free, since a YAML parse on every tool call is a hook people
+      disable; the third is a schema this gate does not generate. All three were found
+      carrying a STALE list, and one was a real hole in ADR-0007's layer 1 —
+      guard-locked-decisions.sh omitted `requirements/`, so a locked requirement could be
+      rewritten in place in-session while section 3 forbade exactly that. Hardcoding is
+      acceptable; hardcoding with nothing comparing it is what produced that hole.
+      The guard comparison is a text scan of a `case` pattern, so it is defeatable by
+      rewriting that line in a different shape. It warns rather than errors when it can find
+      no list at all, because "cannot read it" and "it is empty" must not report identically.
+
+  - check: knowledge.bet_states_its_falsification
+    spec: >
+      Fails when an artifact whose type declares `requires_trigger: always` carries an
+      empty or missing `trigger` or `review_date`, or when an artifact of a type declaring
+      `lockable: false` has `status: locked`.
+    owner: check-knowledge.sh
+    blocks: [ADR-0022]
+    declared: 2026-08-07
+    notes: >
+      The single check that makes BET- worth having, and deliberately the same shape as
+      knowledge.deferred_requirements_have_triggers, because it is the same argument at a
+      different setting. A wager with no stated losing condition is an opinion with
+      frontmatter; a wager with no scheduled verdict becomes policy by default, which is
+      strictly worse than never writing it down — an unexamined document in this repository
+      binds, because CLAUDE.md instructs agents to retrieve rather than infer.
+      The `lockable: false` half is not a formality. `locked` means must-not-be-contradicted
+      and a bet exists to be contradicted, so a locked bet is a strategic claim that has
+      been made immune to evidence while sitting in the highest-precedence half of the
+      knowledge base. That is the single most expensive thing this artifact type could
+      accidentally permit.
+      `error`, not `warn`, for both halves.
+
+  - check: knowledge.check_ids_resolve
+    spec: >
+      Fails when an `enforced_by[].check` value in any scanned artifact appears
+      neither in this manifest's `checks[].check` set nor in tool-forge's
+      implemented registry.
+    owner: check-knowledge.sh
+    blocks: [ADR-0002, ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.1"]
+    notes: >
+      Implementable without tool-forge — it is set membership against a file in
+      this repository. The first check to move declared -> implemented, and the
+      one that makes every other declaration meaningful.
+
+  - check: knowledge.check_specs_cite_live_artifacts
+    spec: >
+      Fails when a check's `spec` names an artifact whose status is `superseded` or
+      `deprecated`. Applies to `spec` only — `notes` may cite history, and usually should.
+    owner: check-knowledge.sh
+    blocks: [ADR-0014]
+    declared: 2026-08-10
+    notes: >
+      A spec is the falsifiable rule an implementer reads before writing the check, so a spec
+      naming a dead artifact sends them to a replaced rule. Found by scanning: five specs cited
+      superseded artifacts, and the worst was repo.name_matches_scheme pointing at C-0002's
+      prefix table — which holds seven of the ten classes, so an implementation obeying the
+      spec literally would have rejected every web-, sdk- and mobile- repository.
+      C-0007 exists precisely because "a prefix glob in a locked artifact can never be extended
+      to a new prefix", and the stale spec pointed straight back into that trap.
+      `notes` is deliberately out of scope. Twenty-two of the twenty-seven references found in
+      the first pass were notes recording why a rule changed, which is the registry working.
+
+  - check: knowledge.class_registry_valid
+    spec: >
+      Fails when class-registry.yaml does not validate against
+      class-registry.schema.json, or when two entries share a `class`, `prefix` or
+      `scope` value.
+    owner: check-knowledge.sh
+    blocks: [ADR-0037, C-0005, C-0007]
+    declared: 2026-08-07
+    notes: >
+      C-0005 moved the repository class list out of a locked prose table into this
+      registry, which made it easier to change — that is the intent and also the risk.
+      A prose table in a constitution was guarded by supersession; data needs a check
+      or it is less protected than what it replaced.
+      Uniqueness across three fields matters because each generates something: `class`
+      the manifest enum, `prefix` the naming rule, `scope` the artifact-binding enum.
+      Two entries colliding on any of them silently shadows one.
+      Does NOT check that a class marked `deployable` or `ci` actually has a chart or a
+      workflow — nothing can, until a repository of that class exists. ADR-0020 and
+      ADR-0021 both record that gap.
+
+  - check: knowledge.declared_checks_manifest_valid
+    spec: >
+      Fails when check-registry.yaml does not validate against
+      check-registry.schema.json, or when two entries share a `check` value.
+    owner: check-knowledge.sh
+    blocks: [ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.1", "PO.4.2"]
+      csf: ["GV.OV"]
+    notes: >
+      Duplicate-key detection cannot be expressed in JSON Schema and must be a
+      separate pass. Without it, a second entry for an id silently shadows the
+      first and the `blocks` list stops being trustworthy.
+
+  - check: knowledge.deferred_requirements_have_triggers
+    spec: >
+      Fails when an artifact has `status: deferred` and either is not of type
+      `requirement` or carries no non-empty `trigger` field.
+    owner: check-knowledge.sh
+    blocks: [ADR-0018]
+    declared: 2026-08-07
+    frameworks:
+      csf: ["GV.RM"]
+    notes: >
+      The single check that makes REQ- worth having. A deferred requirement with no
+      stated condition for becoming current is a TODO with frontmatter — nobody knows
+      what would make it actionable, so it is never revisited, which is the failure
+      the artifact type exists to replace. `error`, not `warn`, for that reason.
+      Also rejects `deferred` on non-requirement types, since the status is
+      requirement-only and ADR-0002 reserves the other statuses' meanings.
+
+  - check: knowledge.errata_are_additive_only
+    spec: >
+      Fails when a diff to an artifact whose committed frontmatter said `status: locked` or
+      `status: superseded` changes any line above the first `## Errata` heading, shortens or
+      rewrites the errata already committed, or adds no errata content at all.
+    owner: check-knowledge.sh
+    blocks: [ADR-0031, REQ-0002]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.1.1"]
+      csf: ["GV.PO"]
+    notes: >
+      The narrower sibling of knowledge.locked_artifacts_immutable, which keeps its spec
+      unchanged — it is cited by two immutable artifacts and could not have been rewritten in
+      place regardless. Runs only when that check would otherwise fail, so an artifact with no
+      errata section is governed exactly as before.
+      The body comparison splits on the FIRST `## Errata` heading in both versions, which is
+      what makes the smuggling case reject itself rather than needing its own rule: a heading
+      inserted mid-file truncates the body under the same split, so the two bodies differ.
+      Cannot reach frontmatter, and ADR-0031 cost 4 says so — STD-0001's corrupted rationale
+      is above any errata section and stays wrong.
+
+  - check: knowledge.external_url_is_a_declared_source
+    spec: >
+      Fails when an artifact's body contains an http(s) URL that does not appear in its
+      frontmatter `sources` block. URLs inside code spans and fenced blocks are excluded.
+    owner: check-knowledge.sh
+    blocks: [RFC-0020]
+    declared: 2026-08-12
+    notes: >
+      Warns rather than errors, because a `locked` artifact cannot be corrected in place and
+      STD-0005 is exactly that case — it cites Keep a Changelog and SemVer in prose with no
+      provenance, and clearing that would need a supersession nobody needs. RFC-0020
+      consequence 1 records it rather than special-casing it, because an exception list is how
+      a check becomes decoration.
+      The code-span exclusion is load-bearing and was found by running it: RFC-0012 carries
+      `https://${CUSTOM_DOMAIN}/scim/v2/{orgId}` as a URL TEMPLATE inside an example. That is
+      not a citation, and reporting it as one would have been the check's first false positive.
+      Verified by planting a bare URL in a body with no matching source and watching it fire.
+
+  - check: knowledge.fetched_sources_are_reconciled
+    spec: >
+      Fails when a `research/*.jsonl` session record lists an entry under `uncited` — a page a
+      session read that no artifact declares in its frontmatter `sources`. Entries of
+      `kind: surfaced` are excluded; only a page actually fetched is reconciled.
+    owner: check-knowledge.sh
+    blocks: [RFC-0027]
+    declared: 2026-08-18
+    notes: >
+      RFC-0020 governs where an external fact LANDS and concedes it "catches the mechanical half
+      only" — an artifact stating a regulatory position with no link at all passes every check it
+      declares. This is the missing half, and it can exist only because something now records
+      what was read: the gap was never the citation format, it was that nothing observed the
+      research.
+      WARNS, for the reason RFC-0020 gives and for one more of its own. Most fetches are dead
+      ends, and a gate that fails a session for reading a page it decided not to use teaches
+      people to stop reading pages. The uncited list is a review queue, which is ADR-0011's
+      posture and the one this repository has taken every previous time it faced this choice.
+      SURFACED URLS ARE EXCLUDED AND THAT IS LOAD-BEARING. One WebSearch offers ten results; if
+      those reconciled, a single search would deposit ten entries into DECISION-DEBT.md and the
+      ledger would stop being read within a week — which is the only failure mode ADR-0011
+      cannot survive.
+
+  - check: knowledge.framework_ids_resolve
+    spec: >
+      Fails when a control's `frameworks` mapping names a framework absent from
+      framework-registry.yaml, or an id that does not match that framework's declared
+      `id_pattern`.
+    owner: check-knowledge.sh
+    blocks: [ADR-0028]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      Also warns when a registered framework has no mappings and no `mapping_deferred_to`
+      naming the requirement that will close the gap — the mirror of an orphan check
+      declaration, and the reason `asvs` and `slsa` can be registered before anything maps
+      to them without leaving a permanent warning on every run.
+
+      The id_pattern lives in framework-registry.yaml and is deliberately NOT restated in
+      check-registry.schema.json. The schema constrains `frameworks` only to
+      "object of arrays of strings"; everything specific is here. Two copies of the
+      pattern would be the drift ADR-0028 exists to prevent.
+
+      Implementing this exposed a live hole in the validator: `additionalProperties` as a
+      schema object was accepted by validate-schema.py and then ignored, so the shape
+      constraint on `frameworks` would have enforced nothing while appearing complete. Its
+      `unsupported()` reporter flags unknown KEYWORDS, not unimplemented FORMS of known
+      ones — fixed by implementing the form, and `propertyNames` was dropped from the
+      known set for the same reason.
+    partial: false
+
+  - check: knowledge.frontmatter_valid
+    spec: >
+      Fails when a file in any directory named by artifact-registry.yaml has no leading
+      YAML frontmatter block, or that block does not validate against
+      knowledge.schema.json.
+    owner: check-knowledge.sh
+    blocks: [ADR-0002, ADR-0014]
+    declared: 2026-08-06
+    notes: >
+      The directory list was enumerated here and omitted `requirements/`, which had been
+      scanned since REQ- existed — a spec narrower than the check it described, in the
+      direction that understates coverage. Both are now the registry's list (ADR-0022), so
+      the spec cannot drift from the directories again.
+      FULLY implemented as of 2026-08-07 via scripts/lib/validate-schema.py, a
+      stdlib JSON Schema validator written because a pip dependency in a gate that
+      runs on every commit is a gate people bypass when an index is down.
+      It was a field-presence approximation for its whole life before that, and the
+      registry counted it as implemented anyway — the defect class this repository
+      keeps finding. Now catches unknown keys, minLength, malformed dates, bad enums
+      and bad patterns, all verified by planting each.
+      Differential-tested against the `jsonschema` library: 15 of 16 cases agree, and
+      the divergence is deliberate — `format: date` is annotation-only in JSON Schema
+      but a malformed date is a real defect here, so this is stricter.
+      Still cannot see YAML quoting hazards: an unquoted `#` truncates a scalar at
+      parse time and the survivor is a valid string. STD-0001's
+      test.no_ignored_tests_without_reason rationale is truncated to "An" by exactly
+      that, and no schema can detect it. Tracked in REQ-0002.
+
+  - check: knowledge.hardcoded_count_baseline_does_not_rise
+    spec: >
+      Fails when the number of hardcoded registry counts in the tree exceeds the `baseline`
+      argument a citing artifact declares. Existing counts are amnestied by ADR-0035 decision
+      4; this rejects new ones.
+    owner: check-knowledge.sh
+    blocks: [ADR-0035]
+    declared: 2026-08-10
+    notes: >
+      knowledge.no_hardcoded_registry_counts is `warn` and always fires, because ADR-0035 chose
+      the honest severity for an undecidable distinction: "six anti-patterns" is a count and
+      "two isolation boundaries" is a structural fact, and both are a number beside a noun.
+      The consequence is that the control cannot see a regression. On 2026-08-10 two new counts
+      were added to README.md and TESTING.md — the very files ADR-0035's context credits with
+      having stopped stating them — and the warning went from 48 to 50 with nothing to notice.
+      One of them then contradicted a sentence two lines below it.
+      This check judges arithmetic instead of meaning, which IS decidable: the total must not
+      rise. It therefore adds no new semantic judgement of any individual line, which is the
+      objection ADR-0035 raised against an error-severity check here and which still stands.
+      The baseline is a parameter rather than a constant (ADR-0036), and lowering it is the
+      normal way to ratchet: remove a count, drop the number, and the floor never rises again.
+
+  - check: knowledge.locked_artifacts_immutable
+    spec: >
+      Fails when a diff changes any line of an artifact whose committed frontmatter
+      said `status: locked` OR `status: superseded`, other than the `status`,
+      `superseded_by` and `locked_at` fields.
+    owner: check-knowledge.sh
+    blocks: [ADR-0002, ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.1.1"]
+      csf: ["GV.PO"]
+    notes: >
+      Covers `superseded` as well as `locked`, and that was a real hole: protection
+      used to lapse at exactly the moment an artifact became purely historical.
+      ADR-0002's central sentence was inverted in a test and both this gate and the
+      PreToolUse hook permitted it, green and unwarned. A superseded artifact needs
+      MORE protection than a locked one.
+      Still silently skips any artifact with no baseline in the comparison ref, so a
+      locked artifact never committed is unprotected. Committing is what arms it. A
+      future revision should treat locked-but-uncommitted as a failure, not a skip.
+
+  - check: knowledge.market_artifacts_cite_sources
+    spec: >
+      Fails when an artifact of type `market` has no `sources` entry, or when any entry
+      lacks `url`, `title` or `retrieved`. Applies to this type only; `sources` stays
+      optional on every other type.
+    owner: check-knowledge.sh
+    blocks: [ADR-0050]
+    declared: 2026-08-17
+    notes: >
+      This is the rule that makes MKT- an evidence type rather than a bet with a different
+      prefix, and it is a check rather than a schema constraint for a reason that is not
+      preference. scripts/lib/validate-schema.py implements neither `if`/`then` nor `allOf`
+      and reports unknown keywords as unenforced, so a conditional requirement written into
+      knowledge.schema.json would advertise a constraint nothing applies — the validator's
+      own docstring calls that worse than a constraint that is absent.
+      What it does NOT check, stated because the gap is the interesting part: whether a
+      source is any good, and whether it is tenant-derived. C-0006 forbids aggregate
+      operational data informing where Paridyum competes, and no check can read a URL and
+      know whose data is behind it. What this buys is narrower and still worth having — the
+      evidence is forced into the open where a reviewer can see it, instead of living in the
+      reasoning of whoever chose the vertical. C-0006 already concedes that this commitment
+      is "partly mechanical and partly not"; this is the mechanical part and it should never
+      be described as more.
+
+  - check: knowledge.no_check_id_demotion
+    spec: >
+      Fails when a check id present in tool-forge's implemented registry at the
+      base ref is absent from it at the head ref while at least one artifact still
+      cites that id.
+    owner: tool-forge
+    blocks: [ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      Needs both refs' registries, so it cannot run from a single working tree —
+      it is a CI-only check. Retiring a check legitimately means superseding the
+      artifact that demands it, which this forces.
+
+  - check: knowledge.no_duplicate_id_namespaces
+    spec: >
+      Fails when an artifact id uses a prefix not declared in artifact-registry.yaml,
+      or when two artifacts share the same id.
+    owner: check-knowledge.sh
+    blocks: [ADR-0008]
+    declared: 2026-08-06
+    notes: >
+      This spec previously named a hardcoded set of seven prefixes — C, ADR, STD, PAT,
+      ANTI, RUN, RFC — omitting BET, GLO and REQ. Twenty-three artifacts carried one of
+      the three missing prefixes and the gate was green, because the implementation was
+      never hardcoded: it builds the alternation from artifact-registry.yaml's `prefix`
+      fields at startup, so ADR-0022 already made it registry-driven and the prose was
+      the only copy left behind.
+      Corrected rather than left, because check-registry.yaml is what a reader consults
+      to learn what is enforced, and a spec listing seven prefixes describes a check that
+      would reject a third of this repository. The lesson is ADR-0014's own: a `spec`
+      that restates an enumeration the implementation derives is a second copy, and it
+      is the copy nothing validates.
+
+  - check: knowledge.no_hardcoded_registry_counts
+    spec: >
+      Fails when an artifact's prose states a numeric count of a thing a registry computes —
+      checks, check namespaces, artifacts, artifact types, test types, repository classes,
+      axes, tiers or locked artifacts — as a digit or an English number word.
+    owner: check-knowledge.sh
+    blocks: [ADR-0035]
+    declared: 2026-08-08
+    notes: >
+      DELIBERATELY IMPRECISE, and `warn` for that reason. The check cannot distinguish a count
+      from a quantity: "twenty-two locked artifacts" is a measurement that rots, "two isolation
+      boundaries" is a structural fact that cannot, and both are a number beside a noun. Every
+      attempt to decide that mechanically needs to know what the number counts, which is the
+      undecidable part ADR-0035 rejects an exact check on.
+      It therefore produces a REVIEW LIST, not a verdict. Its value is that the list exists at
+      all: seven instances of this defect were found by an audit, none by a gate, and the
+      eighth was frozen into ADR-0022 on the day ADR-0022 was locked.
+      Number words are matched only up to "hundred"; a count written as "one thousand and
+      twelve" is not a shape this repository's prose has ever used.
+
+  - check: knowledge.no_stale_proposed_artifacts
+    spec: >
+      Fails when an artifact has `status: proposed` and its `created` date is more
+      than `max_age_days` days before the current date.
+    owner: check-knowledge.sh
+    blocks: [ADR-0011]
+    declared: 2026-08-06
+    frameworks:
+      csf: ["GV.OV"]
+    notes: >
+      Reads `max_age_days` from the citing artifact's args (ADR-0011 sets 30).
+      Time-dependent, so it can turn a previously green commit red with no diff —
+      which is why ADR-0011 declares it `warn`.
+
+  - check: knowledge.no_unenforced_locked_artifacts
+    spec: >
+      Fails when an artifact has `status: locked` and an empty `enforced_by` list.
+    owner: check-knowledge.sh
+    blocks: [ADR-0008]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      Expected to fire; ADR-0002 point 5 carried into ADR-0014 requires this list
+      to be reported and permits it to be non-empty. `warn`, permanently.
+
+  - check: knowledge.no_unresolved_check_parameter_conflict
+    spec: >
+      Fails when two or more artifacts cite the same check id in `enforced_by` with different
+      `severity` or different `args`, and check-registry.yaml records no `resolution` for it.
+    owner: check-knowledge.sh
+    blocks: [ADR-0036]
+    declared: 2026-08-08
+    notes: >
+      The defect is invisible from any single file: each citing artifact is internally correct,
+      and the implementation quietly picks a third value. `repo.claude_md_under_line_budget` had
+      four sources, three thresholds and two severities, and survived because nothing ever
+      compared citers to each other.
+      Deliberately does NOT compare the resolution to the implementation. A bash gate cannot
+      reliably find the constant a check reads, and a heuristic that guessed would be a
+      confident false failure on exactly the checks that matter — the same argument ADR-0035
+      uses against an exact counts check.
+
+  - check: knowledge.orphan_check_declarations
+    spec: >
+      Fails when an entry in this manifest is cited by no artifact's
+      `enforced_by`, or when its `blocks` list names an artifact that does not in
+      fact cite it.
+    owner: check-knowledge.sh
+    blocks: [ADR-0014]
+    declared: 2026-08-06
+    notes: >
+      The seam ADR-0014 introduces. Without this the manifest degrades into a
+      junk drawer of ids nothing asked for, and `blocks` stops being a usable
+      priority ordering.
+
+  - check: knowledge.product_registry_valid
+    spec: >
+      Fails when product-registry.yaml does not validate against
+      product-registry.schema.json, when two entries share a `product` slug, when a
+      product's `stage` is absent from the `stages` list, when a `dossier` entry names a
+      kind or stage that does not exist, or when a dossier `artifacts` entry names a prefix
+      absent from artifact-registry.yaml.
+    owner: check-knowledge.sh
+    blocks: [ADR-0050]
+    declared: 2026-08-17
+    notes: >
+      The fifth instance of the argument knowledge.class_registry_valid and
+      knowledge.artifact_registry_valid both make: moving a list out of code makes it easier
+      to change, which is both the intent and the risk, so registry data needs a check or it
+      is less protected than the hardcoded list it replaced.
+      The dossier-prefix half is the one that will actually fire. A `requires` entry naming
+      a prefix that does not exist is a dossier obligation nothing can resolve, which reads
+      as governance and enforces nothing — the same silent shape ADR-0014 found four times.
+
+  - check: knowledge.product_slugs_resolve
+    spec: >
+      Fails when a `product:` entry in any artifact's frontmatter, or a `product:` key in
+      any repository manifest.yaml, names a slug absent from product-registry.yaml.
+    owner: check-knowledge.sh
+    blocks: [ADR-0050]
+    declared: 2026-08-17
+    notes: >
+      The same guarantee an unknown check id gets under ADR-0014, for the same reason. A
+      typo'd product slug produces an artifact that validates, binds nothing, and reads to
+      a human as though it governs the product whose name it nearly spells. `forge context
+      --product` would return it for no product at all and report success.
+      Deliberately NOT enforced by an enum in knowledge.schema.json, which was the obvious
+      alternative: an enum would put the product list in a second place, and RFC-0015 is the
+      whole argument against that. Membership is checked against the registry instead.
+
+  - check: knowledge.research_log_is_append_only
+    spec: >
+      Fails when a line already present in a `research/*.jsonl` log is changed or removed by a
+      commit, or when a line in one is not a parseable JSON object. Adding lines is the only
+      legal edit.
+    owner: check-knowledge.sh
+    blocks: [RFC-0027]
+    declared: 2026-08-18
+    notes: >
+      The one check in RFC-0027 that errors rather than warns, and the asymmetry is the point.
+      Everything else about research provenance is a review item — a stale source is not a
+      defect, and RFC-0020 argues at length that a gate failing for something nobody did wrong
+      is suppressed within a month. But the log is evidence, and evidence a later process can
+      rewrite is not evidence: a check reading it to decide whether a fact was cited would be
+      reading a record the same run could have edited. This is the same argument
+      knowledge.locked_artifacts_immutable makes about a decided artifact, one axis over —
+      there the record is what was DECIDED, here it is what was READ.
+
+  - check: knowledge.researched_artifacts_cite_sources
+    spec: >
+      Fails when an artifact whose type sets `requires_sources: when_researched` carries no
+      `sources` block and a `research/*.jsonl` session record names it under `artifacts` with
+      `fetched` greater than zero.
+    owner: check-knowledge.sh
+    blocks: [RFC-0027]
+    declared: 2026-08-18
+    notes: >
+      RFC-0020 open question 2 asked whether any type beyond `market` should require sources,
+      and could not answer it: `always` would produce empty blocks on artifacts that rest on
+      nothing external, and `never` is what let RFC-0014 and RFC-0019 assert a vendor limit and
+      a regulation with no provenance at all. `when_researched` is the middle setting, and it
+      became expressible only when the research log started recording whether a session had
+      actually read anything.
+      NO TYPE SETS IT YET. The check is armed and subject-less on purpose, the same bargain
+      knowledge.market_artifacts_cite_sources struck while no MKT- existed. Which types get it
+      is a question the log answers by counting, after a month of use — deciding it now from
+      intuition is the guess this whole mechanism exists to replace.
+
+  - check: knowledge.resolved_by_names_live_decision
+    spec: >
+      Fails when a live artifact's `resolved_by` names an artifact whose status is `superseded`
+      and the superseding artifact's id appears nowhere in the file.
+    owner: check-knowledge.sh
+    blocks: [ADR-0022]
+    declared: 2026-08-07
+    notes: >
+      An RFC's `resolved_by` is a pointer to the decision that closed it. When that decision is
+      superseded the pointer still RESOLVES, so knowledge.check_ids_resolve is silent, and a
+      reader following it lands on a rule that was deliberately replaced. RFC-0006 acquired this
+      shape the moment ADR-0024 superseded ADR-0023.
+      NARROWED after being written and run, which is the part worth recording. The first version
+      flagged any live artifact citing a superseded one anywhere in prose, and it was wrong:
+      citing ADR-0002 for its argument is normal and correct practice here — README.md does it,
+      C-0001 does it, and ADR-0014 deliberately preserved ADR-0002's body so that it could be.
+      Twenty-odd false positives on the dominant legitimate usage. Prose citation is not
+      decidable; `resolved_by` is frontmatter, structured, and means one thing.
+      The remedy is NOT to repoint `resolved_by` — that would erase which decision actually
+      closed the RFC — but to name the successor in the file. So the check tests for a mention
+      rather than for a value, which makes it a proxy: an artifact could name the successor in
+      one line and describe the old model throughout. `warn` for that reason.
+      Not covered: CLAUDE.md's locked-decision table, which listed a superseded ADR and was
+      corrected by hand. It is prose in a non-artifact file with no frontmatter to key on, and
+      ADR-0022 cost 1 already records CLAUDE.md as deliberately unchecked.
+
+  - check: knowledge.review_dates_not_overdue
+    spec: >
+      Fails when an artifact carries a `review_date` earlier than the current date, for a
+      type whose `requires_trigger` is `always` or whose status is `deferred`.
+    owner: check-knowledge.sh
+    blocks: [ADR-0022]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PO.1.1"]
+      csf: ["GV.OV"]
+    notes: >
+      `blocks` names ADR-0022 only, though the rule covers deferred requirements too. ADR-0018
+      defines that half and is `locked`, so it cannot gain an `enforced_by` entry without
+      being superseded — and superseding a correct decision to attach a warning would be a
+      bad trade. The consequence is recorded rather than hidden: the requirement half of this
+      check is enforced but not attributable, and `knowledge.orphan_check_declarations` is
+      what surfaced the discrepancy.
+      Added because requiring `review_date` and never reading it was the defect. A bet could
+      carry a verdict date that passed months ago with the gate green throughout — the exact
+      "quietly becomes policy" failure ADR-0022 claims the field prevents. A review_date
+      nothing surfaces is the same artifact as no review_date at all.
+      `warn` and time-dependent, on the precedent knowledge.no_stale_proposed_artifacts set
+      under ADR-0011: it can turn a previously green commit red with no diff, so it must not
+      block a commit. That is the cost of an anti-forgetting check and it is worth paying.
+      Distinct from knowledge.bet_states_its_falsification, which checks the field is PRESENT
+      at `error`. Presence is a property of the artifact; overdueness is a property of today.
+      Ideally this also reaches DECISION-DEBT.md via the ADR-0011 Stop hook, so an overdue
+      verdict is resurfaced at session start rather than only when the gate is run. Not wired
+      up; the gate warning is the whole implementation today.
+
+  - check: knowledge.scope_values_cover_repo_classes
+    spec: >
+      Fails when a class-bearing repository prefix in C-0007's table has no
+      corresponding class value in knowledge.schema.json's `scope` enum, so no
+      class-specific artifact could ever target that class.
+    owner: check-knowledge.sh
+    blocks: [ADR-0015]
+    declared: 2026-08-06
+    notes: >
+      Wording matters here. "Has a corresponding scope value" is vacuous under
+      ADR-0015, because `org` matches every repository — so the check must be about
+      whether a CLASS-SPECIFIC artifact can target the class, which is the gap that
+      actually bit us. The classless `*(none)*` row is exempt by ADR-0015 point 6.
+      The prefix-to-scope-value map is not mechanical (`svc-` to `service`, `lib-` to
+      `library`), so the check hardcodes it. That map must be updated when C-0002
+      gains a prefix — which already requires superseding C-0002, so the update has
+      a natural home in that ceremony. Does NOT check the reverse direction;
+      `template` is deliberately a scope value with no repository yet.
+
+  - check: knowledge.sources_are_reviewed
+    spec: >
+      Fails when a `sources` entry carries a `retrieved` date older than max_age_days.
+    owner: check-knowledge.sh
+    blocks: [RFC-0020]
+    declared: 2026-08-12
+    notes: >
+      The completeness half is deliberately NOT here. `sources` entries require url, title and
+      retrieved in knowledge.schema.json, so knowledge.frontmatter_valid already rejects an
+      undated source — verified by planting one — and duplicating that would create a second
+      place to keep in step.
+      Warns rather than errors. A stale source is not a defect; the artifact was right when it
+      was written. This produces the review list, which is ADR-0011's posture and the one
+      ADR-0035 took toward the counts it found.
+      365 days is a default rather than a finding. A regulation and a vendor's pricing page
+      decay at different rates, and ADR-0036's args mechanism is how a faster-moving source
+      gets a shorter budget.
+
+  - check: knowledge.supersession_is_symmetric
+    spec: >
+      Fails when an artifact naming `supersedes: [X]` is not matched by X naming that
+      artifact in `superseded_by`, or the reverse, or either side names an id that does
+      not exist.
+    owner: check-knowledge.sh
+    blocks: [ADR-0015]
+    declared: 2026-08-07
+    notes: >
+      Supersession is a two-step edit — write the new artifact, then set `status` and
+      `superseded_by` on the old one — and nothing checked the second step. Skipped, the
+      old and new artifacts both read as in force on exactly the question where they
+      disagree, and the gate stays green. Recorded as a known limitation in ADR-0014 and
+      as a live risk during ADR-0016's own acceptance before being implemented here.
+
+  - check: knowledge.test_registry_valid
+    spec: >
+      Fails when test-registry.yaml violates its schema, declares a duplicate `test_type`
+      or `name`, is not sorted by id, names an axis or tier that is not declared in the same
+      file, names a stack that class-registry.yaml does not declare, names a check id absent
+      from check-registry.yaml, or carries a `deferred` entry with no `trigger`.
+    owner: check-knowledge.sh
+    blocks: [ADR-0029]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.PO"]
+    notes: >
+      Six conditions in one id because they are one question — does this file mean what it
+      says — and splitting them would produce six entries that are never independently
+      cited. The stack cross-check is the one most likely to rot: class-registry.yaml gains
+      stacks over time and a test type naming a retired one would silently bind nothing.
+
+  - check: knowledge.verification_mapping_is_symmetric
+    spec: >
+      Fails when an artifact's `verified_by` names a test type whose `governed_by` omits that
+      artifact, or a test type's `governed_by` names a mutable, non-deferred artifact whose
+      `verified_by` omits that type.
+    owner: check-knowledge.sh
+    blocks: [ADR-0030]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+    notes: >
+      Deliberately warn-level at the citing artifact, mirroring
+      knowledge.orphan_check_declarations. A locked or superseded artifact CANNOT gain a
+      `verified_by` entry — that is a content edit — so a test type naming one unilaterally
+      is the normal path. `deferred` is excused for the adjacent reason: its verification
+      method does not exist yet by construction.
+
+  - check: knowledge.verification_methods_resolve
+    spec: >
+      Fails when an artifact's `verified_by` names a TST- id that is absent from
+      test-registry.yaml.
+    owner: check-knowledge.sh
+    blocks: [ADR-0030]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      Identical in shape and severity to knowledge.check_ids_resolve, and for the identical
+      reason: an id nobody wrote down twice is a typo, and a typo here answers "how is this
+      verified" confidently and wrongly.
+
+  # --- locale.* — ADR-0034, resolution that is a claim rather than an absence -
+  - check: locale.formatting_names_an_explicit_locale
+    spec: >
+      Fails when a call that renders a date, time, number, percentage or currency for display
+      is made without an explicit locale argument, or when a date or monetary value is
+      assembled by string concatenation or by dividing a minor-unit amount by a literal.
+    owner: tool-forge
+    blocks: [ADR-0034]
+    declared: 2026-08-08
+    notes: >
+      Rejects the CALL SHAPE, never the output, and that is the whole design. Both outputs
+      are plausible dates — `08/08/2026` is correct in one convention and wrong by four
+      months in another — so there is no assertion a test could make about the result that
+      distinguishes them. The literal-divisor half catches `amount / 100`, which is wrong for
+      JPY and KWD in every locale and reads as obviously correct.
+
+  - check: locale.no_ambient_locale_lookup
+    spec: >
+      Fails when a source file resolves a locale, language, timezone or currency from process
+      environment (LANG, LC_ALL, LC_TIME, TZ), from a system-default locale constructor, or
+      from a hardcoded literal outside a declared configuration default.
+    owner: tool-forge
+    blocks: [ADR-0034]
+    declared: 2026-08-08
+    notes: >
+      GLO-0005's hazard in a second costume, and it fails the same way: the resolved value
+      comes from the absence of a decision, so it is whatever the container image shipped.
+      Every developer machine agrees with it and production does not, which is the ordering of
+      symptoms that gets a defect shipped rather than caught.
+      TZ is included deliberately even though C-0005's timestamptz rule means stored instants
+      are unaffected — a process reading TZ to RENDER is the same defect at the presentation
+      boundary, and it is the one that survives a correct schema.
+
+  # --- module.* — STD-0004, the checks that replace a line limit ------------
+  - check: module.has_responsibility_doc
+    spec: >
+      Fails when a module has no `//!` inner doc comment stating its
+      responsibility.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+
+  - check: module.no_dependency_cycles
+    spec: >
+      Fails when the module dependency graph within a crate contains a cycle.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+    notes: >
+      STD-0004 names `cargo modules dependencies --no-externs` as the tool, which
+      also surfaces orphan files — so this and module.no_orphan_source_files share
+      one invocation.
+
+  - check: module.no_grabbag_names
+    spec: >
+      Fails when a module or crate name appears in the check's `forbidden`
+      argument — utils, util, helpers, helper, common, misc, shared, core_utils,
+      stuff.
+    owner: forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+    notes: >
+      STD-0004 extends the rule to crates too — no lib-common, no lib-utils — so
+      this must scan repository and crate names, not only module paths.
+
+  - check: module.no_orphan_source_files
+    spec: >
+      Fails when a .rs file under src/ is not reachable from the crate root
+      through the module tree.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+
+  - check: module.responsibility_is_singular
+    spec: >
+      Fails when a module's `//!` responsibility sentence contains a coordinating
+      "and" joining two responsibilities.
+    owner: tool-forge
+    blocks: [STD-0004]
+    declared: 2026-08-06
+    notes: >
+      Cannot distinguish a joining "and" from an incidental one without parsing
+      English. STD-0004 declares it `warn` for exactly that reason and says so.
+
+  # --- openapi.* — C-0002 API naming ---------------------------------------
+  - check: openapi.enum_values_are_identifiers
+    spec: >
+      Fails when an enum value in an OpenAPI document is not a lower snake_case or dotted
+      ASCII identifier — a value containing a space, starting with an uppercase letter, or
+      containing a character outside [a-z0-9_.].
+    owner: tool-forge
+    blocks: [ADR-0032]
+    declared: 2026-08-08
+    notes: >
+      The case that is invisible in review. `"Pending"` and `"pending"` differ by one
+      character and by whether every consumer in every language must special-case a display
+      string, and no reviewer catches it twice in a row.
+      Decidable with no judgement, unlike the general ANTI-0008 rule, which is exactly why
+      ADR-0032 can be locked against this while ANTI-0008 stays accepted.
+
+  - check: openapi.error_responses_declare_a_code
+    spec: >
+      Fails when an error response schema in an OpenAPI document declares a message field
+      without a required code field, or declares neither.
+    owner: tool-forge
+    blocks: [ADR-0032, ADR-0039, ADR-0047, STD-0010]
+    declared: 2026-08-08
+    notes: >
+      Cheapest to reject at the schema and most expensive to remove after SDKs ship, because
+      by then the English message is a contract that consumers we do not own have branched
+      on. STD-0010 §5 is the envelope this enforces.
+      It deliberately does NOT require `params`, though STD-0010 does: an error with no
+      parameters is legitimate and common, so the check cannot distinguish a missing
+      parameter map from an error that needs none.
+
+  - check: openapi.no_verbs_in_paths
+    spec: >
+      Fails when a path segment in specs/openapi.yaml is a verb — getUser,
+      createInvoice, or a trailing action segment such as /users/search.
+    owner: tool-forge
+    blocks: [C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+    notes: >
+      Must permit the subresource form C-0002 endorses: POST
+      /invoices/{id}/refunds is a noun, not a verb, and a naive verb-word list
+      will reject it.
+
+  - check: openapi.paths_are_plural_nouns
+    spec: >
+      Fails when a resource path segment is not a plural kebab-case noun, or when
+      a path is not versioned at its root, excluding the reserved unversioned set
+      /health, /ready, /metrics, /docs.
+    owner: tool-forge
+    blocks: [C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+
+  # --- org.* — GitHub organisation state ------------------------------------
+  - check: org.base_permission_is_none
+    spec: >
+      Fails when the organisation's `default_repository_permission` is any value
+      other than `none`.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      cis: ["6.8"]
+      csf: ["PR.AA"]
+
+  - check: org.branch_protection_reconciled
+    spec: >
+      Fails when the default branch of any non-archived repository in the
+      organisation has no protection rule, or has one that does not require both
+      a pull request review and passing status checks before merge.
+    owner: tool-forge
+    blocks: [ADR-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      csf: ["PR.AA"]
+    notes: >
+      Cannot pass on GitHub Free for private repositories — required status checks
+      are a paid feature (ADR-0004). Declared `warn` for that reason, and ADR-0004
+      states the promotion to `error` happens on the plan change, not before.
+
+  - check: org.contributors_are_read_only
+    spec: >
+      Fails when an organisation member whose role is not listed in `exempt_roles`
+      holds any repository permission above `read`, whether granted directly, via
+      a team, or as an outside collaborator.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      cis: ["6.8"]
+      csf: ["PR.AA"]
+    notes: >
+      Passes vacuously while the org has no non-admin members, which is the
+      current state — a vacuous pass is indistinguishable from a real one in the
+      output, so the audit line should report the population size it checked.
+
+  - check: org.no_legacy_prefixed_repos
+    spec: >
+      Fails when a non-archived repository in the organisation has a name
+      beginning with `forbidden_prefix` and is not listed in `except`.
+    owner: tool-forge
+    blocks: [ADR-0009]
+    declared: 2026-08-06
+    notes: >
+      ADR-0009 sets forbidden_prefix `pd-` and excepts `pd-coming-soon`, which is
+      live, public and unarchived. The exception is load-bearing, not cosmetic.
+
+  - check: org.no_members_without_team
+    spec: >
+      Fails when an active organisation member belongs to no team.
+    owner: tool-forge
+    blocks: [RUN-0002]
+    declared: 2026-08-06
+    frameworks:
+      cis: ["5.1"]
+      csf: ["PR.AA"]
+
+  - check: org.private_forking_enabled
+    spec: >
+      Fails when the organisation's `members_can_fork_private_repositories` is
+      false.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+
+  - check: org.two_factor_required
+    spec: >
+      Fails when the organisation's `two_factor_requirement_enabled` is false.
+    owner: check-org.sh
+    blocks: [ADR-0012]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.5.1"]
+      cis: ["6.3", "6.5"]
+      csf: ["PR.AA"]
+    verify_only: true
+    notes: >
+      GitHub exposes this field on GET /orgs/{org} but silently ignores it on
+      PATCH — the request returns 200 having applied every other parameter and
+      dropped this one. It can only be set in the web UI, and enabling it removes
+      members without 2FA. Detect-only; never attempt remediation.
+
+  # --- pr.* — ADR-0013 change lifecycle ------------------------------------
+  - check: pr.body_completed
+    spec: >
+      Fails when a pull request body still contains unfilled placeholders or
+      unchecked required items from the template at the path in `template`.
+    owner: tool-forge
+    blocks: [ADR-0013]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.7.1"]
+
+  - check: pr.design_artifact_predates_implementation
+    spec: >
+      Fails when the commit introducing the referenced RFC or ADR is not strictly
+      earlier than the first implementation commit in the pull request.
+    owner: infra-ci
+    blocks: [ADR-0013]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.1.1", "PW.2.1"]
+    notes: >
+      Compares commit timestamps, which are attacker-controlled and also perturbed
+      by rebase. ADR-0013 declares it `warn` and names the legitimate exception —
+      exploratory work that discovers the design, then writes it up and rebuilds.
+
+  - check: pr.diff_within_review_budget
+    spec: >
+      Fails when a pull request's branch diff against its merge base exceeds the reviewable-line
+      budget in `error_at`, counting additions plus deletions on files a human must read, and the
+      body carries no `Review-budget-exception:` line.
+    owner: check-pr.sh
+    blocks: [STD-0007]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PW.7.1"]
+    notes: >
+      ADR-0013 stage 4 has required "small PRs, each independently reviewable" since it was
+      locked, and nothing ever measured it. An adjective in a locked artifact is a rule that
+      cannot be violated because it cannot be evaluated — the same shape as a locked artifact
+      with an empty enforced_by, which is what ADR-0002 exists to prevent. STD-0007 fixes the
+      number; this measures it.
+      Measured on the BRANCH DIFF, never per commit. ADR-0025 commits automatically on every
+      response, so commit count carries no information about review effort — a design that
+      counted per commit would have been defeated by another decision in this same repository.
+      Excludes lockfiles, vendored snapshots, generated output, fixtures and binaries, because a
+      reviewer does not read them. Does NOT exclude tests: that would make "large feature, no
+      tests" the cheapest way to pass, inverting STD-0001.
+      The exception lives in the PR body rather than a config file so the reviewer being asked to
+      absorb it can see it, and so a pattern of exceptions is visible in the log.
+
+  - check: pr.significant_change_references_design
+    spec: >
+      Fails when a pull request whose diff matches any clause of ADR-0013's
+      significance list contains no reference to an RFC or ADR id in its body or
+      commit messages.
+    owner: infra-ci
+    blocks: [ADR-0013]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.1.1", "PW.2.1"]
+      cis: ["16.10"]
+    notes: >
+      The hardest check in the id-space. Significance has seven clauses, three of
+      which — public API change, event contract change, new top-level module —
+      need the diff parsed semantically rather than by path. Implement the path
+      clauses first and report which clauses were evaluated, or a partial
+      implementation will read as a full pass.
+
+  - check: pr.slice_cites_requirement
+    spec: >
+      Fails when a pull request body cites no REQ-, RFC- or ADR- id.
+    owner: check-pr.sh
+    blocks: [STD-0007]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PO.1.2"]
+    notes: >
+      `warn`, not `error`, and deliberately. A change legitimately may predate any requirement —
+      a spike (which ADR-0013 protects explicitly), a typo fix, or governance work like this
+      repository's own, none of which has a REQ- to cite. An error here would fire constantly on
+      work that is fine, and ADR-0008 is explicit that a guard which fires constantly gets
+      disabled within a week.
+      Overlaps pr.significant_change_references_design, which requires a design reference only
+      when the diff is significant. This one asks for a reference always and does not insist.
+      Whichever is implemented in tool-forge first should treat the other as the narrower case.
+
+  # --- release.* ------------------------------------------------------------
+  - check: product.sequencing_respects_second_vertical_rule
+    spec: >
+      Fails when more than one product of `kind: catalogue` in product-registry.yaml is at
+      stage `building` or later while no catalogue product has reached `franchised`. Warns
+      when a catalogue product is at `franchised` without the `renewal-evidence` slot filled.
+    owner: tool-forge
+    blocks: [ADR-0050]
+    declared: 2026-08-17
+    notes: >
+      C-0006 anti-goal 6 — no second vertical before the first has a renewed paying customer
+      — enforced by nobody until now, and the first clause of that constitution to become
+      mechanically rejectable at all.
+      THE SCOPE OF THE CLAIM MATTERS AND MUST NOT GROW. C-0006 carries `enforced_by: []`
+      deliberately, on the stated grounds that naming a proxy check would be the false
+      confidence ADR-0002 exists to prevent. This does not overturn that and must never be
+      cited as having done so. It checks REGISTRY STATE — how many catalogue products sit
+      past a stage boundary — and nothing else. Whether a vertical is shallow, whether the
+      evidence that selected it was any good, whether a renewal was genuine rather than a
+      favour: all judgement, all unchecked, all still upheld the way C-0006 says its rules
+      are upheld.
+      What changes is narrower and real. The anti-goal previously depended on someone
+      remembering it at the exact moment it was most tempting to forget — with a second
+      vertical looking obvious and a first one not yet renewed. Now the registry disagrees
+      out loud. That is worth having and it is not the same as enforcing the principle.
+      `blocks` names ADR-0050 ALONE, though the obligation originates in C-0006, and the
+      omission is the argument rather than an oversight. `blocks` and `enforced_by` are
+      symmetric — the gate reports a `blocks` entry no artifact cites — so listing C-0006
+      here would require C-0006 to cite this check in return. That is precisely the claim
+      the paragraph above refuses to make: C-0006 carries an empty `enforced_by` on the
+      stated grounds that naming a proxy check would be false confidence, and a constitution
+      citing a check that reads registry state would be asserting its anti-goals are
+      enforced when one clause of one of them is merely observed.
+      The symmetry rule made that visible on the first run, which is the second time this
+      registry has caught a claim that was one word wider than the thing behind it.
+
+  - check: product.stage_dossier_complete
+    spec: >
+      Fails when a product in product-registry.yaml has not got the artifacts its `kind` and
+      `stage` require under the `dossier` block — an artifact of each required type, live
+      rather than superseded, naming that product in `product:`. Warns when a required
+      `slots` entry has no recorded fulfilment.
+    owner: tool-forge
+    blocks: [ADR-0050]
+    declared: 2026-08-17
+    notes: >
+      The check the dossier exists for. Without it the `requires` lists are prose in a YAML
+      file, which is the state this repository's founding argument is about.
+      `slots` warn rather than fail, and the asymmetry is deliberate: an `artifacts` entry
+      names a type the gate can resolve and count, while a slot names an obligation with no
+      artifact type yet and therefore no reliable way to tell whether it is met. A check that
+      failed on a slot would be asserting knowledge it does not have, and the first thing
+      anyone would do is stop believing it. A slot that warns for long enough is evidence
+      that it should be promoted to a type.
+      Cumulative, not per-stage: a product at `operated` owes everything `proposed` and
+      `building` owed, which is why each dossier entry repeats the earlier prefixes rather
+      than relying on the reader to accumulate them.
+
+  - check: release.release_plz_configured
+    spec: >
+      Fails when a repository matching `applies_to` — `lib-*` or `tool-*` — has no
+      release-plz.toml, or has one that does not configure the release workflow
+      ADR-0021 specifies.
+    owner: tool-forge
+    blocks: [ADR-0010, ADR-0021]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.3.1"]
+
+  # --- repo.* — repository shape, the largest namespace ---------------------
+  - check: repo.checkpoint_branch_is_not_default
+    spec: >
+      Fails when the session-checkpoint hook commits to the repository's default branch, or
+      when it can silently fall back to the default branch if branch creation fails.
+    owner: check-repo.sh
+    blocks: [ADR-0043]
+    declared: 2026-08-08
+    notes: >
+      The entire change from ADR-0025 to ADR-0043 is that checkpoints stop landing on the branch
+      everything is reviewed from. A fallback to `main` would restore the old behaviour while the
+      ADR claims otherwise, and nothing else would notice — the commits would look exactly as
+      they did before, which is how the original defect survived for eleven commits.
+      Checked by reading the hook rather than the history: a repository with no checkpoint
+      commits yet would otherwise pass vacuously.
+
+  - check: repo.ci_runs_knowledge_check
+    spec: >
+      Fails when a repository has no CI workflow invoking the knowledge gate on
+      pull requests and on pushes to the default branch.
+    owner: check-repo.sh
+    blocks: [ADR-0002, ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.2"]
+
+  - check: repo.claude_md_links_resolve
+    spec: >
+      Fails when a relative markdown link in CLAUDE.md names a path that does not exist, or when
+      a skill named in CLAUDE.md has no SKILL.md in the plugin.
+    owner: check-repo.sh
+    blocks: [ADR-0026]
+    declared: 2026-08-07
+    notes: >
+      CLAUDE.md became a router rather than a manual: it holds the rules needed to choose a route
+      plus the ones whose violation is destructive, and everything else is one hop away. That
+      makes link integrity a correctness property rather than tidiness.
+      A router with a dangling edge is WORSE than no router. An agent follows the link, finds
+      nothing, and falls back to inferring — which is the single failure "never infer, retrieve"
+      exists to prevent. The entrypoint would then be actively causing the behaviour it forbids.
+      Skills are checked by a different rule from paths, because the harness resolves them by name
+      (ADR-0007) and there is no path in the text to verify. Only checked where the plugin is
+      present, since a consuming repository has the skills from the marketplace rather than on
+      disk.
+      `blocks` names ADR-0026 alone. The check belongs most naturally to ADR-0007, which is
+      `locked` and cannot gain an `enforced_by` entry without being superseded — so ADR-0026 was
+      written partly to give it an attributable home. knowledge.orphan_check_declarations is what
+      forced that to be resolved rather than left as a blocks list nothing matched.
+      HTTP links are deliberately unchecked: somebody else's uptime is not a property this gate
+      can assert, and a network call in a pre-commit hook is a hook people bypass.
+
+  - check: repo.claude_md_under_line_budget
+    spec: >
+      Fails when the root CLAUDE.md exceeds `max_lines` lines.
+    owner: check-repo.sh
+    blocks: [ADR-0007, ADR-0026]
+    declared: 2026-08-06
+    notes: >
+      ADR-0007 sets max_lines 200. This repository's CLAUDE.md should be measured
+      against it before the check ships — a gate its own author violates does not
+      survive first contact.
+
+    resolution:
+      severity: error
+      args: { max_lines: 200 }
+      citers: [ADR-0007, ADR-0026]
+      recorded: 2026-08-08
+      reasoning: >
+        ADR-0036 §4. Two locked artifacts cite this check and disagree. Severity from ADR-0026
+        (stricter, and the artifact specifically about CLAUDE.md's shape); threshold from
+        ADR-0007, whose `args: { max_lines: 200 }` is the ONLY threshold any artifact has ever
+        declared. ADR-0026's "150-line budget" lives in prose, and check-repo.sh had been
+        reading it as a parameter — enforcing 150, which no `enforced_by` anywhere requested.
+        Neither artifact is superseded and neither loses a word.
+  - check: repo.decision_debt_ledger_present
+    spec: >
+      Fails when the file named in `path` — DECISION-DEBT.md — is absent.
+    owner: check-repo.sh
+    blocks: [ADR-0011]
+    declared: 2026-08-06
+    frameworks:
+      csf: ["GV.RM"]
+
+  - check: repo.declares_paridyum_marketplace
+    spec: >
+      Fails when the file named in `path` — .claude/settings.json — does not
+      declare the Paridyum plugin marketplace.
+    owner: check-repo.sh
+    blocks: [ADR-0007]
+    declared: 2026-08-06
+
+  - check: repo.default_branch_is_main
+    spec: >
+      Fails when a repository's default branch is not named `main`.
+    owner: tool-forge
+    blocks: [ADR-0004]
+    declared: 2026-08-06
+
+  - check: repo.enables_paridyum_platform_plugin
+    spec: >
+      Fails when .claude/settings.json declares the marketplace but does not
+      enable the paridyum-platform plugin, so the hooks are available and unused.
+    owner: check-repo.sh
+    blocks: [ADR-0007]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.1"]
+
+  - check: repo.entrypoint_does_not_restate_standards
+    spec: >
+      Fails when ten or more consecutive words of non-quoted prose in CLAUDE.md also appear in a
+      file under standards/ or constitution/.
+    owner: check-repo.sh
+    blocks: [ADR-0026]
+    declared: 2026-08-07
+    notes: >
+      THE GUARD THE OTHER TWO WERE MISSING. repo.claude_md_links_resolve catches a dead route and
+      repo.claude_md_under_line_budget catches growth, but a router decays by somebody inlining a
+      SUMMARY of a standard — which fits inside 150 lines and leaves every link resolving. That is
+      the failure ADR-0026 exists to prevent, and for its first hours nothing detected it.
+      It found two real instances in the router on its first run, in a file written that same hour
+      specifically to be a router: a restatement of STD-0005's reasoning outside the mandated
+      blockquote, and a near-verbatim copy of C-0006's sentence about a fired trigger. Rules are
+      hard to not restate, which is the argument for checking rather than intending.
+      Word shingles, not line diffing: a copy that has been rewrapped or lightly edited is still a
+      copy, and line comparison misses it.
+      BLOCKQUOTES ARE EXEMPT, and that is what makes the rule expressible without an exception
+      list. STD-0005 requires the changelog brief be reproduced in CLAUDE.md; it is a blockquote
+      there, so "quote it or link it" legalises the mandated case by its shape rather than by name.
+      `adr/` is deliberately NOT compared, and that was measured rather than assumed. ADR-0022,
+      ADR-0025 and ADR-0026 all quote CLAUDE.md rather than the reverse — an ADR about the harness
+      legitimately describes the entrypoint — and comparing against adr/ produced three false
+      positives on the first run.
+      N=10 is loose on purpose: the entrypoint was clean at N=8 when this was written, so
+      tightening it is a one-line change with evidence behind it rather than a guess.
+
+  - check: repo.git_remote_configured
+    spec: >
+      Fails when a git checkout has no configured remote.
+    owner: check-repo.sh
+    blocks: [ADR-0025, ADR-0043]
+    declared: 2026-08-07
+    notes: >
+      The smallest check in this registry and among the most valuable. A commit on one disk is
+      still on one disk, and one disk is what failed — ADR-0025 exists because work in this
+      repository was lost locally, and DECISION-DEBT.md reported the one-disk state accurately
+      for a day while nothing happened. The ledger reminded; nothing enforced.
+      Deliberately not satisfied by "a remote is reachable". Reachability is a network property
+      and would make this flaky offline, which is how a check gets ignored. Configuration is
+      what can be checked locally and is what was actually missing.
+
+  - check: repo.gitattributes_normalizes_eol
+    spec: >
+      Fails when .gitattributes is absent, or does not set text normalisation and
+      pin shell scripts to LF.
+    owner: check-repo.sh
+    blocks: [ADR-0006]
+    declared: 2026-08-06
+
+  - check: repo.has_codeowners
+    spec: >
+      Fails when a repository has no CODEOWNERS file in .github/, docs/ or its
+      root.
+    owner: check-repo.sh
+    blocks: [ADR-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.2.1", "PW.7.1"]
+      csf: ["GV.RR"]
+    notes: >
+      Advisory in effect on Free — nothing enforces review assignment — but
+      ADR-0004 requires it to be correct before the plan upgrade rather than
+      after, so this is `error` despite having no teeth at GitHub's end yet.
+
+  - check: repo.has_helm_chart
+    spec: >
+      Fails when a deployable repository has no Helm chart at the path in `path`.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+
+  - check: repo.has_vendored_knowledge
+    spec: >
+      Fails when a repository has no .paridyum/knowledge/ snapshot, leaving an
+      agent unable to read the constitution from disk. Reports n/a — never pass —
+      when the repository under test is the knowledge upstream itself.
+    owner: forge
+    blocks: [ADR-0001]
+    declared: 2026-08-06
+    notes: >
+      ADR-0015 makes the org set bind `knowledge`, which would otherwise make this
+      an `error` the upstream can never satisfy: it is the thing being vendored.
+      ADR-0015 defines the question as vacuous at the source rather than exempted by
+      policy, and requires n/a be reported distinctly so the output never claims a
+      guarantee it did not evaluate. Do not implement it as a silent pass.
+
+  - check: repo.hooks_are_reachable
+    spec: >
+      Fails when neither channel will load hooks: the paridyum marketplace is absent from
+      ~/.claude/plugins/known_marketplaces.json AND .claude/settings.json registers no PreToolUse
+      and Stop hooks whose paths exist and are executable.
+    owner: check-repo.sh
+    blocks: [ADR-0027]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PO.3.2"]
+    notes: >
+      REPLACES A CHECK THAT PROVED NOTHING. repo.enables_paridyum_platform_plugin verifies the
+      plugin is DECLARED in a config file, passed for the life of the repository, and concealed a
+      total enforcement failure: the marketplace had never been added, so ADR-0007 layer 1 had never
+      denied an edit, the SessionStart context had never been injected, and the ADR-0025 Stop hook
+      had never fired once — every checkpoint commit that day was invoked by hand. A config file is a
+      statement of intent.
+      Checks EXECUTABILITY, not just registration. ADR-0022 had already found a hook registered and
+      not executable: configured, silent, and indistinguishable from working. Registration alone
+      would have reproduced that one level in.
+      `error`, unlike repo.paridyum_plugin_is_installed's warning, because this is a repository
+      property rather than machine state: a repo holding the hooks can always register them, and one
+      where neither channel exists has layer 1 and durability both structurally off.
+      Necessary, not sufficient: whether a session actually LOADED a registered hook is Claude Code
+      state and no file can answer it. ADR-0027 cost 2 records that limit.
+
+  - check: repo.knowledge_snapshot_not_modified
+    spec: >
+      Fails when a file under .paridyum/knowledge/ differs from the upstream
+      snapshot at the pinned revision.
+    owner: tool-forge
+    blocks: [ADR-0001]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+
+  - check: repo.name_matches_scheme
+    spec: >
+      Fails when a repository name is not `<class-prefix>-<name>` in lowercase
+      kebab-case with a prefix from `class-registry.yaml`, which C-0007 makes the set of valid prefixes, excepting the sui generis
+      `knowledge`.
+    owner: forge
+    blocks: [ADR-0001, ADR-0009, ADR-0046, C-0002, C-0005, C-0007]
+    declared: 2026-08-06
+    notes: >
+      Cited by three artifacts, the most in the id-space. `pd-coming-soon` in the
+      live org violates this and is excepted only by org.no_legacy_prefixed_repos,
+      not here — so this check will fail on it unless it carries the same
+      exception or is scoped to non-archived Rust repositories.
+
+  - check: repo.no_credential_files_committed
+    spec: >
+      Fails when a tracked file matches a known credential filename pattern —
+      .env, id_rsa, .pem, kubeconfig, service-account JSON.
+    owner: check-repo.sh
+    blocks: [C-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PS.1.1"]
+      cis: ["3.3"]
+      csf: ["PR.DS"]
+
+  - check: repo.no_dangling_decision_references
+    spec: >
+      Fails when a document or script cites an artifact id matching the knowledge
+      id pattern that no artifact defines.
+    owner: check-knowledge.sh
+    blocks: [ADR-0011]
+    declared: 2026-08-06
+    notes: >
+      Must exclude DECISION-DEBT.md. The ledger reports dangling ids by citing them,
+      so scanning it makes the check self-inflicting and permanently red — the
+      reasoning is written out at length in check-knowledge.sh section 2.
+      Reporting gap, now fixed: the implementation named only the FIRST citing file,
+      so a widely-cited typo looked like one occurrence. It now names all of them.
+      Known limitation with no clean fix: an id used ILLUSTRATIVELY in prose is
+      indistinguishable from a real citation, so writing `ANTI-0001` or `REQ-0007` as an
+      example fails the check. This caught RFC-0002 and the decompose-spec skill within
+      an hour of each other. The convention is to write `REQ-NNNN` in examples. A smarter
+      check would need to understand prose context, which is not worth it — the false
+      positive is loud, instant and trivially fixed, which is the right failure direction.
+
+  - check: repo.no_inline_scan_suppressions
+    spec: >
+      Fails when a tracked file contains an inline secret-scan suppression comment —
+      `gitleaks:allow` or `infisical-scan:ignore`.
+    owner: infra-ci
+    blocks: [ADR-0017]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.4.2"]
+      csf: ["GV.OV"]
+    notes: >
+      Implemented in secret-scan.sh, so all three layers inherit it. Complements
+      rather than duplicates --ignore-gitleaks-allow: the flag makes the comment
+      ineffective, this makes it absent, and a stale comment left in the tree becomes
+      a live bypass the moment someone drops the flag. Excludes *.md, .gitleaksignore
+      and secret-scan.sh itself — those must name the strings in order to prohibit
+      them, and scanning them makes the check self-inflicting and unfixable. That
+      exclusion list is load-bearing; do not tidy it away. Infisical's keyword is
+      included so a comment cannot survive an engine migration.
+
+  - check: repo.no_vendored_harness
+    spec: >
+      Fails when hook scripts or skill definitions are copied into a repository
+      instead of being loaded from the versioned plugin.
+    owner: check-repo.sh
+    blocks: [ADR-0007]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.4.1"]
+      cis: ["16.4"]
+      csf: ["GV.SC"]
+    notes: >
+      Must not fire on Paridyum/knowledge itself, which is the upstream home of the
+      plugin under plugins/paridyum-platform/. ADR-0015 settles how: the question is
+      vacuous at the source, not exempted, and must be reported n/a rather than pass.
+      Defined in ADR-0015 rather than as args here because ADR-0001 and ADR-0007 are
+      both locked and carry no args — the mechanical route would mean superseding two
+      locked ADRs and scattering one rule across three artifacts.
+
+  - check: repo.owner_is_paridyum_org
+    spec: >
+      Fails when a repository's owner is not the Paridyum organisation.
+    owner: tool-forge
+    blocks: [ADR-0004]
+    declared: 2026-08-06
+
+  - check: repo.paridyum_plugin_is_installed
+    spec: >
+      Fails when ~/.claude/plugins/known_marketplaces.json does not name the paridyum marketplace
+      on a machine that has a ~/.claude directory.
+    owner: check-repo.sh
+    blocks: [ADR-0007]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PO.3.1"]
+    notes: >
+      DECLARED IS NOT INSTALLED. An audit on 2026-08-07 found `.claude/settings.json` declaring and
+      enabling paridyum-platform while the marketplace had never been added to Claude Code. The
+      consequence was total and silent: ADR-0007 layer 1 had never fired once — no PreToolUse
+      denial, no SessionStart injection — and the ADR-0025 Stop hook had never run automatically, so
+      every checkpoint commit that day was invoked by hand.
+      repo.enables_paridyum_platform_plugin passed throughout, because it reads the config file. A
+      config file is a statement of intent, and treating intent as enforcement is the defect class
+      the ADR-0014 audit found four times. This check exists to keep those two apart.
+      `warn`, and n/a where there is no ~/.claude. This is machine state rather than a repository
+      property: CI will never have the plugin installed, and an error would fail every build for a
+      condition CI cannot satisfy. A warning is the strongest honest severity, which is itself an
+      argument for ADR-0004's plan upgrade — server-side enforcement would not depend on a local
+      install at all.
+
+  - check: repo.plugin_snapshot_matches_head
+    spec: >
+      Fails when installed_plugins.json pins a gitCommitSha for which `plugins/paridyum-platform/`
+      differs from HEAD, or names a commit absent from the clone.
+    owner: check-repo.sh
+    blocks: [ADR-0027]
+    declared: 2026-08-07
+    frameworks:
+      ssdf: ["PS.1.1"]
+    notes: >
+      The plugin is a PINNED SNAPSHOT, so a committed hook fix is not running until
+      `/plugin update` — correct in git, stale on disk, invisible from either side. Every hook fix
+      made on 2026-08-07 (the index.lock pre-flight, the bulk guard, removing the 90-second suite
+      from the Stop hook) would have sat inactive with nothing saying so.
+      COMPARES THE SUBTREE, not commit distance. The first version warned on any gap and was caught
+      being noise on its first real one: the pin was a commit behind while `plugins/` was
+      byte-identical, so the running hooks were provably the repository's. A check that fires on every
+      commit not touching the harness gets disabled (ADR-0008).
+      `warn`, for two honest reasons: a snapshot legitimately lags a working tree between commits,
+      and the pin can name a commit this clone has never fetched — which is reported differently,
+      because "behind" and "unknown" are different problems.
+
+  - check: repo.precommit_hook_installed
+    spec: >
+      Fails when the repository's pre-commit hook does not invoke the knowledge
+      gate.
+    owner: check-repo.sh
+    blocks: [ADR-0002, ADR-0014]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2"]
+    notes: >
+      Hooks live in .git/hooks, which is not tracked, so this can only be checked
+      on a developer machine — never in CI on a fresh clone. `warn` for that
+      reason. scripts/install-hooks.sh is what makes it pass.
+
+  - check: repo.scripts_are_lf_only
+    spec: >
+      Fails when a tracked .sh, .bash or .zsh file contains a CR byte.
+    owner: infra-ci
+    blocks: [ADR-0006]
+    declared: 2026-08-06
+
+  - check: repo.secret_scan_clean
+    spec: >
+      Fails when a secret scan over the working tree and history reports a finding
+      that is not an accepted false positive.
+    owner: infra-ci
+    blocks: [C-0004]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2", "PS.1.1"]
+      cis: ["16.12"]
+      csf: ["PR.DS", "DE.CM"]
+    notes: >
+      Implemented by templates/infra-ci/scripts/secret-scan.sh, called by the
+      pre-commit hook, knowledge-check.yml and rust-ci.yml — one script, so the
+      layers cannot drift. It took four attempts to make this check real: the
+      config could not compile (RE2 has no lookahead); the URI scheme was a capture
+      group so gitleaks reported "postgres" as the secret and the placeholder
+      allowlist never applied; gitleaks-action needs an org licence and dies on
+      2026-09-16 with Node 20; and rust-ci.yml had no secret-scan job at all. Every
+      one of those failed in a direction that reported success. Treat a green secret
+      scan as suspicious until you have watched it fail on a planted secret.
+
+  # --- rfc.* ----------------------------------------------------------------
+  - check: repo.session_checkpoint_hook_registered
+    spec: >
+      Fails when hooks.json does not register checkpoint-session.sh as a Stop hook, when it is
+      registered before capture-open-loops.sh, or when the script is not executable.
+    owner: check-repo.sh
+    blocks: [ADR-0025, ADR-0043]
+    declared: 2026-08-07
+    notes: >
+      An automation that silently stops being registered protects nothing, and — this is the
+      part that makes the check necessary — **its absence is indistinguishable from its
+      success**. Either way there are no error messages and no interruptions, right up until
+      the disk is gone. Nothing else in the system would notice.
+      Checks ORDER, not just presence. capture-open-loops.sh rewrites DECISION-DEBT.md, so a
+      checkpoint running before it leaves the regenerated ledger uncommitted until the next
+      session — the exact gap ADR-0025 closes, reintroduced one file at a time.
+      Checks the executable bit separately, because the first attempt at this decision produced
+      a hook that was registered and not executable: configured, silent, and doing nothing. The
+      check caught it immediately, which is the argument for writing the check before trusting
+      the hook.
+
+  - check: rfc.has_alternatives_section
+    spec: >
+      Fails when an artifact of type rfc has no section heading drawn from the
+      accepted set — Options, Alternatives, Rejected alternatives, Alternatives
+      considered.
+    owner: check-knowledge.sh
+    blocks: [ADR-0013]
+    declared: 2026-08-06
+    notes: >
+      The accepted set is not optional detail. RFC-0001 heads its section `## Options`
+      with sub-headings A/B/C, so a check matching only /alternative|rejected/ fails
+      the only RFC in the repository — and would push authors to rename a section to
+      satisfy a regex rather than to think. Match the set, not one word.
+
+  # --- rust.* — ADR-0005 error and panic discipline -------------------------
+  - check: rust.anyhow_only_in_binaries
+    spec: >
+      Fails when `anyhow` is used in a library target, where ADR-0005 requires
+      typed errors via thiserror.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+
+  - check: rust.no_panic_in_libraries
+    spec: >
+      Fails when a crate in a repository matching `applies_to` — `lib-*` —
+      contains a reachable `panic!`, `unreachable!`, `todo!` or `unimplemented!`
+      outside test code.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1"]
+    notes: >
+      Reachability is undecidable in general; a syntactic scan is the honest
+      implementation and will flag deliberate invariant assertions. Needs an
+      explicit allow annotation, or it will be disabled rather than satisfied.
+
+  - check: rust.no_unwrap_or_expect_outside_tests
+    spec: >
+      Fails when `unwrap()` or `expect()` appears outside a `#[cfg(test)]` module,
+      a tests/ directory, or a doc test.
+    owner: tool-forge
+    blocks: [ADR-0005]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.5.1"]
+
+  # --- rustdoc.* ------------------------------------------------------------
+  - check: rustdoc.builds_without_warnings
+    spec: >
+      Fails when `cargo doc` emits any warning, including broken intra-doc links.
+    owner: infra-ci
+    blocks: [STD-0002]
+    declared: 2026-08-06
+
+  - check: rustdoc.missing_docs_denied
+    spec: >
+      Fails when a crate does not deny `missing_docs`, or denies it and still
+      produces a missing-docs diagnostic.
+    owner: tool-forge
+    blocks: [STD-0002]
+    declared: 2026-08-06
+    notes: >
+      Overlaps crate.public_api_is_documented — see that entry. This one is the
+      cheaper implementation because rustc computes it.
+
+  # --- rustfmt.* ------------------------------------------------------------
+  - check: rustfmt.check_passes
+    spec: >
+      Fails when `cargo fmt --check` reports any formatting difference.
+    owner: infra-ci
+    blocks: [STD-0003, STD-0012]
+    declared: 2026-08-06
+
+  # --- telemetry.* — ADR-0044 audit and correlation --------------------------
+  - check: telemetry.correlation_id_is_propagated
+    spec: >
+      Fails when a service generates a new correlation id for an inbound request that already
+      carries one, or when an outbound call omits the id it received.
+    owner: tool-forge
+    blocks: [ADR-0044]
+    declared: 2026-08-08
+    notes: >
+      Regeneration rather than propagation fails in exactly one way and it is invisible from any
+      single service: every service works, every log line carries an id, and no trace spans two
+      of them. It is discovered during an incident, when the question is what happened across
+      the whole request.
+      Unlike most of this registry, the defect cannot be repaired after the fact. A request that
+      has already been served cannot acquire an id, so the gap is permanent for exactly the
+      period nobody can produce evidence for — which is why ADR-0044 makes it an error.
+      Needs to read call sites across a service, so it is tool-forge's rather than a bash gate's.
+
+  # --- terraform.* ----------------------------------------------------------
+  - check: terraform.fmt_and_validate
+    spec: >
+      Fails when `terraform fmt -check` reports a difference or `terraform
+      validate` reports an error.
+    owner: tool-forge
+    blocks: [ADR-0003, ADR-0020]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.9.1"]
+      cis: ["4.1"]
+
+  # --- test.* — STD-0001, STD-0008, STD-0009 --------------------------------
+  # The namespace holds every axis of test-registry.yaml rather than splitting into
+  # perf.* and sec.*. One check per subject was the alternative and it would have put
+  # `perf.load_test_asserts_the_declared_budget` in a namespace with one member, cited by
+  # nothing, blocking a deferred requirement — a declaration with no home. Whether a
+  # namespace earns its own prefix is decided by how many checks it holds, not by how
+  # distinct the subject sounds.
+  - check: test.account_assertion_is_exercised
+    spec: >
+      Fails when a repository defines the ADR-0038 account assertion but no test plants a row
+      carrying a foreign account_id and asserts that the assertion raises.
+    owner: tool-forge
+    blocks: [ADR-0038]
+    declared: 2026-08-08
+    notes: >
+      ADR-0038 decision 5 is deliberately redundant with RLS, and redundant code is the kind
+      that rots unnoticed: if RLS is working, the assertion never fires, and an assertion that
+      never fires is indistinguishable from one that was deleted or inverted.
+      So the test is the only thing that keeps the second control real, and it has to plant the
+      defect — the same rule scripts/test-checks.sh applies to every gate here. STD-0009's
+      framing holds: the denial is the assertion.
+
+  - check: test.authorization_matrix_has_no_untested_cell
+    spec: >
+      Fails when a declared role-by-resource authorisation matrix contains a cell that no
+      test exercises, in either the granted or the denied direction.
+    owner: tool-forge
+    blocks: [STD-0009]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["6.8", "16.12"]
+      csf: ["PR.AA"]
+    notes: >
+      Requires the matrix to be declared somewhere machine-readable, which is a
+      precondition this check cannot create. Until it is, the honest report is "no matrix
+      declared" rather than a pass — a check that silently passes on a missing input is the
+      defect class the ADR-0014 audit found four times.
+
+  - check: test.bugfix_carries_a_regression_test
+    spec: >
+      Fails when a commit whose Conventional Commit type is `fix` changes source files and
+      changes no test file, without an exception recorded in the commit body.
+    owner: infra-ci
+    blocks: [STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["RV.3.3", "RV.3.4"]
+      cis: ["16.3"]
+    notes: >
+      Reads the commit range the way check-commits.sh does, so it inherits that script's
+      hard-won range handling — ADR-0016 records that the identity gate examined an empty
+      range on every push and reported success. The exception path is deliberate and
+      narrow: a reproduction that genuinely cannot be automated must say so, because a rule
+      with no legal exception is one people learn to phrase around.
+
+  - check: test.coverage_meets_threshold
+    spec: >
+      Fails when total line coverage is below the `line` threshold or patch
+      coverage is below the `patch` threshold.
+    owner: infra-ci
+    blocks: [STD-0001]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+    notes: >
+      STD-0001 sets line 70, patch 80. Patch coverage needs a base ref to diff
+      against, so it degrades to total-only on a push to the default branch.
+
+  - check: test.default_profile_does_not_retry
+    spec: >
+      Fails when a test runner's default (non-CI) profile configures a retry count greater
+      than zero.
+    owner: check-repo.sh
+    blocks: [STD-0001, STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2"]
+    notes: >
+      STD-0001 already sets `retries = 0` in the default profile and a bounded backoff in
+      CI, and explains the split: CI retries absorb infrastructure noise, not flakiness. The
+      check exists because the default profile is the one a person runs, and hiding a flake
+      there removes the only cheap opportunity to see it.
+
+  - check: test.doc_tests_enabled
+    spec: >
+      Fails when doc tests are disabled for a crate, whether by `doctest = false`
+      or by a runner configuration that skips them.
+    owner: tool-forge
+    blocks: [STD-0001]
+    declared: 2026-08-06
+    notes: >
+      nextest does not run doc tests at all, so a repository using it satisfies
+      test.nextest_configured while silently skipping every doc test. This check
+      is what closes that specific hole — the two are coupled.
+
+  - check: test.evidence_is_published_for_blocking_tiers
+    spec: >
+      Fails when a CI job implementing a tier that STD-0008 marks blocking finishes without
+      uploading the machine-readable artifact its test types declare in test-registry.yaml's
+      `evidence` field.
+    owner: tool-forge
+    blocks: [STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.3.3", "PO.4.2"]
+      csf: ["GV.OV"]
+    notes: >
+      The one check that makes `evidence` a field rather than a label. It cannot verify the
+      artifact's CONTENT, only that one was produced — so a job uploading an empty junit.xml
+      passes. Stated here because a check verifying less than its name implies is this
+      repository's most-repeated defect, and this one is a partial by construction.
+
+  - check: test.flaky_tests_are_quarantined_with_an_owner
+    spec: >
+      Fails when a test is recorded as flaky and the quarantine entry lacks an owner, a
+      first-seen date, an observed failure rate, a tracking reference or an expiry — or when
+      a quarantined test is still present in a blocking tier.
+    owner: check-repo.sh
+    partial: true
+    blocks: [STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      The second clause is the one that matters. An entry with full paperwork that still
+      runs in the blocking tier has documented the flake rather than removed it, and the
+      "just rerun CI" habit it teaches is what costs more than the failures the suite would
+      have caught. Expiry reuses ADR-0017's mechanic rather than inventing a third one.
+      Implements FLAKY-002 — five columns filled, because each answers a question that decides
+      whether the entry can ever close. The second clause of the spec, that a quarantined test is
+      absent from the blocking tier, needs a test runner and stays unimplemented; declared
+      `partial` rather than counted whole.
+
+  - check: test.integration_tests_use_testcontainers
+    spec: >
+      Fails when a repository matching `applies_to` — `svc-*` or `platform-*` —
+      has integration tests that reach a database or external service without
+      provisioning it through testcontainers.
+    owner: tool-forge
+    blocks: [STD-0001]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.8.2"]
+
+  - check: test.migration_is_applied_and_reverted_in_ci
+    spec: >
+      Fails when a pull request adding a migration does not apply it and revert it against a
+      real database in CI, or reverts it without asserting the schema returned to its prior
+      state.
+    owner: tool-forge
+    blocks: [STD-0006, STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["PR.DS"]
+    notes: >
+      REQ-0008 §4 — "an untested down-migration is a comment". Does NOT cover the harder half
+      of §3: the new schema running against the PREVIOUS application version, which is the
+      case that breaks a rolling deploy and needs two builds in one job. That remains
+      declared and unbuilt rather than folded in here, so the name does not overclaim.
+
+  - check: test.mutation_score_meets_threshold
+    spec: >
+      Fails when the mutation score over the files changed by a pull request is below the
+      `threshold` argument.
+    owner: tool-forge
+    blocks: [STD-0001, STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1", "PW.8.2"]
+      cis: ["16.12"]
+    notes: >
+      Scoped to changed files, not the workspace: a full mutation run is hours and would be
+      turned off within a month. Cited at `warn` in STD-0008 because the score is noisy on
+      small diffs, and a hard gate on a noisy metric is a gate that gets disabled — which is
+      strictly worse than a warning that is read.
+
+  - check: test.nextest_configured
+    spec: >
+      Fails when the file named in `path` — .config/nextest.toml — is absent from
+      a repository containing Rust tests.
+    owner: tool-forge
+    blocks: [STD-0001]
+    declared: 2026-08-06
+
+  - check: test.no_ignored_tests_without_reason
+    spec: >
+      Fails when an `#[ignore]` attribute carries no reason string.
+    owner: tool-forge
+    blocks: [STD-0001]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PW.8.2"]
+      csf: ["GV.OV"]
+    notes: >
+      STD-0001's rationale for this check is itself corrupted — an unquoted `#`
+      truncated it to "An" at YAML parse time. The intended text was "An
+      #[ignore] with no reason is a permanently disabled test nobody will
+      revisit." Recorded here because STD-0001 is locked and cannot be corrected
+      in place.
+
+  - check: test.no_io_in_unit_tier
+    spec: >
+      Fails when a test classified in the unit tier opens a network socket, reads outside
+      the crate's fixture directory, or sleeps.
+    owner: tool-forge
+    blocks: [STD-0001, STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2"]
+    notes: >
+      STD-0001 states the rule; this is what makes it observable. The `sleep` clause is the
+      valuable one — STD-0001 calls a sleep in a test a race condition with a timeout — and
+      it is also the hardest to detect without running the test, so a first implementation
+      that only catches sockets should be declared `partial` rather than counted whole.
+
+  - check: test.operator_scope_denial_is_asserted
+    spec: >
+      Fails when a repository whose session type can carry operator scope has no test
+      asserting that a session WITHOUT an explicit operator claim reads zero rows outside
+      its own account.
+    owner: tool-forge
+    blocks: [ADR-0024, STD-0009]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2", "PW.9.1"]
+      cis: ["6.8", "16.12"]
+      csf: ["PR.AA"]
+    notes: >
+      The negative direction is the entire check. GLO-0005's failure mode is permissive —
+      breadth granted by a dropped field, a null lookup, a middleware ordering mistake — so
+      a suite asserting only that an operator CAN see every account passes identically
+      against the implementation the rule forbids.
+
+  - check: test.static_analysis_runs_on_pull_request
+    spec: >
+      Fails when a repository's pull-request pipeline runs no static application security
+      analysis, or runs one whose findings are not published as a machine-readable report.
+    owner: infra-ci
+    partial: true
+    blocks: [STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.7.1", "PW.7.2", "RV.1.2"]
+      cis: ["16.12"]
+      csf: ["PR.PS-06"]
+    notes: >
+      Partly satisfied today: `clippy --all-targets --all-features -D warnings` runs in the
+      shared workflow, and ADR-0005's error and panic rules make several of its lint
+      categories security controls rather than style ones. The unmet half is the report —
+      clippy's findings live in a log that expires, which fails the second clause.
+      PARTIAL, and the split is the honest half of this entry: rust-ci.yml emits clippy's
+      findings as a JSON artifact, which satisfies the report clause, and nothing yet verifies
+      that a pipeline runs static analysis AT ALL. Counting it whole would overstate enforcement
+      in exactly the way the `partial` flag exists to prevent.
+
+  - check: test.tenant_isolation_suite_covers_owned_tables
+    spec: >
+      Fails when a repository declaring `owns.tables` in its manifest.yaml has a
+      tenant-scoped or account-scoped table with no test asserting cross-tenant denial and
+      cross-account denial for it.
+    owner: tool-forge
+    blocks: [ADR-0024, STD-0009]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PW.8.2"]
+      cis: ["16.12"]
+      csf: ["PR.AA", "PR.DS"]
+    notes: >
+      Both boundaries, because nested tenancy has two (GLO-0004). A suite covering only the
+      outer one passes against a schema with no `account_id` predicate at all, which is
+      ADR-0024 decision 3's failure exactly: it isolates businesses from each other and
+      nobody's customers, and every dashboard reports it healthy.
+
+  - check: test.testing_md_declares_untested_surface
+    spec: >
+      Fails when a repository containing tests has no TESTING.md, or has one without a
+      section stating what is deliberately not tested.
+    owner: check-repo.sh
+    blocks: [STD-0001, STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.4.1"]
+      csf: ["GV.OV"]
+    notes: >
+      STD-0001 requires the untested surface to be stated "in the repository's TESTING.md"
+      and nothing required that file to exist, so the requirement was satisfiable by
+      omission. Same shape as docs.required_files_present, which is why the fix is a
+      required file rather than a prose reminder.
+      MOVED off tool-forge on 2026-08-08, the day it was declared. It reads a file in a
+      checkout, which is the whole of the header's rule about what does and does not need a
+      binary nobody has written. An inline copy briefly existed in rust-ci.yml and was removed:
+      one rule, one implementation, or the two drift with nothing comparing them.
+
+  - check: test.tiers_are_declared_in_ci
+    spec: >
+      Fails when a repository's CI configuration runs a test suite that is not assigned to a
+      tier declared in test-registry.yaml, or assigns a test type to a tier other than the
+      one the registry declares for it.
+    owner: check-repo.sh
+    partial: true
+    blocks: [STD-0008]
+    declared: 2026-08-08
+    frameworks:
+      ssdf: ["PO.3.1", "PO.4.1"]
+      csf: ["GV.PO"]
+    notes: >
+      The check that keeps the pipeline and the registry one vocabulary rather than two. The
+      second clause is the one with teeth: a repository moving its integration suite to
+      nightly because it got slow has changed a governance decision by editing a YAML file,
+      and this is what makes that visible.
+      Implemented against TESTING.md's Tiers section rather than by parsing CI YAML, and that
+      narrows the spec twice — honestly, and `partial: true` is what says so.
+      It verifies that every TST- id named there resolves in test-registry.yaml. It does NOT
+      verify the pipeline matches the declaration: guessing which workflow step is which test
+      type is the inference that produces a check verifying less than its name implies.
+      It also does not validate TIER names. The first version did, by reading every backticked
+      lowercase word in the section — which made `push`, a GitHub event named in this
+      repository's own TESTING.md, an undeclared tier, and failed four unrelated fixtures with
+      it. A `TST-` id can only be one thing; a backticked word is anything at all, and
+      distinguishing them needs a table format STD-0008 never required.
+
+  # --- web.* — ADR-0046, the RSC trust boundary ------------------------------
+  - check: web.data_layer_modules_are_server_only
+    spec: >
+      Fails when a module that imports a database client, a Zitadel client or a credential does
+      not declare `server-only`, so nothing prevents a client component importing it.
+    owner: tool-forge
+    blocks: [ADR-0046]
+    declared: 2026-08-08
+    notes: >
+      The tractable half of ADR-0046 decision 4, and the one that catches the actual leak vector.
+      A React Server Component runs with server credentials; a `"use client"` component does not,
+      and everything it closes over is serialised to the browser. The `server-only` package turns
+      that from a runtime leak into a build error, and this check is the thing that notices when
+      a new data module forgets to declare it.
+      Decidable from imports, which is why it is separable from the general rule. The general
+      rule — a value crossing the boundary that should not — needs type-level flow analysis and
+      is not attempted here.
+
+  - check: web.server_actions_authorize
+    spec: >
+      Fails when a function exported from a `"use server"` module reaches a data layer without
+      an authorization call on every path.
+    owner: tool-forge
+    blocks: [ADR-0046]
+    declared: 2026-08-08
+    notes: >
+      A Server Action looks like a function call and is a publicly callable HTTP endpoint,
+      unauthenticated by default. RFC-0008 cites a CVSS 10.0 advisory on exactly this surface,
+      and the reason it keeps happening is that the defect is invisible at the call site: the
+      caller is a component the author trusts, so the endpoint's public reachability never
+      enters their head.
+      Heuristic by necessity — "an authorization call" is a project convention, not a language
+      construct — so it needs a named helper to look for, which `template-web` must establish
+      before this can be implemented.
+
+  # --- workstation.* --------------------------------------------------------
+
+  - check: workstation.doctor_passes
+    spec: >
+      Fails when `bootstrap.sh --check` or `forge doctor` reports a missing or
+      misconfigured workstation prerequisite.
+    owner: tool-forge
+    blocks: [ADR-0006, RUN-0001]
+    declared: 2026-08-06
+    frameworks:
+      ssdf: ["PO.3.2", "PO.5.1"]
+    notes: >
+      Enforced on a machine, not in repository CI — the only check in the
+      id-space with no repository to run against. `forge audit` cannot evaluate
+      it at all.

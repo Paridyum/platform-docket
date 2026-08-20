@@ -1,0 +1,76 @@
+# Machine-readable identity of this repository (STD-0002).
+# Validated against knowledge.schema-adjacent manifest.schema.json by
+# `docs.manifest_schema_valid`. Replace every value; none of these are sensible defaults.
+
+name: billing                    # repo name minus the class prefix (C-0002)
+class: service                   # service | platform | library | tool | infra | spec | template
+owner: platform                  # a TEAM, never a person — people change role
+stack: rust                      # must be one of the stacks class-registry permits
+language: rust
+runtime: kubernetes
+lifecycle: experimental          # experimental | beta | production | deprecated
+
+# What this repository provides, and how you reach it (STD-0013).
+#
+# REQUIRED by manifest.schema.json. It was absent from this template, so every
+# repository scaffolded from it inherited an invalid manifest and
+# docs.manifest_schema_valid failed on it — including the template itself,
+# which is how it was found.
+#
+# `capability` is one sentence, 12-200 characters, saying what this repository
+# is FOR. Not what it is built with. `entrypoints` are the commands or paths a
+# consumer actually invokes.
+provides:
+  capability: >
+    Issue and settle invoices, and own the invoice tables and events.
+  entrypoints:
+    - billing
+    - specs/openapi.yaml
+
+# What this service is the SOLE WRITER of.
+#
+# Two repositories declaring the same table is ANTI-0001, and it is the one boundary
+# violation that is both mechanically detectable and effectively permanent once shipped.
+#
+# THIS BLOCK IS NOT THE ENFORCEMENT. It is a statement of intent, and nothing about it
+# stops code writing to a table it did not declare. The control is db/grants.sql in this
+# template: a distinct database user per service, granted write access only on the tables
+# listed here. An undeclared write then fails at the database rather than at review.
+# Keep the two in step — that is what the check verifies.
+owns:
+  tables:
+    - invoices
+    - invoice_lines
+  events:
+    - InvoiceIssued
+    - InvoiceSettled
+
+exposes:
+  http:
+    port: 8080
+    openapi: specs/openapi.yaml
+  # Public contract. Must be a subset of owns.events — you cannot publish an event you
+  # do not own.
+  events:
+    - InvoiceIssued
+    - InvoiceSettled
+
+depends:
+  # SYNCHRONOUS calls only. This is the field cycle detection reads
+  # (domain.no_service_dependency_cycles). A dependency reached by hard-coded URL and
+  # left out of here is invisible to it, which makes the org's dependency graph false.
+  services: [auth]
+  infra: [postgres, redis]
+  # Subscribed events. Each must be published by some service's exposes.events, or the
+  # subscription is dead code. Event edges deliberately do NOT count as cycles —
+  # publish/subscribe loops are legal and are the recommended fix for a synchronous
+  # cycle (ANTI-0002).
+  events: [UserCreated]
+
+# slo: DELIBERATELY ABSENT. Declaring one here fires REQ-0016's trigger against the template
+# and, worse, ships concrete numbers for service #1 to copy — "numbers derived from taste", the
+# exact failure REQ-0016 exists to prevent. Uncomment and choose values you can defend:
+#
+# slo:
+#   availability: 99.9
+#   latency_p99_ms: 250

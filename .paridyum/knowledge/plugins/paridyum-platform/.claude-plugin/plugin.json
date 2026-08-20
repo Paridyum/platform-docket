@@ -1,0 +1,11 @@
+{
+  "name": "paridyum-platform",
+  "description": "Enforces Paridyum's locked architecture decisions in every repository. Blocks edits that contradict locked ADRs, injects the binding rules at session start, and packages the knowledge workflows.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Paridyum Platform"
+  },
+  "homepage": "https://github.com/Paridyum/knowledge",
+  "repository": "https://github.com/Paridyum/knowledge",
+  "license": "UNLICENSED"
+}

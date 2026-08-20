@@ -1,0 +1,22 @@
+# Code owners (ADR-0004, repo.has_codeowners).
+#
+# Advisory on GitHub Free: review assignment is not enforced on private repositories
+# (ADR-0004, ADR-0008). ADR-0004 requires this file to be correct BEFORE any plan
+# upgrade rather than written after it, so that enforcement switching on is a billing
+# change and not a scramble.
+#
+# One owner today because the organisation has one member (ADR-0012). Narrow the rules
+# as soon as there is someone to narrow them to.
+
+*                       @rohanbatrain
+
+# The layer that enforces everything else (C-0004). Kept explicit so that when review
+# does become enforceable, these paths are already the ones that demand it.
+/constitution/          @rohanbatrain
+/adr/                   @rohanbatrain
+/requirements/          @rohanbatrain
+/knowledge.schema.json  @rohanbatrain
+/check-registry.yaml    @rohanbatrain
+/.github/workflows/     @rohanbatrain
+/scripts/               @rohanbatrain
+/plugins/               @rohanbatrain

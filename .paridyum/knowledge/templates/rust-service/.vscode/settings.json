@@ -1,0 +1,19 @@
+{
+  // STD-0003: clippy, not check. The default makes the editor green while CI fails,
+  // and the mismatch is discovered at PR time instead of on save.
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.extraArgs": ["--all-targets", "--all-features"],
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.imports.granularity.group": "module",
+  "rust-analyzer.inlayHints.chainingHints.enable": true,
+
+  "editor.formatOnSave": true,
+  "[rust]": { "editor.defaultFormatter": "rust-lang.rust-analyzer" },
+
+  "files.watcherExclude": { "**/target/**": true },
+  "search.exclude": { "**/target/**": true, "**/*.lock": true },
+
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.eol": "\n"
+}

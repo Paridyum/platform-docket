@@ -1,0 +1,9 @@
+# Inert on GitHub Free — CODEOWNERS review enforcement needs branch protection,
+# unavailable on private repos (ADR-0004). Committed anyway so it is already correct
+# on plan upgrade, and so ownership is documented regardless.
+*                     @Paridyum/platform-team
+
+/.github/             @Paridyum/platform-team
+/helm/                @Paridyum/platform-team
+/terraform/           @Paridyum/platform-team
+/migrations/          @Paridyum/platform-team

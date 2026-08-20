@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/test-registry.schema.json",
+  "title": "Paridyum Test-Type Registry",
+  "description": "The complete id-space of Paridyum test types, declared under ADR-0029. Every TST- id named in any artifact's `verified_by`, and every test type a standard or a CI workflow refers to by name, MUST appear here. This is the fifth registry in the pattern ADR-0014 started: a list that must be extended, moved out of the places where extending it is expensive. `axes` and `tiers` are declared in the same file rather than as enums in this schema because a new axis or tier is registry data too — putting them here would reintroduce the defect. Validated by `knowledge.test_registry_valid`. Only the JSON Schema subset implemented by scripts/lib/validate-schema.py is used: no $ref, no $defs, no propertyNames, no oneOf.",
+  "type": "object",
+  "required": [
+    "version",
+    "axes",
+    "tiers",
+    "test_types"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Manifest format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "axes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The dimensions of failure a test type can address. An axis is NOT an umbrella test type: 'security testing' and 'reliability testing' are axes, not things a repository can own a suite of, and declaring them as test types is how a taxonomy acquires entries nothing can ever satisfy or evidence.",
+      "items": {
+        "type": "object",
+        "required": [
+          "axis",
+          "description",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 20
+          },
+          "declared": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 1,
+      "description": "When a test type runs. A tier is the answer to 'what does this cost, and who is waiting for it' — the single decision that keeps a large matrix runnable. A suite with no tier runs everywhere or nowhere, and both are failures.",
+      "items": {
+        "type": "object",
+        "required": [
+          "tier",
+          "trigger",
+          "budget",
+          "blocking",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tier": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 12,
+            "description": "The event that starts this tier. An event, not a cadence — 'nightly' is a schedule, 'every push to a pull request' is a trigger."
+          },
+          "budget": {
+            "type": "string",
+            "minLength": 4,
+            "description": "The wall-clock this tier may consume before it is the bottleneck. A tier with no budget grows until people route around it."
+          },
+          "blocking": {
+            "type": "boolean",
+            "description": "Whether a failure in this tier stops the change. False is a legitimate answer and must be stated, because a non-blocking tier nobody reads is indistinguishable from an absent one."
+          },
+          "declared": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "test_types": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per test type. Sorted by id, ascending, so diffs stay readable. Uniqueness of `test_type` and of `name` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "test_type",
+          "name",
+          "axis",
+          "tier",
+          "status",
+          "detects",
+          "evidence",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "test_type": {
+            "type": "string",
+            "pattern": "^TST-[0-9]{4}$",
+            "description": "Immutable. Never reused, never renumbered — the same rule artifact ids follow, for the same reason: this id is the permanent handle in an artifact's `verified_by`, in a CI job name, and in a test module path."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "minLength": 3,
+            "maxLength": 40,
+            "description": "The kebab-case handle used in CI job names and test module paths. Unique across the registry."
+          },
+          "axis": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Must be a declared axis. Checked by the gate against `axes`, not by an enum here."
+          },
+          "tier": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Must be a declared tier. Checked by the gate against `tiers`."
+          },
+          "status": {
+            "enum": [
+              "required",
+              "recommended",
+              "deferred"
+            ],
+            "description": "`required` — a repository matching `applies_to` that has none of this is in violation. `recommended` — expected where the shape applies, never gated, because no check can tell whether it applies. `deferred` — real, not startable, and MUST carry a `trigger`. Same three-way distinction ADR-0018 makes for requirements, and for the same reason: a taxonomy that marks everything required is one nobody can comply with, and one that marks nothing required is a glossary."
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 12,
+            "description": "REQUIRED when status is `deferred`. The event that makes this test type startable — an event, not a date. A deferred test type without one is a TODO with an id."
+          },
+          "detects": {
+            "type": "string",
+            "minLength": 20,
+            "description": "The failure class this test type catches that no cheaper type catches. Phrased as a defect, not as an activity. If it cannot be written without naming a tool, the entry is a tool preference rather than a test type."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 4,
+            "description": "The machine-readable artifact a run produces — junit.xml, an lcov file, a SARIF report, a k6 summary. This is what turns 'we test that' into something answerable after the fact, and it is the field that makes SSDF PO.3.3 true rather than claimed. `none` is a legal value and an admission."
+          },
+          "stacks": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Which stacks this test type binds, from class-registry.yaml's stack vocabulary, plus `any` for stack-independent types. Absent means `any`.",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "applies_to": {
+            "type": "array",
+            "description": "Glob over repository names, the same shape as an artifact's `applies_to`. Absent means every repository in the stacks named above.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "uniqueItems": true,
+            "default": [],
+            "description": "Check ids from check-registry.yaml that enforce the existence or the shape of this suite. An empty list is honest and common: most test types are governed by a standard's prose and evidenced by their artifact, not by a check that can see them.",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            }
+          },
+          "governed_by": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Artifact ids that state the rules for this test type. This is the reverse of an artifact's `verified_by` and the gate checks nothing about the reverse direction on purpose — a standard may govern a type it does not itself claim to be verified by.",
+            "items": {
+              "type": "string",
+              "pattern": "^(ADR|ANTI|BET|C|GLO|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"
+            }
+          },
+          "frameworks": {
+            "type": "object",
+            "description": "Outward mappings to external framework identifiers, keyed by framework, exactly as check-registry.yaml does it and validated the same way (knowledge.framework_ids_resolve against framework-registry.yaml). ADR-0028's direction rule holds here too: a test type exists because something here needs it, never because a framework named it.",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "declared": {
+            "type": "string",
+            "format": "date",
+            "description": "When this id entered the registry. Never changes, including when the type moves from deferred to required."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Boundary cases, the neighbouring type it is confused with, and known false-positive shapes. Not the rationale; that lives in the governing artifact."
+          }
+        }
+      }
+    }
+  }
+}

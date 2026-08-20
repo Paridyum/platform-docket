@@ -1,0 +1,15 @@
+{
+  "name": "paridyum",
+  "owner": {
+    "name": "Paridyum Platform"
+  },
+  "plugins": [
+    {
+      "name": "paridyum-platform",
+      "source": "./plugins/paridyum-platform",
+      "description": "Enforces Paridyum's locked architecture decisions: blocks edits contradicting locked ADRs, injects binding rules at session start, and packages the knowledge workflows.",
+      "version": "0.1.0",
+      "author": { "name": "Paridyum Platform" }
+    }
+  ]
+}

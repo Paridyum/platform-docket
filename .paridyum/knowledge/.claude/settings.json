@@ -1,0 +1,20 @@
+{
+  "extraKnownMarketplaces": {
+    "paridyum": {
+      "source": {
+        "source": "github",
+        "repo": "Paridyum/knowledge"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "paridyum-platform@paridyum": true
+  },
+  "permissions": {
+    "deny": [
+      "Read(./**/target/**)",
+      "Read(./**/node_modules/**)",
+      "Read(./**/*.generated.*)"
+    ]
+  }
+}

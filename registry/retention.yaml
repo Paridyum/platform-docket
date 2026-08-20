@@ -1,0 +1,53 @@
+# How long each class of document is kept, and why.
+#
+# A retention period without a stated basis is a guess that hardens into
+# policy. Each class below says what it is for, so the period can be
+# argued with rather than inherited.
+#
+# `from` NAMES THE EPOCH, and it is not decoration. Every period below is
+# stated relative to the END of the engagement, not to the day a document was
+# issued -- "8 years after the internship ends", "30 days of the last working
+# day". Measuring from issuance instead is wrong by the whole length of the
+# engagement, and for `emergency_contact` it is actively harmful: 30 days after
+# issue falls in the middle of the internship, while the person is still
+# working and the contact is still needed.
+#
+#   engagement_end  the recorded end date, or the separation date if earlier
+#   issue           the date the document was issued
+#   never           no deadline; `indefinitely`
+version: 1
+
+classes:
+  - class: contract
+    from: engagement_end
+    keep_for: 8 years after the internship ends
+    basis: >
+      Signed agreements must be producible for as long as a claim under
+      them could realistically be brought. Confirm the applicable
+      limitation period with counsel before this is relied on.
+
+  - class: personnel
+    from: engagement_end
+    keep_for: 3 years after the internship ends
+    basis: >
+      Administrative records of the internship. Kept long enough to answer
+      questions about what happened, not longer.
+
+  - class: emergency_contact
+    from: engagement_end
+    keep_for: deleted within 30 days of the last working day
+    basis: >
+      The shortest period in this file, deliberately. This data belongs to
+      a THIRD PARTY who is not Paridyum's intern, was collected for one
+      narrow purpose, and has no purpose at all once the internship ends.
+      Keeping it is the default that has to be argued for, not deleting it.
+
+  - class: permanent
+    from: never
+    keep_for: indefinitely
+    basis: >
+      Two things only: the IP assignment, which must remain provable for
+      as long as the code it covers is in use, and issued certificates and
+      references, which must stay verifiable whenever someone presents
+      one. Register metadata is retained even when the underlying personal
+      data is erased.

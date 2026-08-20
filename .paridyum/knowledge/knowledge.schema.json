@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/knowledge.schema.json",
+  "title": "Paridyum Knowledge Artifact",
+  "description": "Frontmatter contract for every file in a directory named by artifact-registry.yaml — constitution/, adr/, standards/, patterns/, anti-patterns/, runbooks/, rfc/, requirements/, bets/. Validated by `forge knowledge check`. A file in those directories without conforming frontmatter is a hard CI failure. The `type` enum and the four id patterns below are GENERATED FROM artifact-registry.yaml and verified against it by knowledge.artifact_registry_valid (ADR-0022); do not hand-edit them without editing the registry first. The pattern is repeated four times rather than factored into $defs because scripts/lib/validate-schema.py implements neither $defs nor $ref, and it skips keys beginning with `$` when reporting unsupported keywords — so a $ref would be silently ignored and the field would carry no constraint at all, which is worse than the duplication.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "type",
+    "status",
+    "scope",
+    "created"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$",
+      "description": "Immutable. Never reused, never renumbered, even after supersession."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 120
+    },
+    "type": {
+      "enum": [
+        "adr",
+        "anti-pattern",
+        "bet",
+        "constitution",
+        "glossary",
+        "market",
+        "pattern",
+        "requirement",
+        "rfc",
+        "runbook",
+        "standard"
+      ]
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "proposed",
+        "accepted",
+        "locked",
+        "superseded",
+        "deprecated",
+        "deferred"
+      ],
+      "description": "locked = agents and humans MUST NOT contradict this without a superseding artifact. Transition to `locked` is one-way; the only exit is `superseded`. Which statuses a given type may take is artifact-registry.yaml's `lockable` and `deferrable`, not this enum: `rfc` and `bet` may never be `locked`, and only `requirement` may be `deferred`. A bet is unlockable by construction — it exists to be contradicted by evidence, which is the opposite of what locked means (ADR-0022). `deferred` means accepted as real but deliberately not scheduled, and MUST carry a `trigger`. See ADR-0018 and ADR-0022."
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "locked_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "supersedes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"
+      }
+    },
+    "superseded_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "org",
+          "infra",
+          "library",
+          "mobile",
+          "platform",
+          "sdk",
+          "service",
+          "spec",
+          "template",
+          "tool",
+          "web"
+        ]
+      },
+      "description": "A union of selectors. `org` matches EVERY repository regardless of class, including one with no recognised class such as `knowledge` or `template-*`; it is not itself a class. Every other value matches repositories of that class. `forge context <repo>` returns the union of artifacts matching `org` and those matching the repo's class, narrowed by `applies_to`. A classless repository is governed by the `org` set, never exempt. `[org, platform, service, library, tool, infra, spec]` is therefore exactly equivalent to `[org]`; several artifacts use the redundant form and mean nothing by it. See ADR-0015."
+    },
+    "applies_to": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "*"
+      ],
+      "description": "Glob over repo names. Narrower than scope. Default: every repo in scope."
+    },
+    "product": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "description": "A FOURTH AXIS, orthogonal to scope and applies_to, and it must not be confused with either. `scope` selects repository classes and `applies_to` narrows to repository names; both address the estate by how it is built. `product` addresses it by what is sold. One product spans several repositories (a platform service, a spec- contract, a web repository) and one repository serves several products, so a product is not a class and could not be a scope value — conflating the two is the special-casing artifact-registry.yaml's header warns about. Each entry is a slug registered in product-registry.yaml; an unregistered slug is a hard failure, for the reason an unknown check id is (ADR-0014). ABSENT MEANS EVERY PRODUCT, mirroring ADR-0015's rule that a classless repository is governed rather than exempt — an artifact that names no product binds all of them, including Paridyum itself, which is registered as product zero under C-0008. The pattern deliberately carries no parenthesised alternation: knowledge.artifact_registry_valid counts patterns of the form ^(A|B)-[0-9]{4}$ to detect a dropped artifact-id pattern, and a fifth match would break that count while looking correct."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "breaking": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if adopting this required or requires changes to existing repos."
+    },
+    "enforced_by": {
+      "type": "array",
+      "default": [],
+      "description": "THE BRIDGE between prose and the CI gate. Each entry names a check implemented in tool-forge. An artifact with status=locked and an empty enforced_by is reported by `forge knowledge check --audit` as UNENFORCED: it is a decision nothing prevents an agent from violating. That report is the backlog for hardening the gate.",
+      "items": {
+        "type": "object",
+        "required": [
+          "check",
+          "severity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+            "description": "Dotted check id resolved against tool-forge's check registry. Unknown id = hard failure (prevents silent no-op enforcement)."
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warn"
+            ]
+          },
+          "args": {
+            "type": "object"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "verified_by": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "description": "THE SECOND BRIDGE, and it points the other way from `enforced_by`. Each entry is a test-type id from test-registry.yaml naming HOW this rule is demonstrated to hold in running software, rather than what rejects a violating diff. The two answer different questions and neither substitutes for the other: `enforced_by` stops the wrong change from landing, `verified_by` shows the right behaviour is present. Mirrors `enforced_by`/`blocks` exactly — the artifact names its test types, test-registry.yaml's `governed_by` names the artifacts each type serves, and the gate compares the two directions, because a claim written in only one place is one nothing can contradict (ADR-0030). Unknown TST- id = hard failure, for the same reason an unknown check id is (ADR-0014). The pattern below deliberately carries NO parenthesised alternation: knowledge.artifact_registry_valid counts patterns of the form ^(A|B)-[0-9]{4}$ to detect a dropped artifact-id pattern, and a fifth match would break that count while looking correct.",
+      "items": {
+        "type": "string",
+        "pattern": "^TST-[0-9]{4}$"
+      }
+    },
+    "resolved_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$",
+      "description": "For RFCs: the artifact that closed this question."
+    },
+    "trigger": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 12,
+      "description": "Requirements and bets. REQUIRED when a requirement's status is `deferred`, and ALWAYS on a bet — artifact-registry.yaml's `requires_trigger` decides which, per type. An event, not a date. For a requirement it is the condition that would make it current; for a bet it is the condition that would kill it. Both failures are the same: a deferred requirement without a trigger is a TODO with better formatting, and a bet without one is an opinion with frontmatter. Nobody knows what would make either actionable, so neither is ever revisited. See ADR-0018 and ADR-0022."
+    },
+    "review_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date",
+      "description": "Requirements and bets. When to reconsider even if the trigger has not fired, so a wrong trigger does not bury the question forever. Mandatory on a bet: a wager nobody has scheduled a verdict for is one that quietly becomes policy."
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "External facts this artifact rests on, each dated. An external fact is one this repository does not control and cannot re-derive: a law, a vendor's documented behaviour, a product capability, a published limit. ADR-0035 already makes this argument for counts — a number in prose is a snapshot, not a claim. A regulatory position or a vendor's latency requirement is a snapshot too, and one that decays silently, so it carries where it came from and when it was true. OPTIONAL EVERYWHERE EXCEPT type=market, WHERE IT IS THE DEFINITION OF THE TYPE — a market artifact without a source is an opinion with frontmatter, and C-0006 rests on being able to see that the evidence selecting a vertical was not tenant-derived. That conditional requirement is NOT expressed here: scripts/lib/validate-schema.py implements neither if/then nor allOf and reports unknown keywords as unenforced, so writing it in this schema would advertise a constraint nothing applies. It is knowledge.market_artifacts_cite_sources instead, which is the same bargain ADR-0014 struck — a rule the schema cannot carry belongs in a declared check, never in a schema keyword that is silently ignored.",
+      "items": {
+        "type": "object",
+        "required": [
+          "url",
+          "title",
+          "retrieved"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://",
+            "description": "Where the fact was read. A link that rots is still better than a claim with no provenance — it names what to search for."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "description": "What the source is, readable without following the link."
+          },
+          "retrieved": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "ISO date the fact was read. THE LOAD-BEARING FIELD: it converts a claim into a dated observation, which is the only honest form for a fact that can change without telling you."
+          },
+          "supports": {
+            "type": "string",
+            "description": "The specific claim this source backs, in one line. Optional, and worth writing when an artifact cites several sources — it is what makes a later review able to tell which decision moves if this source turns out to have changed."
+          }
+        }
+      }
+    }
+  }
+}

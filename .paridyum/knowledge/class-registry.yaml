@@ -1,0 +1,204 @@
+# Paridyum repository classes — the single source of truth, declared under C-0005.
+#
+# C-0002 held this list in a locked prose table, so adding a class meant superseding the
+# naming constitution. The consequence of not fixing that is on record: ADR-0009 describes
+# the previous estate as "predominantly Python with TypeScript frontends, none matching
+# C-0002". The stack arrived without a class because the ceremony was too expensive.
+#
+# Third instance of a pattern this repository has used twice — ADR-0014 moved check ids
+# out of code into a registry, ADR-0015 moved scope resolution from an enumeration to a
+# rule. The rule stays in the artifact; the list lives here.
+#
+# GENERATES, rather than duplicates:
+#   knowledge.schema.json   `scope` enum
+#   manifest.schema.json    `class` enum
+#   check-knowledge.sh      the prefix-to-scope map, previously hardcoded
+#
+# TWO INDEPENDENT AXES. A class says WHAT a repository is. A stack says WHICH language
+# rules bind it. `stacks` is the permitted set; a repository picks one and declares it as
+# `stack` in its manifest. `mobile` is React Native on typescript or Flutter on dart —
+# same class, different stack. `library` is a crate on rust or a package on typescript.
+# Standards bind a stack, so neither leaks into the other. That is what makes a second
+# stack cheap: React Native reuses whatever TypeScript already has.
+#
+# THE CLASSLESS CASE IS NOT HERE. `knowledge` has no prefix and no class, deliberately
+# (ADR-0015 point 6). It is governed by the `org`-scoped set. Inventing a class to satisfy
+# a model is how models acquire vestigial concepts.
+#
+# `deployable` and `ci` replaced the `applies_to` prefix globs ADR-0003 and ADR-0010 used
+# to carry. Those globs were the defect: a prefix glob in a locked artifact can never be
+# extended to a new prefix.
+#
+# HONESTY ABOUT WHAT DOES NOT EXIST YET. A class here is a declaration that the class is
+# legitimate and how it binds — NOT a claim that its standard, template or CI workflow
+# exists. Most do not. Each entry says so. ADR-0021 records the underlying gap: nothing
+# checks that a class marked `ci: true` actually has a workflow, and `infra-ci` itself does
+# not exist yet.
+#
+# Schema: class-registry.schema.json. Sorted by class.
+
+version: 1
+
+classes:
+  - class: infra
+    prefix: infra-
+    scope: infra
+    stacks: [terraform, none]
+    deployable: false
+    ci: false
+    description: Deployment and cluster configuration, versioned separately from services.
+    declared: 2026-08-07
+    notes: >
+      `deployable: false` since 2026-08-08 (ADR-0037), corrected from `true`. An infra
+      repository DEFINES the cluster; it does not run inside it, so ADR-0020's probes, resource
+      limits and Helm chart were being required of the thing the cluster is described by.
+      ADR-0020 line 109 already read that way — "sequence `infra-kubernetes` before any
+      deployable repository goes live" treats it as the prerequisite FOR deployable repos. The
+      interaction was blocking `infra-ci`, which locked ADR-0021 requires by name and which holds
+      nothing but reusable workflow YAML. Nothing read the field, so the correction was free;
+      after tool-forge implements `repo.has_helm_chart` it would have been a live failure on a
+      production cluster repository. The cost is that `infra-*` now has NO release governance at
+      all, exactly as `mobile` does — REQ-0004 owns it.
+      `stacks: [terraform, none]` for the same reason: `infra-ci` is workflow YAML and shell,
+      `infra-kubernetes` is charts and manifests, and neither is Terraform.
+      `ci: false` reproduces ADR-0010's applies_to, which listed platform, svc, lib and
+      tool but not infra. Infrastructure repositories therefore have no CI standard —
+      including infra-kubernetes and infra-terraform, which will hold the cluster. A real
+      gap, preserved rather than fixed during supersession because changing behaviour
+      inside one is how detail gets lost. Correcting it is a one-line change here and a
+      separate decision.
+
+  - class: library
+    prefix: lib-
+    scope: library
+    stacks: [rust, typescript]
+    deployable: false
+    ci: true
+    description: A shared package consumed by other repositories, never deployed alone.
+    declared: 2026-08-07
+    notes: >
+      Two stacks, which answers RFC-0004's open question about whether TypeScript needed a
+      second prefix. It does not: `library` is the same concept either way, and C-0005's
+      crate-naming and no-binary rules bind the `rust` stack rather than the `lib-` prefix,
+      so a TypeScript package under lib- is simply not governed by them.
+
+  - class: mobile
+    prefix: mobile-
+    scope: mobile
+    stacks: [typescript, dart]
+    deployable: false
+    ci: true
+    description: An application distributed through an app store rather than a cluster.
+    declared: 2026-08-07
+    notes: >
+      `deployable: false` is the important value and it is not an oversight. A mobile app
+      ships to Apple and Google, not to Kubernetes, so ADR-0020 must NOT bind it — probes,
+      Helm charts and resource limits are meaningless here. The consequence is that mobile
+      currently has NO release governance at all, because ADR-0020 was the only thing
+      providing it. Store review, signing, phased rollout and OTA are REQ-0004 territory
+      and deferred.
+      Three constraints with no web or Rust analogue, recorded in RFC-0004: signing
+      certificates are long-lived CI secrets (REQ-0001); store review sits between merge
+      and users, breaking progressive delivery; and OTA is a second deployment path that
+      bypasses store review entirely — CodePush was retired in March 2025, EAS Updates is
+      the successor, and OTA can change the JS bundle but not native code, permissions or
+      store metadata.
+      No standard, template or workflow exists for either stack.
+
+  - class: platform
+    prefix: platform-
+    scope: platform
+    stacks: [rust]
+    deployable: true
+    ci: true
+    description: Platform services every product depends on.
+    declared: 2026-08-07
+
+  - class: sdk
+    prefix: sdk-
+    scope: sdk
+    stacks: [generated]
+    deployable: false
+    ci: true
+    description: A client library generated from a specification and published to a registry.
+    declared: 2026-08-07
+    notes: >
+      `stacks: [generated]` rather than a language list, because an SDK repository has no
+      hand-written source in any language — it is output. C-0004 already governs it:
+      generated code is regenerated, never edited, enforced by
+      agent.generated_code_immutable. STD-0002 already models the discipline for API.md.
+      So most code standards do not apply, and the checks that should are about provenance:
+      is this current with the spec, and was it regenerated rather than hand-edited.
+      What is missing is publishing. Evergreen SDKs are regenerated on every API change and
+      pushed to npm, PyPI, crates.io and others — and those registry tokens are REQ-0001's
+      problem, which is why REQ-0001 gates this class as much as it gates mobile.
+      No generator, template or workflow chosen yet. `spec-` is the intended source.
+
+  - class: service
+    prefix: svc-
+    scope: service
+    stacks: [rust]
+    deployable: true
+    ci: true
+    description: A business capability service. One repository is one bounded context.
+    declared: 2026-08-07
+    notes: >
+      A background worker is deliberately NOT a separate class. A worker is a service with
+      no `exposes.http` block — same deployment, same CI, same ownership rules. Adding a
+      `worker-` prefix would classify by a property the manifest already records, which is
+      over-classification rather than the god-class failure but wrong in the same way.
+
+  - class: spec
+    prefix: spec-
+    scope: spec
+    stacks: [none]
+    deployable: false
+    ci: false
+    description: Interface contracts — OpenAPI documents and event schemas. No executable source.
+    declared: 2026-08-07
+    notes: >
+      Intended to become the source of truth SDK repositories generate from, which would
+      make `spec-` the upstream of `sdk-`. Not decided; RFC-0003 and RFC-0004 both leave it
+      open.
+
+  - class: template
+    prefix: template-
+    scope: template
+    stacks: [none]
+    deployable: false
+    ci: false
+    description: Scaffolding sources consumed by forge. May contain any stack as data.
+    declared: 2026-08-07
+    notes: >
+      `stacks: [none]` because a template is not itself built — it holds source for
+      whatever stack it scaffolds. `template-service` holds Rust; a future
+      `template-web-app` would hold TypeScript; neither is compiled here.
+
+  - class: tool
+    prefix: tool-
+    scope: tool
+    stacks: [rust]
+    deployable: false
+    ci: true
+    description: Developer-facing executables. Binary name is the bare capability.
+    declared: 2026-08-07
+
+  - class: web
+    prefix: web-
+    scope: web
+    stacks: [typescript]
+    deployable: true
+    ci: true
+    description: A user-facing web application, served from the cluster.
+    declared: 2026-08-07
+    notes: >
+      The first class added through this registry rather than by superseding a
+      constitution, which is the point of the mechanism.
+      `deployable: true` because a Next.js application self-hosts via output "standalone"
+      and runs as a normal workload — ADR-0020's probes, limits and chart apply unchanged.
+      Its stack specifics are RFC-0003's subject: pnpm with install scripts disabled and a
+      quarantine window, strict TypeScript, Vitest, Playwright, and the RSC server/client
+      trust boundary, which has no Rust analogue and warrants its own ANTI- artifact.
+      Adopting it fires REQ-0009's trigger, so accessibility belongs in the template rather
+      than in prose afterwards.
+      No standard, template or workflow exists yet.

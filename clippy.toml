@@ -1,0 +1,15 @@
+# STD-0003. disallowed-methods turns a code-review convention into a compile error,
+# which is the difference between a rule and a wish.
+avoid-breaking-exported-api = false
+too-many-arguments-threshold = 8
+cognitive-complexity-threshold = 20
+
+disallowed-methods = [
+  { path = "std::env::set_var", reason = "unsound with threads; load config once at startup" },
+  { path = "std::time::SystemTime::now", reason = "inject a clock — STD-0001 requires deterministic tests" },
+  { path = "std::thread::sleep", reason = "in tests this is a race with a timeout; use a barrier or fake clock" },
+]
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "use ahash::AHashMap, or BTreeMap where iteration order matters" },
+]

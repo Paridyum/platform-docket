@@ -1,0 +1,14 @@
+target/
+build/
+# Personal data and the register never enter git: history cannot be
+# erased, which would make DPDP erasure rights unhonourable.
+# `people/*` rather than `people/`: git does not descend into an ignored
+# DIRECTORY, so a negation inside one never applies. Ignoring the contents
+# instead is what lets the template through.
+people/*
+store/
+
+# The shape of a record is not data, and a fresh clone needs it: `docket new`
+# copies it and twenty tests read it. Excluding the whole directory left a
+# checkout that could not open a record.
+!people/_TEMPLATE.yaml

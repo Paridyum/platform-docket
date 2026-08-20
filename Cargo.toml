@@ -1,0 +1,68 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+name = "tool-docket"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "Paridyum internship document issuance and register"
+publish = false
+
+# C-0007: binary name is the bare capability — tool-docket produces `docket`.
+[[bin]]
+name = "docket"
+path = "src/main.rs"
+
+[lib]
+name = "tool_docket"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+time = { version = "0.3", features = ["formatting", "parsing", "macros", "local-offset"] }
+
+[dev-dependencies]
+
+# STD-0003: declared once at the workspace root; every member inherits. A member that does not
+# inherit has silently opted out of the entire policy, which is why it is checked.
+[workspace.lints.rust]
+unsafe_code           = "forbid"
+missing_docs          = "warn"
+unreachable_pub       = "warn"
+rust_2018_idioms      = { level = "warn", priority = -1 }
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+all      = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# ADR-0005: libraries return typed errors and never panic.
+unwrap_used            = "deny"
+expect_used            = "deny"
+panic                  = "deny"
+todo                   = "deny"
+unimplemented          = "deny"
+indexing_slicing       = "deny"
+integer_division       = "deny"
+float_cmp              = "deny"
+
+# Correctness traps that compile fine and fail in production.
+await_holding_lock     = "deny"
+mem_forget             = "deny"
+lossy_float_literal    = "deny"
+
+# pedantic lints that are noise rather than signal
+module_name_repetitions = "allow"
+must_use_candidate      = "allow"
+missing_errors_doc      = "warn"
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+# ADR-0010. Versions derive from comparing local packages against the registry, not
+# from parsing git tags — tag-derived versioning breaks the moment one crate in a
+# workspace is skipped in a release.
+[workspace]
+changelog_update = true
+git_release_enable = true
+semver_check = true          # flags an API break not reflected in the version bump
+publish = false              # private crates; flip per-crate when publishing
+
+[changelog]
+protect_breaking_commits = true

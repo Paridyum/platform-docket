@@ -1,0 +1,10 @@
+# Pinned exactly, never "stable" (STD-0012). A floating channel means the compiler
+# changes under you and CI disagrees with your machine the week a release lands.
+#
+# THE AUTHORITY FOR THIS VALUE IS toolchain-registry.yaml, not this file (ADR-0048).
+# Templates multiply per class — a service, a tool, a library — and a version copied
+# into each drifts between them. Advance the registry, then bring this into line.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy", "rust-src", "llvm-tools-preview"]
+profile = "minimal"

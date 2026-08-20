@@ -1,0 +1,72 @@
+% Internship Confirmation Letter to the Institution.
+%
+% NOT derived from a .docx. The Intern Onboarding Form asks "Does your
+% institution require an NOC or approval letter?" and nothing in the set
+% produced one -- the pack opened that loop and never closed it. Indian
+% universities routinely require a letter from the company before permitting or
+% crediting a placement.
+%
+% Addressed to the institution, not to the intern, and deliberately says
+% nothing about the intern beyond what the placement requires.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumverifiable{\dkDocVerify}
+
+\textbf{The Training \& Placement Officer} \\
+\dkPEducationInstitution
+
+\vspace{0.9em}
+\textbf{Subject: Confirmation of internship --- \dkPIdentityLegalName}
+
+\vspace{0.7em}
+Dear Sir/Madam,
+
+\vspace{0.4em}
+This letter confirms that \textbf{\dkPIdentityLegalName}, a student of
+\dkPEducationDegree{} at \dkPEducationInstitution, has been offered and has
+accepted an internship with \textbf{\dkOrgName}.
+
+\vspace{0.7em}
+\begin{infobox}
+\textbf{Internship Details}\\[0.5em]
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Student             & \dkPIdentityLegalName \\[0.35em]
+Programme           & \dkPEducationDegree \\[0.35em]
+Role                & \dkPEngagementRole \\[0.35em]
+Department          & \dkPEngagementDepartment \\[0.35em]
+Supervisor          & \dkPEngagementSupervisor \\[0.35em]
+Start Date          & \dkPEngagementStartDate \\[0.35em]
+End Date            & \dkPEngagementEndDate \\[0.35em]
+Work Arrangement    & \dkPEngagementWorkArrangement \\[0.35em]
+Weekly Commitment   & Approximately \dkPEngagementHoursPerWeek{} hours per week \\[0.35em]
+Compensation        & Unpaid
+\end{tabularx}
+\end{infobox}
+
+\vspace{0.7em}
+The internship is undertaken as part of the student's academic programme. It is
+unpaid, part-time, and limited to the fixed period stated above, and the work
+assigned is intended to give practical experience relevant to that programme.
+The student will be supervised throughout by the person named.
+
+\vspace{0.7em}
+Paridyum will issue a Certificate of Internship on satisfactory completion, and
+will provide any further documentation the institution reasonably requires for
+the award of academic credit. If the institution has a prescribed form, please
+send it to \dkOrgEmail{} and we will complete it.
+
+\vspace{0.7em}
+Please contact us at \dkOrgEmail{} if you require anything further, or to
+confirm the authenticity of this letter using the reference and code printed at
+the foot of this page.
+
+\vspace{1.2em}
+Yours faithfully,
+
+\vspace{1.2em}
+\paridyumofficers{\dkSigCeoName}{\dkSigCeoDesignation}{\dkSigCtoName}{\dkSigCtoDesignation}
+
+\end{document}

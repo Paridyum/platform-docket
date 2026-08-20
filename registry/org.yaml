@@ -1,0 +1,60 @@
+# Paridyum's own facts. THE single home for every one of them.
+#
+# Nothing in latex/ or templates/ may restate a value from this file. To
+# change the office address, the email, or the legal status, edit it here
+# and rebuild: every document picks it up.
+version: 1
+
+org:
+  name: PARIDYUM
+  tagline: Technology & Software
+
+  # Rendered into the letterhead on every page of every document.
+  address: Opposite Raghav Tower, Near Aroma Clinic, Herbertpur, Dehradun -- 248142
+  email: legal@paridyum.com
+  web: www.paridyum.com
+
+  # The line in the footer of every document.
+  legal_status: Incorporation in Process
+
+  # Populated when incorporation completes; `legal_status` changes then too.
+  cin: null
+  incorporated_on: null
+
+  # Governing-law clause in the NDA, IP Assignment and Internship Agreement.
+  # The source .docx files all read "[City, State, India]".
+  jurisdiction:
+    country: India
+    forum: Dehradun, Uttarakhand, India
+
+  # Information Security Policy section 12 routes incidents here.
+  security:
+    contact: ROHAN BATRA
+    contact_role: Chief Technology Officer (CTO)
+    email: security@paridyum.com
+
+  # Where POSH complaints go. Below ten employees this is the district
+  # Local Committee, not an Internal Committee -- but an intern must still
+  # be told where to complain.
+  posh:
+    internal_committee: false
+    local_committee: District Officer, Dehradun District, Uttarakhand
+    contact_email: legal@paridyum.com
+
+  # Internship Agreement section 11. The .docx wrote "[7] days".
+  notice_period_days: 7
+
+  # Where a third party checks a certificate or reference letter. Printed on
+  # every issued document alongside its serial and verification code.
+  verification:
+    contact: legal@paridyum.com
+
+  # Grievance Policy section 3. Working days.
+  grievance:
+    acknowledge_days: 3
+    outcome_days: 20
+
+  # Serial number format. {kind} is the document code, {year} the issue
+  # year, {seq} a zero-padded per-kind counter.
+  reference:
+    format: "PAR/{kind}/{year}/{seq:04d}"

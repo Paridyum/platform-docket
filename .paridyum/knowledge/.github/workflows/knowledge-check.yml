@@ -1,0 +1,184 @@
+name: knowledge-check
+
+# Layer 3 of the enforcement ladder (ADR-0007). Reports red on violation.
+#
+# On GitHub Free this CANNOT block a merge on a private repository (ADR-0004), so it
+# is a signal, not a gate. The live gate is the PreToolUse hook shipped in
+# paridyum-platform, which denies the edit before it is written. This job exists to
+# catch commits made outside Claude Code.
+#
+# Kept deliberately cheap: no Rust build, no container. Actions minutes are capped on
+# the Free plan and validating frontmatter must not consume them.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  knowledge:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a SHA, not a tag: ci.actions_pinned_to_sha (ADR-0010) is an `error`
+      # check, and a mutable tag on a third-party action is remote code execution with
+      # extra steps. rust-ci.yml already pins; this file did not.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 0, not 2. Locked-artifact diffing only needs the previous commit, but the
+          # secret scan needs every commit: a secret added and later "removed" is still
+          # in the history, and history is what an attacker clones. On a shallow clone
+          # gitleaks scans only the commits present and still reports success.
+          fetch-depth: 0
+
+      - name: Knowledge integrity
+        run: ./scripts/check-knowledge.sh
+
+      - name: Repository hygiene
+        run: ./scripts/check-repo.sh
+
+      - name: Migrations (ADR-0024 nested tenancy)
+        run: ./scripts/check-migrations.sh
+
+      # Proves the gates by breaking them. README.md's rule is "treat a green check as
+      # unproven until you have watched it fail"; this is that rule as a build step, and it
+      # is why check-registry.yaml may count these checks as implemented rather than declared.
+      - name: Check suite (plant every defect)
+        run: ./scripts/test-checks.sh
+
+      # STD-0008: every blocking tier publishes a machine-readable artifact. This suite is this
+      # repository's blocking tier and wrote only to stdout, so the repository failed its own
+      # evidence rule — recorded honestly in TESTING.md rather than quietly excused, and now
+      # fixed. `if: always()` because a failing run is the one worth keeping.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: gate-results
+          path: junit.xml
+
+      # pull_request only: the review budget is measured against a base ref, and on a push to
+      # main there is no branch diff to measure. The script reports n/a rather than passing.
+      - name: Review budget (STD-0007)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          gh pr view "${{ github.event.number }}" --json body -q .body > /tmp/pr-body.md || : > /tmp/pr-body.md
+          ./scripts/check-pr.sh --body /tmp/pr-body.md
+
+      - name: Commit identity and attribution (C-0003)
+        # The range was `origin/${{ github.base_ref || 'main' }}..HEAD`, which on a push
+        # is ALWAYS empty — origin/main already contains the pushed commit — so this step
+        # examined zero commits and reported success on every push. See ADR-0016.
+        #
+        # On push, github.event.before..github.sha is the range that was actually pushed.
+        # `before` is all-zeros on a branch's first push, and is not an ancestor after a
+        # force-push, so both cases fall back to the tip commit alone.
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            range="origin/${{ github.base_ref }}..HEAD"
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" =~ ^0+$ ]] \
+               || ! git cat-file -e "$before^{commit}" 2>/dev/null \
+               || ! git merge-base --is-ancestor "$before" "${{ github.sha }}" 2>/dev/null; then
+              range="${{ github.sha }}~1..${{ github.sha }}"
+            else
+              range="$before..${{ github.sha }}"
+            fi
+          fi
+          echo "range: $range"
+          ./scripts/check-commits.sh "$range"
+        # Reported, not fatal, on push — and this is deliberate rather than lenient.
+        # An identity defect on a commit already on main cannot be corrected without
+        # rewriting history, which C-0004 forbids as a protected operation. Failing hard
+        # here would leave main permanently red with no legal remedy, which is the exact
+        # trap ADR-0014 exists to escape. Identity is gated where it is still fixable:
+        # the pre-commit hook before the commit exists, and the PR before it merges.
+        continue-on-error: ${{ github.event_name == 'push' }}
+
+      # STD-0008: a fix carries a regression test. The range logic is duplicated from the
+      # identity step above rather than factored out, and that is deliberate — that step is
+      # documented as having examined an empty range on every push for the life of this
+      # workflow (ADR-0016), so its final shape is worth copying verbatim rather than
+      # refactoring both into one place and risking the same defect twice.
+      - name: Regression test on a fix (STD-0008)
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            range="origin/${{ github.base_ref }}..HEAD"
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" =~ ^0+$ ]] \
+               || ! git cat-file -e "$before^{commit}" 2>/dev/null \
+               || ! git merge-base --is-ancestor "$before" "${{ github.sha }}" 2>/dev/null; then
+              range="${{ github.sha }}~1..${{ github.sha }}"
+            else
+              range="$before..${{ github.sha }}"
+            fi
+          fi
+          echo "range: $range"
+          ./templates/infra-ci/scripts/check-regression.sh "$range"
+        # Reported, not fatal, on push — for the same reason as the identity step, with one
+        # difference worth stating: a missing regression test IS fixable in a later commit,
+        # unlike an identity defect. It is non-fatal here because this repository commits
+        # straight to main (ADR-0004 leaves no merge gate), so a hard failure would make the
+        # remedy "amend history", which C-0004 forbids. On a pull request it blocks.
+        continue-on-error: ${{ github.event_name == 'push' }}
+
+      - name: Secret scan (C-0004)
+        # Was gitleaks/gitleaks-action@v2, which failed every run with "missing
+        # gitleaks license" — the key is free but required for org accounts, validated
+        # against a remote service, and v2 stops working entirely on 2026-09-16 when
+        # Node 20 leaves GitHub runners. gitleaks is MIT; only the wrapper is licensed.
+        # This runs the identical script the pre-commit hook runs, so the two layers
+        # cannot drift. Rationale in full at the top of secret-scan.sh.
+        run: ./templates/infra-ci/scripts/secret-scan.sh --history
+
+      - name: Changelog format (STD-0005)
+        run: ./templates/infra-ci/scripts/check-changelog.sh CHANGELOG.md
+
+      - name: Shell syntax
+        run: |
+          for f in $(git ls-files '*.sh'); do bash -n "$f"; done
+
+      # bash -n is a parser, not a linter: it accepts an unguarded `cd`, a dead assignment and a
+      # case pattern that shadows a later one — all three of which were present in the gate scripts
+      # and none of which it reported. Gated at `error` severity, which is 0 across every tracked
+      # script; the remaining `warning`-level findings are SC2088/SC1083 false positives inside
+      # display strings in bootstrap.sh, where a literal tilde is intended.
+      - name: Shell lint (shellcheck)
+        run: |
+          sudo apt-get install -y shellcheck >/dev/null 2>&1 || true
+          command -v shellcheck >/dev/null || { echo "shellcheck unavailable; skipping"; exit 0; }
+          shellcheck --version | head -2
+          # shellcheck's own exit code is the gate; -S error means only the severe class fails.
+          git ls-files '*.sh' | xargs -r shellcheck -S error
+
+      - name: LF line endings (ADR-0006)
+        run: |
+          # A CRLF shell script fails inside WSL and in containers with an error
+          # that never mentions line endings.
+          # '*.sh' alone under-covered the spec, which names .bash and .zsh too.
+          if git ls-files --eol -- '*.sh' '*.bash' '*.zsh' | grep -v 'w/lf'; then
+            echo "::error::shell scripts must use LF line endings (ADR-0006)"
+            exit 1
+          fi
+
+      - name: Plugin manifest
+        # .vscode/ is excluded because VS Code settings and extensions files are JSONC —
+        # JSON with comments — by design, and STD-0003 requires them committed with the
+        # comments that explain each setting. Validating them as strict JSON fails on
+        # correct files.
+        #
+        # This step had never executed: every CI run so far failed at the secret scan
+        # before reaching it, so the defect was invisible until the scan was fixed. It
+        # would have surfaced on the next green run looking like a fresh regression.
+        run: |
+          for j in $(git ls-files '*.json' ':!:**/.vscode/*'); do
+            python3 -c "import json,sys; json.load(open('$j'))" \
+              || { echo "::error file=$j::invalid JSON"; exit 1; }
+          done

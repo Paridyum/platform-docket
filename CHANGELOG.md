@@ -1,0 +1,256 @@
+# Changelog — tool-docket
+
+Format: Keep a Changelog. Versioning: SemVer.
+
+## [Unreleased]
+
+### Added
+- `docket` CLI in Rust: `status`, `onboard`, `issue`, `render`, `verify`, `check`.
+- `latex/paridyum.cls`, the single typesetting authority. Absorbs the
+  letterhead, boxes, footer, page numbering and signature blocks that were
+  duplicated across eleven separate `.tex` files.
+- Fourteen document templates. Ten transcribed from the `.docx` originals,
+  which are the source of truth for content.
+- Four documents that did not exist: POSH policy, Data Protection Notice,
+  Internship Offer, and an intern acknowledgement on the offboarding
+  checklist.
+- `registry/` — `org`, `signatories`, `lifecycle`, `retention`. One home per
+  fact; `check` fails any template that restates one.
+- Tamper-evident register: hash-chained JSONL, outside git so that erasure
+  remains possible.
+- Personnel record keeping: `docket new`, `record`, `roster`, `event`,
+  `separate`, `erase`. Permanent identifiers (`PAR-INT-2026-0001`), never
+  reused, including after erasure.
+- `registry/person-classes.yaml` and `registry/fields.yaml`: 3 person
+  classes, 54 declared fields, each with a stated purpose and a store.
+- Class-gated collection. An unpaid student intern is not an employee, so
+  no statute requires their PAN, Aadhaar, UAN or bank account; the `intern`
+  class forbids them and `check` refuses a record that holds one.
+- Hash-chained identity ledger and personnel event log, alongside the
+  document register. The chain logic is one implementation shared by all
+  three.
+- DPDP erasure that actually deletes: the record file and the person's event
+  detail go; the identifier, class and dates survive as a tombstone so
+  issued serials still resolve.
+- 96 tests.
+
+### Fixed (fourth pass)
+- **Issuance was never recorded as an event.** `Kind::DocumentIssued` existed
+  and was emitted nowhere, so a person's history had a hole where their
+  documents should be.
+- **`Entry.signed` was dead weight.** Declared `Option<Signature>` and never
+  populated, so the register implied it tracked signature and did not. Removed;
+  proven first that a `skip_serializing_if = "None"` field cannot change an
+  existing entry's digest.
+- **The Internship Offer was treated as needing no signature back**, because
+  the rule keyed only on `kind: issued`. It carries an acceptance block the
+  person signs. `needs_countersignature` now also honours `countersigned_by`.
+- `templates/rust-service/manifest.yaml` in the knowledge repository was
+  missing the required `provides` block — so the knowledge gate was failing and
+  every repository scaffolded from it inherited an invalid manifest.
+- `tests/signing.rs` took 51s because each case issued a nine-document pack.
+  The default fixture now issues one document; the two gate cases ask for four.
+  10s.
+
+### Fixed (second pass)
+- The class's `draft` option leaked to `graphicx` as a global option, so a
+  draft rendered a box containing the filename instead of the logo. Loaded
+  with `[final]`.
+- Pronouns recorded in a person record were silently ignored: the record
+  nests them under `identity.pronouns`, generating `\dkPIdentityPronouns*`,
+  while templates read `\dkPPronouns*`. The neutral default always won, so a
+  record saying `she/her` printed "their". Aliased before defaulting.
+- `identity.date_of_birth` rendered as ISO while every other date was long
+  form, so a legal document carried two date formats.
+- The offboarding checklist asked for a last working date the record already
+  held, and broke lines so checkboxes were orphaned from their labels.
+
+### Fixed
+- Non-deterministic output: the PDF trailer `/ID` is derived from the wall
+  clock by pdfTeX. `SOURCE_DATE_EPOCH` does not cover it; `\pdftrailerid`
+  does.
+- `SOURCE_DATE_EPOCH` now uses UTC midnight rather than local midnight, so
+  output no longer depends on the operator's timezone. The archived Python
+  implementation had this bug.
+- Multi-page documents had no letterhead and no page numbering after page 1,
+  so a page could be inserted or removed unnoticed. Every page now carries
+  `Page X of Y` and the reference number.
+- The `Page X of Y` line rendered at 845.8pt on an 845.0pt page and was
+  silently dropped. The footer block is now anchored to grow upward.
+- `\titleformat` targeted the numbered `\section`, which no document uses.
+
+### Added (second pass)
+- Vector logo, built from source at `latex/assets/paridyum-logo.tex`.
+- `identity.date_of_birth` required for interns, a `guardian` field group,
+  and `GRD` (Parent / Guardian Consent) owed whenever the person is under
+  eighteen on their start date — DPDP s2(f) and s9.
+- Verification code in the footer of every issued document, derived from
+  serial + recipient + issue date + template hash. `docket verify`
+  recomputes it. A lookup check, not a signature.
+- The offboarding checklist now names the systems the event log records as
+  still granted, and lists the documents on record with their serials. Both
+  derived, so the paper cannot disagree with the register.
+
+### Added (third pass — ADR-0051 and archival)
+- **Two identifiers (ADR-0051).** `PAR-P-000001-X` is opaque, permanent and
+  names the archive folder; `PAR-INT-2026-0001` carries class and year and
+  names the engagement. Class is mutable for a person and immutable for an
+  engagement, which is the whole distinction.
+- ISO 7064 MOD 11-2 check character on the person identifier, because it is
+  typed into folder names and read aloud. Catches every single-digit error
+  and every adjacent transposition; both properties are swept in tests.
+- `docket reengage` — an intern who is hired keeps their person identifier
+  and gets a new engagement identifier, so the archive stays whole.
+- The register keys on `person_id` + `engagement_id`. A slug is a filename
+  and nothing keys off it.
+- Issued PDFs are stored under the person identifier, not the slug: a folder
+  named after a person discloses who Paridyum engages from the listing alone.
+- **PDF/A-2b (ISO 19005-2)** via `pdfx`, with the sRGB OutputIntent the
+  standard requires. Output is still byte-identical.
+- **PDF metadata** — `/Title`, `/Author`, `/Subject`, `/Keywords` written from
+  a generated `.xmpdata`. A file pulled out of the store is no longer
+  anonymous.
+- `docket index` — generated `roster.csv`, `documents.csv`, `README.txt` and a
+  BagIt-style `manifest-sha256.txt`. The archive verifies with plain
+  `shasum -a 256 -c`, with no Paridyum tooling. Generated output under C-0004;
+  `docket check` fails if it is stale (ADR-0040's pattern).
+- `docket retention` — reports documents past their period, and reports classes
+  whose prose period it cannot parse rather than assuming them compliant.
+- `docket erase` now names what it could NOT reach: the cloud folder, backups,
+  mail, printouts. A tool that reports a complete erasure it did not perform
+  is worse than one that states its boundary.
+- `access.cloud_folder` field, so erasure can name the remote folder.
+- `SOP.md` (STD-0013), six tasks with real pasted output.
+- `provides` block in `manifest.yaml` — required by `manifest.schema.json` and
+  absent before.
+
+### Added (fourth pass — signature and the stage gate)
+- `docket sign <serial>` — records that a document came back executed, in its
+  own hash-chained ledger. Never by mutating the issuance entry: the register
+  is append-only so what was issued cannot be rewritten, and a signature is a
+  later fact.
+- Refuses wet-ink with no scan (the scan is the only evidence that method
+  leaves), a signing date before issuance, a received date before signing, a
+  second signature for the same serial, and an unissued serial.
+- Scans are copied into the store and hashed. `docket check` reports a scan
+  that has gone missing or no longer matches its hash.
+- `docket advance <slug>` — moves a person to the next stage and **refuses**
+  while the stage's `requires_signed` documents are merely issued. That gate
+  was prose in `lifecycle.yaml` and nothing checked it, which is how access
+  gets granted before the NDA comes back. `--force` overrides and says so.
+- `docket status` now distinguishes issued (`[~]`) from executed (`[x]`) and
+  lists what is awaiting return. "Nothing outstanding" previously meant
+  *issued*, which is not the question onboarding turns on.
+- Signature state is a column in `documents.csv`.
+- `tests/signing.rs`, 16 cases.
+
+### Added (fifth pass — the pack, and five documents)
+- `docket pack <slug>` — assembles a person's documents into a folder grouped
+  by **what they must do with each**: sign and return, complete and return, for
+  your records, optional. Derived from `lifecycle.yaml`, so a new document lands
+  in the right folder without editing a list. Ships a `MANIFEST-sha256.txt` that
+  verifies with plain `shasum -a 256 -c`, and is a copy — the store stays
+  authoritative.
+- **PCK** Read Me First — a cover sheet generated from the register, so it
+  cannot describe a pack it was not built from. Says explicitly not to sign
+  anything unread, and lists where to take each kind of question including the
+  one that must not go through the supervisor.
+- **INS** Institution Confirmation, **PUB** Publicity Consent (owed by no stage,
+  deliberately — a consent a stage requires is not freely given), **COC** Code of
+  Conduct, **GRV** Grievance Policy, **EXF** Exit Feedback.
+- COC and GRV join the preboarding signature gate.
+- `retention.yaml` classes now declare `from:` — the epoch a period is counted
+  from.
+
+### Fixed (fifth pass)
+- **Retention measured from the wrong date.** Every period is stated relative to
+  the END of the engagement — "8 years after the internship ends", "30 days of
+  the last working day" — and all of them were measured from the document's
+  ISSUE date. Wrong by the length of the engagement, and for the emergency
+  contact actively harmful: 30 days after issue falls mid-internship, so the
+  tool would have advised deleting a contact that was still needed.
+- `tool-forge/manifest.yaml` declared `lifecycle: alpha`, which is not in the
+  schema's enum, and had no `provides` block. Both required.
+
+### Added (sixth pass — CI, and the messages)
+- `.github/workflows/ci.yml` calling `infra-ci`'s reusable workflow, and the
+  vendored `.paridyum/knowledge/` snapshot ADR-0001 requires and the workflow
+  reads. `check-repo.sh` now passes.
+- `CLAUDE.md`, `.claude/settings.json`, `.gitattributes`, and the `Not tested`
+  / `Quarantine` / `Evidence` sections STD-0008 requires in `TESTING.md` — all
+  four were missing and all four were caught by the repository check.
+- `registry/communications.yaml` — the seven messages Paridyum sends, each
+  naming its documents by code, so a message cannot reference a document the
+  lifecycle does not have. `docket check` verifies it.
+- `docket emails <slug>` — renders the messages due at a person's stage with
+  placeholders filled and attachments resolved to serials. Reports an
+  attachment that has not been issued and exits 1. Does not send mail.
+- `HR-CHECKLIST.md` — one page, 34 checkboxes, every step a command.
+
+### Added (seventh pass — operator, engines, one verb)
+- **Operator identity.** `--by <id>` or `DOCKET_OPERATOR`, validated against
+  the new `registry/operators.yaml`. Every write records who made it; a write
+  without an operator is refused rather than defaulted. Before this, every
+  event in the log said `recorded_by: "docket"`, so the trail could say access
+  was granted and never by whom — and that is not fixable in retrospect.
+- **Tectonic as a second typesetter (ADR-0054).** `pdflatex` is preferred when
+  present; Tectonic is used when it is not. Neither replaces the other. Each
+  register entry now records `engine` and `engine_version`.
+- `docket next <slug>` — the single next thing to do and the command that does
+  it, ordered so that following it from the top requires no knowledge of the
+  lifecycle. Exit 0 only when nothing remains.
+- `tests/engines.rs` — verifies the Tectonic invocation with a shim, since
+  Tectonic is not installed here: a wrong flag would otherwise surface only on
+  the machine that has no pdflatex, which is the machine least able to debug it.
+
+### Added (eighth pass — the interview)
+- `docket new --interactive` — asks the questions instead of handing over a
+  YAML file. Prompts are generated from `registry/fields.yaml`: only what the
+  class permits, only what belongs in the personnel store, the stated purpose
+  as help, required first with an offer to stop there. Writes a
+  self-documenting record that passes `check` unedited.
+- `adapters/console` — prompt and confirm, with the closed-input case handled
+  so a required question cannot spin forever.
+
+### Fixed (ninth pass)
+- **A wizard record could not issue.** Answering only the eight fields the
+  `intern` class requires left the Internship Offer failing with `Undefined
+  control sequence`, naming a TeX command rather than a field. The two lists
+  are both correct and are not the same list — `requires` is about lawfulness,
+  a template's needs are whatever it prints — so they are now checked
+  separately. See DECISION-DEBT D-34.
+
+### Fixed (eighth pass)
+- **The storage split was declared and unenforced.** `person-classes.yaml`
+  declares four stores and the reason for each, yet third-party emergency
+  contact details could sit in the personnel record and `check` passed with
+  zero errors. `validate` now reports a field declared to live elsewhere.
+  Forbidden is still checked first: for an intern's PAN, "no statute requires
+  this" is the reason worth telling someone, not "wrong file".
+- The interview asked date of birth before name, because paths sorted
+  alphabetically. Small, and the kind of wrongness that makes a tool feel like
+  a form.
+- `personnel::create` refused to run after `--interactive` had written the
+  record. The ledger decides whether a person is new, not the file.
+
+### Added (ninth pass — the browser, and a real pre-flight)
+- `docket --tui` — full-screen, read-only: roster, then a person's documents
+  with signature state and their `next` steps. **No new dependency.** Reading a
+  keypress needs raw mode, which needs `unsafe`, which is `forbid` here, so
+  line-based navigation is the only permitted shape — and it avoids fourteen
+  transitive crates. Read-only by construction: no input reaches a write path.
+- `adapters/screen` — clear, heading, and character-counted fit/pad so a
+  non-ASCII name is not cut mid-codepoint or thrown out of column.
+- `issue::unrenderable` — reports fields a document prints that the record does
+  not supply, as record paths rather than TeX commands, before issuing is
+  attempted. Surfaced in `docket next`.
+
+### Changed
+- Person records now use the field paths declared in `fields.yaml`
+  (`identity.legal_name`, `engagement.role`) rather than the ad-hoc shape
+  the first version grew. Templates and the record template were migrated
+  together.
+
+### Notes
+- Supersedes the Python implementation, archived at
+  `archived/docket-python-2026-08-19/`. Output verified byte-identical.

@@ -1,0 +1,171 @@
+% Intern Offboarding Checklist. Content from OffBoarding.docx.
+%
+% Section 5 gains an INTERN SIGNATURE. The source has Paridyum tick a box
+% saying the intern was reminded of surviving NDA obligations, with no
+% acknowledgement from the intern -- so nothing evidences the reminder,
+% which is the entire purpose of that section. See DECISION-DEBT.md D-9.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdate{\dkDocDate}
+\paridyumtitle{Intern Offboarding Checklist}
+
+\textit{This checklist should be completed when an internship ends, whether through
+successful completion, early termination, or withdrawal.}
+
+\section*{1. Intern Details}
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Intern Full Name:   & \dkfill{dkPIdentityLegalName} \\[0.5em]
+Internship Role:    & \dkfill{dkPEngagementRole} \\[0.5em]
+Supervisor:         & \dkfill{dkPEngagementSupervisor} \\[0.5em]
+Start Date:         & \dkfill{dkPEngagementStartDate} \\[0.5em]
+Last Working Date:  & \dkfill{dkPEngagementEndDate}
+\end{tabularx}
+
+\vspace{0.4em}
+\textbf{Reason for Offboarding:}\\
+$\square$ Internship Completed \quad
+$\square$ Resigned / Withdrew \quad
+$\square$ Terminated \quad
+$\square$ Other: \dkblank[3cm]
+
+\section*{2. Work Handover}
+$\square$ Final work submitted \quad
+$\square$ Source code committed to the appropriate repository \\
+$\square$ Project files transferred \quad
+$\square$ Documentation completed \quad
+$\square$ Pending tasks documented \\
+$\square$ Open issues or pull requests transferred \\
+$\square$ Important project information handed over \quad
+$\square$ Knowledge-transfer session completed, if required
+
+\vspace{0.4em}
+\begin{tabularx}{\linewidth}{@{}F{4cm}X@{}}
+Handover Notes: & \dkblank
+\end{tabularx}
+
+\section*{3. Account \& Access Removal}
+Confirm that access is removed from all applicable systems.
+
+\vspace{0.3em}
+$\square$ Company email \quad $\square$ GitHub / Git repositories \quad
+$\square$ Project management tools \\
+$\square$ Communication platforms \quad $\square$ Shared documents / drives \quad
+$\square$ Cloud infrastructure \\
+$\square$ Databases \quad $\square$ CI/CD systems \quad $\square$ VPN \quad
+$\square$ Analytics tools \quad $\square$ Design tools \\
+$\square$ Other systems: \dkblank[4cm]
+
+\vspace{0.5em}
+\begin{softbox}
+\textbf{Recorded as still granted} \textnormal{(\dkPAccessOpenCount{} from the
+personnel event log --- revoke each and record the revocation)}
+\begin{itemize}[leftmargin=*, noitemsep, topsep=2pt]
+\dkPAccessOpenItems
+\end{itemize}
+\end{softbox}
+
+\section*{4. Credentials \& Security}
+$\square$ Intern-specific API keys or tokens revoked \quad
+$\square$ SSH keys removed where applicable \\
+$\square$ Temporary credentials disabled \quad
+$\square$ Shared passwords changed where necessary \\
+$\square$ Access permissions reviewed \quad
+$\square$ Reported security issues resolved or transferred for follow-up
+
+\section*{5. Confidential Information}
+$\square$ Company confidential files returned or deleted where required \\
+$\square$ Private source code removed from personal storage where required \\
+$\square$ Company credentials removed from personal devices \\
+$\square$ Confidential documents returned or deleted \\
+$\square$ No unauthorized copies of Company information are knowingly retained
+
+\vspace{0.6em}
+\begin{softbox}
+\textbf{Intern acknowledgement.} I confirm that I have been reminded that my
+confidentiality obligations under the Non-Disclosure Agreement continue after this
+internship ends, and that I have complied with the items in this section.
+
+\vspace{0.9em}
+\begin{tabularx}{\linewidth}{@{}F{2.6cm}X@{}}
+Intern Name: & \dkfill[5.5cm]{dkPIdentityLegalName} \\[0.9em]
+Signature:   & \dkblank[5.5cm] \quad Date: \dkblank[3.5cm]
+\end{tabularx}
+\end{softbox}
+
+\section*{6. Equipment Return}
+If Paridyum provided equipment:
+
+\vspace{0.3em}
+$\square$ Laptop returned \quad $\square$ Charger returned \quad
+$\square$ Accessories returned \\
+$\square$ Other equipment returned \quad $\square$ Equipment condition checked \quad
+$\square$ Equipment record updated
+
+\vspace{0.4em}
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Equipment Return Date: & \dkblank \\[0.5em]
+Condition / Notes:     & \dkblank
+\end{tabularx}
+
+\vspace{0.3em}
+If no equipment was provided: \quad $\square$ Not Applicable
+
+\section*{7. Internship Documentation}
+$\square$ Internship Agreement on record \quad $\square$ NDA on record \\
+$\square$ Intellectual Property Assignment on record \quad
+$\square$ Security Policy acknowledgement on record \\
+$\square$ POSH Policy acknowledgement on record \quad
+$\square$ University documentation completed, if applicable \\
+$\square$ Final internship dates verified
+
+\vspace{0.5em}
+\begin{softbox}
+\textbf{On record} \textnormal{(\dkPDocsIssuedCount{} documents issued from the
+register)}
+\begin{itemize}[leftmargin=*, noitemsep, topsep=2pt]
+\dkPDocsIssuedItems
+\end{itemize}
+\end{softbox}
+
+\section*{8. Completion Documents}
+Where applicable:
+
+\vspace{0.3em}
+$\square$ Internship Completion Certificate prepared \quad
+$\square$ Certificate issued \\
+$\square$ Reference Letter requested \quad $\square$ Reference Letter approved \quad
+$\square$ Reference Letter issued
+
+\section*{9. Final Feedback}
+\textbf{Intern feedback collected:} \quad $\square$ Yes \quad $\square$ No \quad
+$\square$ Not Applicable \\
+\textbf{Supervisor feedback completed:} \quad $\square$ Yes \quad $\square$ No
+
+\vspace{0.4em}
+\begin{tabularx}{\linewidth}{@{}F{4cm}X@{}}
+Additional Notes: & \dkblank
+\end{tabularx}
+
+\section*{10. Final Status}
+\textbf{Internship Status:} \quad $\square$ Successfully Completed \quad
+$\square$ Ended Early \quad $\square$ Terminated \quad $\square$ Withdrawn
+
+\vspace{0.4em}
+\begin{tabularx}{\linewidth}{@{}F{5cm}X@{}}
+Offboarding Completed Date: & \dkblank \\[0.5em]
+Completed By:               & \dkblank
+\end{tabularx}
+
+\vspace{1em}
+\textbf{Approval}
+
+\vspace{0.5em}
+\paridyumofficers{\dkSigCeoName}{\dkSigCeoDesignation}{\dkSigCtoName}{\dkSigCtoDesignation}
+
+\vspace{0.8em}
+\textbf{Offboarding Status:} \quad $\square$ Complete \quad
+$\square$ Complete with Pending Items \quad $\square$ Pending
+
+\end{document}

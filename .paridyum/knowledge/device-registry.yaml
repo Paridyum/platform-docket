@@ -1,0 +1,199 @@
+# Paridyum device families and host platforms — proposed under RFC-0021.
+#
+# PROPOSED, not binding. RFC-0021 is `status: proposed`; this file is the concrete form of its
+# decisions 4 and 6 and has no authority until that RFC resolves into an ADR.
+#
+# A DEVICE FAMILY is a class of physical hardware. A HOST PLATFORM is the operating system or
+# hypervisor running on it. The first is permanent identity; the second is explicitly mutable,
+# and RFC-0021 decision 6 accepts that changing it renames the machine.
+#
+# WHY THIS FILE EXISTS RATHER THAN A TABLE IN THE RFC. C-0007 states the rule and gives the
+# reason:
+#
+#     The grammar is constitutional. The list is data.
+#
+# C-0002 held repository classes in locked prose, so adding one meant superseding a constitution.
+# Six classes were foreseeable and six rewrites is not a plan. C-0005 moved the list out. A closed
+# family list inside RFC-0021 would rebuild that defect one layer down — the first switch would
+# require superseding the hostname artifact.
+#
+# The draft standard RFC-0021 corrects said it plainly: "No additional musical naming families are
+# introduced by this standard." That sentence is the whole argument for this file.
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# ADMISSION RULES — mechanical, so no one has to exercise taste.
+#
+# 1. AT MOST SIX CHARACTERS. The compact form of RFC-0021 decision 7 is `family + 9` characters
+#    at a three-digit sequence. Windows permits 15. Six keeps every name legal BY CONSTRUCTION
+#    rather than by review — which matters because the check does not exist yet.
+#
+# 2. PREFIX-FREE. No family token may be a prefix of another. The compact form removes the
+#    hyphens and two grammars share the namespace, so a `mur` admitted beside `murli` would make
+#    `murli01` ambiguous — is that family `mur`, sequence 01, platform... nothing? Or family
+#    `murli`, sequence 01? `sitar`, `dhun` and `murli` are prefix-free.
+#
+# 3. LOWERCASE ASCII LETTERS ONLY. No digits, so a family can never be confused with a sequence.
+#
+# 4. NOT A RESERVED NAME. RFC 952 reserves GATEWAY, GW and TAC.
+#
+# 5. THE THEME IS INDIAN MUSICAL INSTRUMENTS, and that is a rule rather than decoration.
+#    RFC 1178 recommends theme names and asks specifically for themes that EXPAND rather than
+#    finite sets — its example of the failure is naming machines after the seven dwarfs. Indian
+#    instruments expand. Anyone extending this list should pick the next instrument, not the next
+#    convenient abbreviation.
+#
+# 6. GEOGRAPHY IS PER FAMILY. A family declares whether its hostnames carry continent and country.
+#    Mobile devices do not: RFC-0021 notes that a phone registered in India remains registered in
+#    India while standing in Japan, so the field would be false exactly when someone relied on it.
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# FAMILIES — what exists. Three, and no more until something is actually racked.
+#
+# The same discipline region-registry.yaml applies with FIX 1: a planned region is not a region,
+# it is a sales conversation. A planned device family is not a family, it is a shopping list.
+# Switches, access points, storage, PDUs and cameras are all foreseeable and none of them is here,
+# because none of them is bought. Admitting one is an entry below, never a change to RFC-0021.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+families:
+  - code: sitar
+    name: Server
+    instrument: Sitar — plucked string
+    geography: true
+    platform: optional
+    status: active
+    notes: >
+      Compute. Under RFC-0019 a datacentre is one Proxmox cluster, so most members of this family
+      are hypervisor hosts and most will carry `px`. Kubernetes nodes are virtual machines above
+      them and are NOT named here — RFC-0021 decision 9 assigns those to the cluster tooling and
+      C-0007's Kubernetes section.
+
+  - code: dhun
+    name: Router
+    instrument: Dhun — a melody form
+    geography: true
+    platform: optional
+    status: active
+    notes: >
+      Routing and gateway hardware. The draft standard argued routers should never carry a
+      platform suffix, so that a Junos-to-VyOS change never touches identity. That reasoning was
+      sound and was overridden by RFC-0021 decision 6, which makes the suffix optional
+      everywhere. A router that omits it gets the draft's original behaviour, which remains the
+      better default for this family specifically.
+
+  - code: murli
+    name: Mobile device
+    instrument: Murli — bamboo flute
+    geography: false
+    platform: forbidden
+    status: active
+    notes: >
+      Phones and tablets. THE ONLY FAMILY WITH NO GEOGRAPHY, and the reason is that the device
+      moves: encoding a country in something designed to cross borders produces a field that is
+      false precisely when it is load-bearing. `murli-01`, flat sequence.
+
+      Whether this family belongs in a PARIDYUM registry at all is RFC-0021 open question 1.
+      A personal phone is not platform infrastructure; an operator device that reaches production
+      is exactly what an inventory should know about. Listed here rather than silently dropped,
+      so the question stays visible.
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# HOST PLATFORMS — two characters, from this list only.
+#
+# TWO CHARACTERS RATHER THAN ONE, and the reason is the defect RFC-0021 was written to fix. The
+# draft derived one-letter codes from names and produced `AS` meaning Singapore, South Korea and
+# South Africa simultaneously. One-letter platform codes fail identically: `o` cannot be OPNsense,
+# OpenWrt and OpenBSD at once, and `u` cannot be Ubuntu and Unraid.
+#
+# THE SAME DISCIPLINE AS THE FAMILY LIST. Only platforms actually run here. A code allocated for
+# a platform nobody has installed is the archive's eight-regions-one-deployment mistake in
+# miniature.
+#
+# NOTE ON `ex` FOR ESXi. The obvious code is `es`, which is also Spain's ISO 3166-1 alpha-2 code.
+# The fields are positional and a parser is never confused, but `sitar-eu-es-01-es` is a name no
+# human should have to read twice. Allocated as `ex` for that reason alone.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+platforms:
+  - code: px
+    name: Proxmox VE
+    kind: hypervisor
+    status: active
+    notes: >
+      The substrate RFC-0019 decision 1 commits to — one cluster per datacentre, never stretched
+      across two. Expected on nearly every `sitar-*`, which is also why RFC-0021 decision 6 admits
+      the suffix carries least information exactly where it is most used.
+
+  - code: tl
+    name: Talos Linux
+    kind: node-os
+    status: proposed
+    notes: >
+      RFC-0019 decision 2's immutable, API-only Kubernetes node OS. Allocated because that RFC
+      names it, and marked `proposed` rather than `active` because RFC-0019 is itself proposed and
+      no Talos node exists. Note that Talos nodes are VIRTUAL MACHINES: under RFC-0021 decision 9
+      they are named by the cluster tooling, so this code may end up allocated and never used on a
+      hostname. Recorded rather than quietly dropped.
+
+  - code: wn
+    name: Windows
+    kind: os
+    status: active
+    notes: >
+      The family-and-platform combination that forces the compact form. `sitar-as-in-03-wn` is 17
+      characters and Windows permits 15, so this is the one platform whose hosts routinely carry
+      both renderings of their name.
+
+  - code: db
+    name: Debian
+    kind: os
+    status: active
+
+  - code: op
+    name: OPNsense
+    kind: network-os
+    status: proposed
+    notes: Allocated for the `dhun` family. No device runs it yet.
+
+  - code: ar
+    name: Arch Linux
+    kind: os
+    status: proposed
+    notes: >
+      Admitted by RFC-0023 decision 1 for `sitar-as-in-01-ar`, which runs Proxmox as a guest
+      rather than on the metal. `proposed` because RFC-0023 is.
+
+      ON THE ARGENTINA COLLISION. `ar` is Argentina's ISO 3166-1 alpha-2 code, and the note on
+      `ex` for ESXi above exists to avoid exactly this. It does not bite here, and the difference
+      is worth stating so the precedent is not misread. The ESXi objection is that
+      `sitar-eu-es-01-es` repeats ONE STRING TWICE inside a single name, which is what makes it
+      unreadable — not that the code resembles a country somewhere. `ar` produces that only for a
+      device placed in Argentina, and `tl` already collides with Timor-Leste and was allocated
+      anyway. If a device is ever racked in Argentina, this entry is the one to revisit.
+
+      RFC-0023 decision 2 licenses a rolling-release distribution under a hypervisor for ONE
+      HOST, on the ground that nothing production depends on it. That is not a property of this
+      platform code. A `sitar-*-ar` carrying production workloads contradicts RFC-0019 decision
+      2's reason for choosing an immutable node OS, and this entry does not authorise it.
+
+# ────────────────────────────────────────────────────────────────────────────────────────
+# WHAT IS DELIBERATELY ABSENT
+#
+# NO CONTINENT LIST. RFC-0021 decision 3 adopts MaxMind's published set — af, an, as, eu, na, oc,
+# sa — and adopting a published set is the entire point. Copying it here would create a second
+# copy to drift.
+#
+# NO COUNTRY LIST. ISO 3166-1 alpha-2 is the authority and it is validated against, not restated.
+# A country needs NO jurisdiction entry in region-registry.yaml to be legal in a hostname:
+# hardware may sit in a country long before a residency boundary is built there, and that file
+# says so itself — "a country routinely has the first without the second".
+#
+# NO SEQUENCE ALLOCATIONS. Which numbers are assigned and which are retired is inventory state,
+# not governance data. This file declares the NAMESPACE; the inventory records what is in it.
+# The distinction is region-registry.yaml's FIX 3: a governance file declares intent, and
+# observed state is measured elsewhere and never written back.
+#
+# NO ADDRESS RANGES. The draft standard's 0-255 per-country table is an IPv4 addressing plan, and
+# region-registry.yaml has already catalogued it as "the archive's IPAM address-space reservation
+# ... a different axis entirely". RFC-0021 decision 9 defers it to a separate addressing RFC.
+# ────────────────────────────────────────────────────────────────────────────────────────

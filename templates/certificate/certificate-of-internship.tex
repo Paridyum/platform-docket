@@ -1,0 +1,61 @@
+% Certificate of Internship. Content from CERTIFICATE.docx.
+% Signature blocks gain DATE lines, absent in the source; a certificate
+% signed without a date cannot be placed in time.
+\documentclass{paridyum}
+\begin{document}
+
+% Confirmable against the register; the code prints in the footer.
+\paridyumverifiable{\dkDocVerify}
+
+\paridyumletterhead
+\begin{tabularx}{\textwidth}{@{}Xr@{}}
+    \textbf{Certificate No.:} \dkDocRef & \textbf{Date of Issue:} \dkDocDate
+\end{tabularx}
+\paridyumsetref{\dkDocRef}
+\vspace{0.9em}
+
+\paridyumtitle{CERTIFICATE OF INTERNSHIP}
+
+\vspace{0.6em}
+\textbf{TO WHOM IT MAY CONCERN}
+
+\vspace{0.7em}
+This is to certify that \textbf{\dkPIdentityLegalName} has successfully completed an
+internship with \textbf{\dkOrgName} as a \textbf{\dkPEngagementRole} from
+\textbf{\dkPEngagementStartDate} to \textbf{\dkPEngagementEndDate}.
+
+\vspace{0.7em}
+During the internship, \dkPIdentityPreferredName{} worked on
+\textbf{\dkPEngagementDepartment} and gained practical experience in areas
+including:
+\begin{itemize}[leftmargin=*, noitemsep]
+\dkPCertificateAreasItems
+\end{itemize}
+
+\vspace{0.5em}
+During the internship period, \dkPIdentityPreferredName{} demonstrated professionalism,
+willingness to learn, and commitment toward assigned responsibilities.
+
+We appreciate \dkPPronounsPossessive{} contribution to Paridyum and wish
+\dkPPronounsObject{} success in \dkPPronounsPossessive{} future academic and
+professional endeavors.
+
+\vspace{0.7em}
+\textbf{For \dkOrgName}
+
+\vspace{1.0em}
+\begin{tabularx}{\textwidth}{@{}X X@{}}
+    \rule{6.5cm}{0.4pt} & \rule{6.5cm}{0.4pt} \\
+    \textbf{\dkSigCeoName} & \textbf{\dkSigCtoName} \\
+    \dkSigCeoDesignation & \dkSigCtoDesignation \\[0.6em]
+    Date: \rule{4cm}{0.4pt} & Date: \rule{4cm}{0.4pt}
+\end{tabularx}
+
+\vspace{0.8em}
+% The source .docx repeated the org name, email and website here
+% because Word had no letterhead. The class provides both a
+% letterhead and a per-page footer, so repeating them is the
+% duplication this system exists to remove.
+
+
+\end{document}

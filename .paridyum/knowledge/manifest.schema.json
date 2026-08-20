@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/manifest.schema.json",
+  "title": "Paridyum Repository Manifest",
+  "description": "The machine-readable identity of a repository. STD-0002 defines the shape in prose and shows an example; this is that contract made executable, which is what `docs.manifest_schema_valid` resolves against. STD-0002 makes no exhaustiveness claim about its field list, so this schema adds `owns` without superseding it (RFC-0002). `forge` reads this to build the dependency graph, the service catalog and ownership reports.",
+  "type": "object",
+  "required": [
+    "name",
+    "class",
+    "owner",
+    "lifecycle",
+    "provides"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "The repository name with its class prefix removed: `svc-billing` is `billing`. C-0002."
+    },
+    "class": {
+      "enum": [
+        "infra",
+        "library",
+        "mobile",
+        "platform",
+        "sdk",
+        "service",
+        "spec",
+        "template",
+        "tool",
+        "web"
+      ],
+      "description": "Generated from class-registry.yaml (C-0005). Matched against an artifact's scope by forge context (ADR-0015)."
+    },
+    "product": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "description": "Which products this repository serves, as slugs registered in product-registry.yaml (ADR-0050). THIS IS THE ONLY HOME OF THE REPOSITORY-TO-PRODUCT MAPPING: the registry deliberately carries no `repos:` key, because a fact has one home (RFC-0015) and cross-repo views are generated from manifests rather than hand-authored (ADR-0040). Optional and frequently absent — a repository serving every product, such as one holding the tenancy model, omits it rather than enumerating the catalogue. Absent therefore means `all products`, matching how an absent `product:` on a knowledge artifact binds all of them, and matching ADR-0015's rule that breadth is the default and narrowing is the deliberate act."
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 2,
+      "description": "A team, never a person \u2014 people change role and the manifest must stay true (STD-0002). Backstage requires the same for the same reason: an individual owner orphans the entity when they leave."
+    },
+    "language": {
+      "type": "string"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "lifecycle": {
+      "enum": [
+        "experimental",
+        "beta",
+        "production",
+        "deprecated"
+      ]
+    },
+    "owns": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What this service is the SOLE WRITER of. Two repositories declaring the same table is ANTI-0001, detected by `domain.entity_has_single_owner`. THE DECLARATION IS NOT THE ENFORCEMENT: a manifest is a statement of intent and nothing here stops code writing to an undeclared table. The control is a distinct database user per service, granted write access only on the tables listed here, so an undeclared write fails at the database rather than at review. This block is what those grants are generated from and checked against.",
+      "properties": {
+        "tables": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Plural snake_case, per C-0002. Tables rather than aggregates because a grant is expressed in tables (RFC-0002); the aggregate belongs in ARCHITECTURE.md prose."
+          }
+        },
+        "events": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Za-z0-9]*$",
+            "description": "Event types this service is the sole publisher of. `<Subject><PastTenseVerb>`, per C-0002. Distinct from `exposes.events`, which is the subset it publishes as a public contract."
+          }
+        }
+      }
+    },
+    "exposes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "port"
+          ],
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "openapi": {
+              "type": "string",
+              "description": "Path to the spec. STD-0002: API.md is generated from it and hand-editing API.md is a CI failure."
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Za-z0-9]*$"
+          },
+          "description": "Published as a public contract. Must be a subset of `owns.events` \u2014 you cannot publish an event you are not the owner of."
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A read replica the owner DELIBERATELY publishes as a contract. This is the one legitimate exception in ANTI-0003: an interface that happens to speak SQL, versioned and owned like any other. Absent this, a foreign read is a violation.",
+          "properties": {
+            "readonly_role": {
+              "type": "string"
+            },
+            "tables": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "depends": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Only `services` participates in cycle detection (`domain.no_service_dependency_cycles`). Event edges are deliberately excluded: publish/subscribe loops are legal and are the recommended fix for a synchronous cycle, so counting them would forbid the remedy \u2014 see ANTI-0002.",
+      "properties": {
+        "services": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "description": "Synchronous calls. A dependency reached by hard-coded URL and not declared here is invisible to cycle detection, which is how a dependency graph becomes false."
+        },
+        "infra": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Za-z0-9]*$"
+          },
+          "description": "Subscribed. Each must be published by some service's `exposes.events`, or the subscription is dead."
+        },
+        "external": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Systems outside the estate this repository calls — a payment processor, a mail provider, an identity provider. Added 2026-08-09 (ADR-0040). Until then `depends` could name only services, infra and events, so a third-party dependency had nowhere to be declared and was invisible to every view generated from manifests. Deliberately NOT part of cycle detection: an external system cannot call back into a service through a declared edge, so it cannot close a cycle. It IS part of the system-context view, and it is the reason that view could not be generated before.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "purpose"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "description": "Stable slug for the external system, not its marketing name. C-0007 abbreviation rules apply."
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 8,
+                "description": "Why this repository depends on it, in a phrase. A dependency whose purpose nobody can state is one nobody can remove."
+              },
+              "data_shared": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string" },
+                "description": "What leaves the estate. REQ-0003 and REQ-0012 both need this and neither could ask for it before; ANTI-0007's regulated classes are the values that matter most here."
+              }
+            }
+          }
+        }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "uniqueItems": true,
+      "description": "The human roles that interact with this repository directly — the people at the edge of a C4 system-context view. Added 2026-08-09 (ADR-0040). Distinct from `depends.external`, which is systems. Prefer a glossary term where one exists: `operator` (GLO-0001) and the tenant/account pair (GLO-0002, GLO-0003) are already defined, and inventing a synonym here is what the glossary exists to prevent.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "interacts_via"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "interacts_via": {
+            "type": "string",
+            "description": "How they reach it — a web application, a CLI, an API token. The edge label in a generated context view."
+          }
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The control framework(s) under which regulated data in this repository is handled. REQUIRED by scripts/check-migrations.sh for any migration annotating a column `paridyum:class phi|pci|financial-record` (ANTI-0007, STD-0006 §4). Until 2026-08-08 this property did not exist while `additionalProperties` was false, so declaring regulated data satisfied the migration gate and failed `docs.manifest_schema_valid` — the two rules made regulated data undeclarable between them. Neither was wrong; nothing had ever exercised both at once, because no repository has ever carried a manifest. The shape is deliberately open: ANTI-0007's point is that the controls are the organisation rather than the checklist, and an empty object is a claim that someone has thought about it, not that a framework is in place.",
+      "properties": {
+        "frameworks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "Framework identifiers, validated against framework-registry.yaml by the same rule ADR-0028 applies to a check's `frameworks` block: controls map outward, and a mapping asserts contribution to an outcome, never that the outcome is met."
+        }
+      }
+    },
+    "slo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "latency_p99_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "stack": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*$",
+      "description": "Which toolchain this repository uses. Must be one of the `stacks` permitted by its class in class-registry.yaml. The class says what the repository is; the stack says which language standards bind it. `language` remains as free-form prose for humans; this is the machine-readable half."
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "entrypoints"
+      ],
+      "description": "What job this repository lets someone do, and what they type to do it (STD-0013). THIS IS THE ONLY HOME OF THE CAPABILITY STATEMENT: no catalogue file lists it, because ADR-0040 already decided cross-repository views are generated from manifests and product-registry.yaml refuses a `repos:` key on the same grounds. Retrieval before designing a new capability is a grep over these blocks, which is the mechanism that stops a tool being rebuilt by someone who did not know it existed. Required rather than optional: an absent capability sentence is indistinguishable from a repository nobody could describe in one, and that is the state STD-0013 exists to reject.",
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 12,
+          "maxLength": 200,
+          "description": "One sentence, in the words someone searching would use, not the words the code uses. It makes the repository findable; SOP.md is what they find once they have found it."
+        },
+        "entrypoints": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._/-]*$"
+          },
+          "description": "The names a person or a caller actually types: binaries for `tool`, the crate for `library`, the base path for a service. Every entry must appear in SOP.md under a task carrying a command block \u2014 docs.sop_covers_every_entrypoint, declared and owed to tool-forge. A DECLARATION, NOT A DERIVATION: a binary that gains a subcommand nobody adds here still passes, which is the honest limit of the check that reads it."
+        }
+      }
+    }
+  }
+}

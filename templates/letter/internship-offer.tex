@@ -1,0 +1,101 @@
+% Internship Offer Letter.
+%
+% NOT derived from a .docx -- the set had no offer letter, so it began at
+% a signed agreement. Pre-boarding starts at offer ACCEPTANCE, which is
+% the event this document creates. See DECISION-DEBT.md D-3.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumtitle{Internship Offer}
+
+\textbf{\dkPIdentityLegalName} \\
+\dkPContactEmail
+
+\vspace{0.9em}
+Dear \dkPIdentityPreferredName,
+
+\vspace{0.5em}
+We are pleased to offer you an internship with \textbf{\dkOrgName} as a
+\textbf{\dkPEngagementRole}. The details are set out below.
+
+\vspace{0.7em}
+\begin{infobox}
+\textbf{Internship Details}\\[0.5em]
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Role                & \dkPEngagementRole \\[0.35em]
+Department / Team   & \dkPEngagementDepartment \\[0.35em]
+Supervisor          & \dkPEngagementSupervisor \\[0.35em]
+Start Date          & \dkPEngagementStartDate \\[0.35em]
+End Date            & \dkPEngagementEndDate \\[0.35em]
+Work Arrangement    & \dkPEngagementWorkArrangement \\[0.35em]
+Weekly Commitment   & Approximately \dkPEngagementHoursPerWeek{} hours per week \\[0.35em]
+Compensation        & Unpaid --- see below
+\end{tabularx}
+\end{infobox}
+
+\section*{1. Nature of the Internship}
+This internship is intended to give you practical experience, mentorship and exposure
+to real projects. It is temporary, and it does not guarantee employment with Paridyum
+during or after the internship.
+
+\section*{2. Compensation}
+\textbf{This is an unpaid internship.} No salary, wages, stipend, bonus or other
+financial compensation is offered.
+
+\ifdkPEducationCurrentlyEnrolled
+This offer is made on the basis that you are currently enrolled as a student at
+\textbf{\dkPEducationInstitution}, that the internship forms part of your education,
+and that it runs for the fixed period stated above. Please tell us before you accept
+if any of that is not correct, as it changes the basis of this offer.
+\else
+\textbf{[This offer cannot be issued: no current enrolment is recorded, and the
+unpaid basis rests on it. See DECISION-DEBT.md D-5.]}
+\fi
+
+Where you need it, we will provide reasonable documentation for your institution for
+internship completion or academic credit.
+
+\section*{3. Documents to Be Signed}
+If you accept, the internship is subject to your signing the following before your
+start date:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item Internship Agreement;
+    \item Non-Disclosure Agreement;
+    \item Intellectual Property Assignment Agreement;
+    \item Information Security \& Acceptable Use Policy;
+    \item Policy on Prevention of Sexual Harassment (POSH); and
+    \item Data Protection Notice.
+\end{itemize}
+You will also be asked to complete the Intern Onboarding Form and the Emergency
+Contact Form. Please read each document before signing, and ask us about anything that
+is not clear.
+
+\section*{4. Ending the Internship}
+Either you or Paridyum may end the internship on
+\textbf{\dkOrgNoticePeriodDays{} days' written notice}, as set out in the Internship
+Agreement.
+
+\section*{5. Acceptance}
+Please confirm your acceptance by signing below and returning a copy. This offer is
+open until \dkblank[3.5cm].
+
+\vspace{1.2em}
+\paridyumofficers{\dkSigCeoName}{\dkSigCeoDesignation}{\dkSigCtoName}{\dkSigCtoDesignation}
+
+\vspace{1.2em}
+\begin{softbox}
+\textbf{Acceptance by the Intern}
+
+\vspace{0.5em}
+I accept the internship offered above on the terms set out in this letter.
+
+\vspace{1em}
+\begin{tabularx}{\linewidth}{@{}F{2.6cm}X@{}}
+Name:      & \dkPIdentityLegalName \\[1em]
+Signature: & \dkblank[5.5cm] \quad Date: \dkblank[3.5cm]
+\end{tabularx}
+\end{softbox}
+
+\end{document}

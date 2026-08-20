@@ -1,0 +1,8 @@
+# ADR-0012: pull_request_target runs the base repo's workflow with its secrets and a
+# write-scoped token. With a fork checkout it is arbitrary code execution as the org.
+on:
+  pull_request_target:
+jobs:
+  build:
+    steps:
+      - run: echo hi

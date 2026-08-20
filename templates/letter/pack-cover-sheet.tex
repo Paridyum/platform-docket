@@ -1,0 +1,84 @@
+% Onboarding pack cover sheet.
+%
+% The first thing an intern sees. Lists exactly what is in the pack, what to
+% do with each item, and what has to come back — generated from the register,
+% so it cannot describe a pack it was not built from.
+%
+% Deliberately says what NOT to do too: signing something you have not read
+% because it arrived in a folder of eleven documents is the failure this sheet
+% exists to prevent.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumtitle{Read Me First}
+
+Dear \dkPIdentityPreferredName,
+
+\vspace{0.4em}
+This folder holds the documents for your internship with \dkOrgName{} as
+\dkPEngagementRole, from \dkPEngagementStartDate{} to \dkPEngagementEndDate.
+
+\vspace{0.6em}
+\begin{softbox}
+\textbf{Please read each document before you sign it.} If anything is unclear,
+or looks wrong, ask us at \dkOrgEmail{} \emph{before} signing. Taking time over
+this is expected, not an inconvenience --- and a question about a document is
+never treated as a problem.
+
+\vspace{0.4em}
+\textbf{Nothing here is a formality.} These set out what you own, what you may
+say publicly, what happens to your personal data, and where to take a
+complaint.
+\end{softbox}
+
+\section*{1. Sign and return}
+\textit{Folder \texttt{01\_Sign\_and\_return}. Both Paridyum and you sign these.
+Please return a signed copy of each --- scanned is fine.}
+\begin{itemize}[leftmargin=*, noitemsep]
+\dkPackSignItems
+\end{itemize}
+
+\section*{2. Complete and return}
+\textit{Folder \texttt{02\_Complete\_and\_return}. Fill these in and send them
+back. Some fields are already filled from what you have told us; check them.}
+\begin{itemize}[leftmargin=*, noitemsep]
+\dkPackCompleteItems
+\end{itemize}
+
+\section*{3. For your records}
+\textit{Folder \texttt{03\_For\_your\_records}. Yours to keep. Nothing to return.}
+\begin{itemize}[leftmargin=*, noitemsep]
+\dkPackRecordsItems
+\end{itemize}
+
+\section*{4. Optional}
+\textit{Folder \texttt{04\_Optional}. Genuinely optional. Your internship, your
+certificate and your reference do not depend on any of it, and declining
+changes nothing.}
+\begin{itemize}[leftmargin=*, noitemsep]
+\dkPackOptionalItems
+\end{itemize}
+
+\section*{Where to ask, and where to complain}
+\begin{tabularx}{\linewidth}{@{}F{5.4cm}X@{}}
+About the work:              & \dkPEngagementSupervisor \\[0.4em]
+About a document:            & \dkOrgEmail \\[0.4em]
+A security concern:          & \dkOrgSecurityEmail \\[0.4em]
+Any other concern:           & \dkOrgEmail{} --- see the Grievance Policy \\[0.4em]
+Sexual harassment:           & see the POSH Policy; it does not go through your supervisor
+\end{tabularx}
+
+\vspace{0.8em}
+Every document in this folder carries a reference number and a verification
+code in its footer. Quote them to \dkOrgEmail{} if you ever need a document
+confirmed as genuine.
+
+\vspace{1em}
+Welcome, and thank you.
+
+\vspace{1em}
+\paridyumofficers{\dkSigCeoName}{\dkSigCeoDesignation}{\dkSigCtoName}{\dkSigCtoDesignation}
+
+\end{document}

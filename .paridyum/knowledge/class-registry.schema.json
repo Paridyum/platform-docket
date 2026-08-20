@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/class-registry.schema.json",
+  "title": "Paridyum Repository Class Registry",
+  "description": "The complete set of repository classes, declared under C-0005. C-0002 held this list in a locked prose table, which made every new class cost a supersession of the naming constitution. The rule stays in C-0005; the list lives in the registry. The classless `knowledge` repository is deliberately absent \u2014 it is governed by the org-scoped set (ADR-0015).",
+  "type": "object",
+  "required": [
+    "version",
+    "classes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Registry format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "classes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per repository class, sorted by `class`. Uniqueness of `class`, `prefix` and `scope` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "class",
+          "prefix",
+          "scope",
+          "stacks",
+          "deployable",
+          "ci",
+          "description",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "class": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*$",
+            "description": "The class name, used as the `class` value in manifest.yaml."
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*-$",
+            "description": "The repository name prefix, trailing hyphen included. C-0005 fixes the grammar `<prefix><name>`; this fixes the set of prefixes."
+          },
+          "scope": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*$",
+            "description": "The value artifacts use in `scope` to bind this class. Generates knowledge.schema.json's scope enum. `org` is not a class and never appears here \u2014 it is the selector that matches every repository (ADR-0015)."
+          },
+          "deployable": {
+            "type": "boolean",
+            "description": "True when this class ships a running workload, and therefore binds the Kubernetes standard. Replaces ADR-0003's applies_to prefix glob \u2014 a glob in a locked artifact can never be extended to a new prefix, which is the defect this registry exists to fix."
+          },
+          "ci": {
+            "type": "boolean",
+            "description": "True when this class uses the shared reusable CI workflow. Replaces ADR-0010's applies_to prefix glob, for the same reason."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 12,
+            "description": "One sentence stating what a repository of this class contains. If it needs an 'and', it is probably two classes (ANTI-0006's test, applied to classes)."
+          },
+          "declared": {
+            "type": "string",
+            "format": "date",
+            "description": "When the class entered the registry. Never changes."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Hazards, preserved gaps, or the reasoning behind a non-obvious value. Not the rationale for the class existing; that belongs in the artifact that introduced it."
+          },
+          "stacks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*$"
+            },
+            "description": "The language toolchains PERMITTED for this class. A set rather than one value, because a class and a stack are independent axes: `mobile` is React Native on `typescript` and Flutter on `dart`, the same class either way; `library` is a shared crate on `rust` or a shared package on `typescript`. A repository picks one and declares it in manifest.yaml as `stack`. Standards bind a stack, so a class with two stacks inherits both sets and neither leaks into the other. `none` for classes with no compiled source of their own."
+          }
+        }
+      }
+    }
+  }
+}

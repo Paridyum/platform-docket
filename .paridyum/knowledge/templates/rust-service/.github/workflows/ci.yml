@@ -1,0 +1,22 @@
+# Thin caller. All logic lives in the shared workflow (ADR-0010) so a fix reaches
+# every repository by moving a tag rather than by forty pull requests.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: Paridyum/infra-ci/.github/workflows/rust-ci.yml@v1
+    with:
+      # msrv is deliberately not passed. ADR-0005 pins the toolchain exactly
+      # (rust-toolchain.toml), so for a binary there is no consumer compiling this with an
+      # older compiler and no minimum to support. Pass it for `lib-*` crates, which are
+      # consumed by repositories that may pin a different version.
+      integration: true
+      coverage-total: 70
+      coverage-patch: 80

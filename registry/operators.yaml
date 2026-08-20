@@ -1,0 +1,30 @@
+# Who may operate this tool.
+#
+# SEPARATE FROM signatories.yaml, and the distinction is real: a signatory
+# signs documents on behalf of Paridyum; an operator runs the tool that issues
+# them. Today they overlap almost entirely. The first time someone does HR
+# administration without being an officer, they will not — and a registry that
+# conflated the two would have to be untangled at exactly that moment.
+#
+# Every write records the operator who made it. Before this existed, every
+# event in the log said `recorded_by: "docket"`, so the trail could say that
+# access was granted and never by whom. That is tolerable with one operator and
+# is not fixable in retrospect, which is why it was added while there was
+# still only one.
+version: 1
+
+operators:
+  - id: rohan
+    name: ROHAN BATRA
+    role: Chief Technology Officer
+    active: true
+
+  - id: ruhani
+    name: RUHANI KHURANA
+    role: Chief Executive Officer
+    active: true
+
+  - id: priyanshu
+    name: PRIYANSHU SHARMA
+    role: Director
+    active: true

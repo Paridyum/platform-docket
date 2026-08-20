@@ -1,0 +1,25 @@
+# Schema: knowledge/manifest.schema.json
+#
+# lifecycle: beta — the code is complete and reviewed to the standard it
+# will be operated at (C-0010), but it has not yet issued a document that
+# anyone has signed. It becomes `production` on the first real issuance.
+#
+# NOT `alpha`. That value is not in the schema's enum, which permits only
+# experimental | beta | production | deprecated. tool-forge/manifest.yaml
+# currently carries `alpha` and is therefore schema-invalid; recorded in
+# DECISION-DEBT.md D-12.
+name: tool-docket
+class: tool
+stack: rust
+owner: rohanbatrain
+lifecycle: beta
+
+# Required by manifest.schema.json and STD-0013. This is the ONLY home of the
+# capability statement: no catalogue lists it, because ADR-0040 already decided
+# cross-repository views are generated from manifests.
+provides:
+  capability: >
+    Issue, register and archive Paridyum's internship and employment documents,
+    and keep the personnel records they are issued against.
+  entrypoints:
+    - docket

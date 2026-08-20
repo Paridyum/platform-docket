@@ -1,0 +1,27 @@
+# Secret-scan exceptions (C-0004, ADR-0017).
+#
+# This file is the ONLY legitimate way to suppress a secret-scan finding. Inline
+# `# gitleaks:allow` comments are disabled everywhere by --ignore-gitleaks-allow in
+# templates/infra-ci/scripts/secret-scan.sh, because a comment anyone can append is a
+# one-line bypass of the whole control and leaves no reviewable trace.
+#
+# An entry here is a fingerprint, not a rule. It names one finding in one place:
+#
+#     <file>:<rule-id>:<line>
+#     path/to/file.yaml:paridyum-db-url-with-password:42
+#
+# Get the fingerprint from the scan output — gitleaks prints `Fingerprint:` for every
+# finding. Copy it exactly.
+#
+# Three things that make this safe where a comment is not:
+#
+#   1. It appears in a diff, so adding one is a visible act a reviewer sees.
+#   2. It is pinned to a line, so it lapses when the file changes and does not silently
+#      keep permitting whatever moves into its place.
+#   3. It lives in one file, so `wc -l` is an honest count of how much has been waived.
+#
+# Every entry MUST carry a comment above it stating why the finding is not a real
+# secret. An unexplained entry is indistinguishable from a smuggled one, and reviewers
+# will wave it through. If you cannot write the reason, it is a real secret — rotate it.
+#
+# Empty by design. Nothing in this repository needs an exception.

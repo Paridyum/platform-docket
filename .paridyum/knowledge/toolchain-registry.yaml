@@ -1,0 +1,91 @@
+# Paridyum toolchain pins — created by ADR-0048.
+#
+# THE PINNED COMPILER OR RUNTIME FOR EACH STACK. One entry per stack, and the entry is the
+# authority. Templates derive from this file; artifacts NAME it rather than restating it.
+#
+# ════════════════════════════════════════════════════════════════════════════════════════
+# WHY THIS FILE EXISTS
+#
+# STD-0003 is `locked` and its example read `channel = "1.90.0"`. That was correct on
+# 2026-08-06 and false by August 2026 — a reader copying the block got a compiler eleven
+# months old, which `cargo install sqlx-cli` refused to build against. That is how it was
+# found: by a dependency's minimum version, not by anyone reading the standard.
+#
+# It could not be corrected. ADR-0031 errata may not change what an artifact decides and the
+# body stays byte-identical, so the erratum appended on 2026-08-16 LABELS the trap and cannot
+# remove it. The example still reads 1.90.0.
+#
+# ADR-0048 states the general rule that instance forced: a value changing on a cadence we do
+# not control never lives inside an artifact whose only legal correction is heavier than the
+# correction. It can do nothing but rot there.
+#
+# PER STACK, NOT PER TEMPLATE. The obvious cheaper home was
+# templates/rust-service/rust-toolchain.toml. Rejected because templates multiply per class —
+# a service, a tool, a library — and a version copied into each drifts between them, which is
+# the same defect one level down. ADR-0048 decision 4.
+#
+# ════════════════════════════════════════════════════════════════════════════════════════
+# WHAT BELONGS HERE, AND WHAT DOES NOT
+#
+# HERE: the pin, and the metadata a pin needs to be re-examined — when it was set, and what
+# floor forced it. A number with no date is a number nobody dares change.
+#
+# NOT HERE: the RULE that a pin is exact and never a channel. That is STD-0003's decision, it
+# changes on nobody's schedule but ours, and moving it here would be ADR-0048 decision 5's
+# opposite error — putting a judgement in a registry because a value went in one.
+#
+# NOT HERE: which components a given repository needs beyond the shared set, or lint config.
+# STD-0003 and clippy.toml govern those.
+#
+# NOT HERE: WHEN THE PIN ADVANCES. Nothing decides that yet — ADR-0048 open question 3, and
+# TASKS T-2.12. This file records what the pin IS; it does not authorise a cadence for
+# changing it, and a pin nobody advances is exactly how 1.90.0 happened.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+toolchains:
+  - stack: rust
+    channel: "1.97.1"
+    profile: minimal
+    components:
+      - rustfmt
+      - clippy
+      - rust-src            # required by rust-analyzer (STD-0003)
+      - llvm-tools-preview  # required by cargo-llvm-cov (STD-0003)
+    pinned_at: 2026-08-17
+    floor: "1.94"
+    floor_reason: >
+      `sqlx-cli` 0.9.0 refuses to build below 1.94. Recorded because a floor is the thing most
+      likely to force the next move, and reconstructing why one exists is expensive later.
+    notes: >
+      Current stable per `rustup check` on 2026-08-16, released 2026-07-14. Chosen over holding
+      at the floor because nothing argued for holding back — no production, no external
+      consumers, no legacy compiler to support — and the failure that produced this file was a
+      pin that was too OLD.
+
+      VERIFIED BEFORE PINNING, against tool-forge on this exact version: `cargo fmt --all
+      --check` clean, `cargo clippy --all-targets --all-features` clean, the full test suite
+      passing, and `cargo deny` reporting advisories, bans, licenses and sources all ok. A
+      toolchain bump routinely breaks clippy as new lints land, so a pin advanced without that
+      evidence is a guess.
+
+      1.94.1 exists and is the patched release of the floor's line. Irrelevant while the pin is
+      above it; relevant if the pin is ever moved back down to the floor.
+
+# ────────────────────────────────────────────────────────────────────────────────────────
+# NOT YET PRESENT
+#
+# NO TYPESCRIPT OR NODE ENTRY. RFC-0003 and RFC-0008 are both `proposed`; no repository of
+# either stack exists. Allocating an entry for a stack nobody has adopted would repeat the
+# archive's eight-regions-one-deployment mistake that region-registry.yaml already catalogues.
+# When those RFCs resolve, this file is where their pins go, and that inheritance is the
+# reason ADR-0048 chose a registry over a template.
+#
+# NO SCHEMA FILE YET, and no check. Every other registry here has both. The gap is TASKS
+# T-2.7: `check-registry.yaml` uses `owner` as its only implemented-versus-owed signal, so a
+# check owed by anything other than tool-forge is counted as built the moment it is declared.
+# Declaring `knowledge.toolchain_registry_valid` today would report an unwritten check as
+# implemented, which is the 2026-08-06 audit finding exactly. Recorded rather than declared
+# dishonestly — and this comment is the record, per STD-0011.
+# ────────────────────────────────────────────────────────────────────────────────────────

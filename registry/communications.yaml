@@ -1,0 +1,210 @@
+# What Paridyum sends an intern, when, and what goes with it.
+#
+# WHY THIS IS A REGISTRY AND NOT A WIKI PAGE. "What do I send and what do I
+# say" is the question HR actually has, and a wiki page answering it drifts
+# from the documents the moment one is added. Every message below names the
+# documents it carries BY CODE, so `docket emails` renders the real subject,
+# the real body and the real attachment list from the register — and a message
+# that names a document the lifecycle does not have is a `docket check` error.
+#
+# Bodies are plain text on purpose. They are pasted into a mail client by a
+# person, not sent by this tool: sending mail is an outward-facing action with
+# its own credentials, its own failure modes and its own audit trail, and none
+# of that belongs in a document register.
+#
+# {placeholders} are filled from the person record and the register.
+version: 1
+
+messages:
+  - id: offer
+    stage: offered
+    when: As soon as the offer is decided.
+    to: intern
+    subject: "Internship offer — {role} at Paridyum"
+    attach: [OFR]
+    body: |
+      Dear {first_name},
+
+      We are pleased to offer you an internship with Paridyum as a {role},
+      from {start_date} to {end_date}.
+
+      The formal offer is attached. It sets out the role, the hours, the
+      supervisor and the fact that the internship is unpaid — please read it
+      before replying.
+
+      To accept, sign the acceptance block at the end and send it back. We
+      will then send the full documentation pack.
+
+      If anything is unclear, or if the dates do not work, tell us before
+      accepting rather than after.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: pack
+    stage: preboarding
+    when: >
+      On receiving the signed acceptance. Not before: the pack contains
+      agreements, and sending them alongside an unaccepted offer invites
+      signing everything in one pass without reading.
+    to: intern
+    subject: "Your Paridyum internship documents — please read before signing"
+    attach: [PCK, AGR, NDA, IPA, ISP, PSH, COC, GRV, DPN, ONB, EMC]
+    body: |
+      Dear {first_name},
+
+      Welcome. Attached is the documentation for your internship, as a folder.
+
+      Start with 00_Read_Me_First.pdf. It lists what is in the folder and what
+      needs to come back, in four groups:
+
+        01_Sign_and_return      both of us sign; send a signed copy back
+        02_Complete_and_return  fill in and return
+        03_For_your_records     yours to keep
+        04_Optional             genuinely optional; declining changes nothing
+
+      Please read each document before signing it. If anything is unclear or
+      looks wrong, ask us at {org_email} BEFORE signing. Taking time over this
+      is expected — a question about a document is never treated as a problem.
+
+      Two of these are worth flagging specifically. The Intellectual Property
+      Assignment sets out who owns what you build. The Data Protection Notice
+      sets out what we hold about you and how to have it corrected or erased.
+
+      We need the signed copies before your start date, because system access
+      depends on them.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: guardian
+    stage: preboarding
+    when: Only where the intern is under eighteen on their start date.
+    to: guardian
+    subject: "Consent required — internship for {legal_name}"
+    attach: [GRD, DPN]
+    body: |
+      Dear {guardian_name},
+
+      {legal_name} has accepted an internship with Paridyum as a {role},
+      from {start_date} to {end_date}.
+
+      Because {first_name} is under eighteen, Indian data protection law
+      requires your consent before we process their personal data at all.
+      The consent form is attached, along with the notice describing what we
+      hold and why.
+
+      Please read both, and return the signed consent form. We cannot begin
+      the internship without it.
+
+      You may withdraw consent at any time by writing to {org_email}.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: institution
+    stage: preboarding
+    when: Where the institution asks for a confirmation or NOC letter.
+    to: institution
+    subject: "Internship confirmation — {legal_name}, {institution}"
+    attach: [INS]
+    body: |
+      Dear Sir/Madam,
+
+      Please find attached confirmation that {legal_name}, a student of
+      {degree} at {institution}, has accepted an internship with Paridyum as a
+      {role}, from {start_date} to {end_date}.
+
+      We will issue a Certificate of Internship on satisfactory completion. If
+      your institution has a prescribed form, send it to {org_email} and we
+      will complete it.
+
+      The letter carries a reference number and a verification code in its
+      footer; quote them to {org_email} to confirm it is genuine.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: access
+    stage: active
+    when: >
+      After the agreements and the security policy are recorded as executed,
+      never before. `docket advance` enforces the same ordering.
+    to: intern
+    subject: "Your Paridyum access — {role}"
+    attach: []
+    body: |
+      Dear {first_name},
+
+      Your documents are in order and your access is being set up. You will
+      receive the account details separately.
+
+      A reminder of three things you have signed:
+
+        - Do not put Paridyum's private source code or credentials into
+          external AI tools or third-party services.
+        - Report anything that looks like a security problem immediately, to
+          {security_email}. Reporting an accident promptly is doing the job
+          properly, not a failure.
+        - Your supervisor is {supervisor}. For anything you would rather not
+          raise with them, write to {org_email}.
+
+      Welcome aboard.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: offboarding
+    stage: offboarding
+    when: When the end date is in sight, or notice is given.
+    to: intern
+    subject: "Wrapping up your internship at Paridyum"
+    attach: [OFB, EXF]
+    body: |
+      Dear {first_name},
+
+      Your internship ends on {end_date}. Two things attached.
+
+      The offboarding checklist covers handover, returning anything we lent
+      you, and confirming access has been removed. It lists the systems our
+      records show you still have access to.
+
+      The exit feedback form is optional and does not affect your certificate
+      or your reference — both are decided on your work. If you would rather
+      not answer, return it blank or not at all.
+
+      A reminder that your confidentiality obligations under the NDA continue
+      after the internship ends.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}
+
+  - id: completion
+    stage: alumni
+    when: On completion, once offboarding is done.
+    to: intern
+    subject: "Certificate of Internship — {legal_name}"
+    attach: [CRT, REF]
+    body: |
+      Dear {first_name},
+
+      Attached is your Certificate of Internship, and the reference letter.
+
+      Both carry a reference number and a verification code in the footer. Any
+      university or employer can confirm they are genuine by writing to
+      {org_email} and quoting them — you do not need to go through us first.
+
+      You may say publicly that you interned here, and describe what you
+      worked on, subject to the confidentiality terms you signed.
+
+      Thank you for your work, and good luck.
+
+      {sender_name}
+      {sender_designation}, Paridyum
+      {org_email}

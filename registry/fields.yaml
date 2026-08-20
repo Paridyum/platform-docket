@@ -1,0 +1,377 @@
+# Every field the system knows about, and WHY it exists.
+#
+# `purpose` is not documentation. Under the DPDP Act a field is lawful
+# because it serves a stated purpose, so a field with no purpose written
+# here is a field that should not be collected. If you cannot finish the
+# sentence, delete the field.
+#
+# `group` maps a field to the class permissions in person-classes.yaml, and
+# `store` to the storage split. Both are checked.
+version: 1
+
+fields:
+  # ---- identity -----------------------------------------------------
+  - path: identity.legal_name
+    group: identity
+    store: personnel
+    purpose: Names the party on every agreement and certificate.
+  - path: identity.preferred_name
+    group: identity
+    store: personnel
+    purpose: How the person is addressed day to day.
+    optional: true
+  - path: identity.pronouns
+    group: identity
+    store: personnel
+    purpose: >
+      Correct reference in a reference letter and a certificate. Never
+      inferred from a name; defaults to they/them when not given.
+    optional: true
+  - path: identity.date_of_birth
+    group: identity
+    store: personnel
+    purpose: >
+      Determines whether the person is a CHILD under the DPDP Act, which
+      defines one as anyone under eighteen (s2(f)). If they are, s9 requires
+      verifiable consent from a parent or lawful guardian before any of
+      their personal data is processed at all.
+      This is collected for interns, and the reason is the correction of an
+      earlier mistake: the first version of this registry declared that an
+      intern's engagement "turns on enrolment, not age" and refused the
+      field. That left Paridyum unable to tell whether s9 applied to a
+      first-year student who might be seventeen. Not collecting a date of
+      birth does not remove the obligation; it removes the ability to see it.
+      Also appears in statutory returns for employees.
+
+  # ---- guardian (only where the person is a child) -------------------
+  # Collected ONLY when identity.date_of_birth shows the person is under
+  # eighteen on their start date. `docket check` reports a guardian block on
+  # an adult's record as over-collection, and a missing one on a child's
+  # record as a blocker.
+  - path: guardian.name
+    group: guardian
+    store: personnel
+    purpose: >
+      The parent or lawful guardian whose verifiable consent DPDP s9
+      requires before a child's personal data may be processed.
+    optional: true
+  - path: guardian.relationship
+    group: guardian
+    store: personnel
+    purpose: Establishes that the consenting adult is entitled to consent.
+    optional: true
+  - path: guardian.email
+    group: guardian
+    store: personnel
+    purpose: Sending the consent form and corresponding about it.
+    optional: true
+  - path: guardian.phone
+    group: guardian
+    store: personnel
+    purpose: Reaching the guardian where consent must be confirmed.
+    optional: true
+
+  # ---- contact ------------------------------------------------------
+  - path: contact.email
+    group: contact
+    store: personnel
+    purpose: Sending documents and internship correspondence.
+  - path: contact.phone
+    group: contact
+    store: personnel
+    purpose: Reaching the person about the internship.
+    optional: true
+  - path: contact.address
+    group: contact
+    store: personnel
+    purpose: >
+      Correspondence, and the address a formal notice would go to. Required
+      for an employee because statutory registers record it.
+    optional: true
+
+  # ---- engagement ---------------------------------------------------
+  - path: engagement.class
+    group: engagement
+    store: personnel
+    purpose: Selects which fields may be collected and which documents are owed.
+  - path: engagement.role
+    group: engagement
+    store: personnel
+    purpose: Stated on the agreement, the certificate and the reference letter.
+  - path: engagement.department
+    group: engagement
+    store: personnel
+    purpose: The area worked in, named on the certificate.
+    optional: true
+  - path: engagement.supervisor
+    group: engagement
+    store: personnel
+    purpose: Who the person reports to; named on the agreement.
+  - path: engagement.work_arrangement
+    group: engagement
+    store: personnel
+    purpose: Remote, hybrid or on-site. Stated on the agreement.
+  - path: engagement.hours_per_week
+    group: engagement
+    store: personnel
+    purpose: >
+      The expected commitment. Load-bearing for an unpaid internship: hours
+      resembling full-time employment are what gets an intern reclassified.
+  - path: engagement.start_date
+    group: engagement
+    store: personnel
+    purpose: When the engagement begins. Appears on every certificate.
+  - path: engagement.end_date
+    group: engagement
+    store: personnel
+    purpose: >
+      When it ends. Required for an intern because an unpaid internship must
+      be time-bound to be lawful.
+    optional: true
+  - path: engagement.stage
+    group: engagement
+    store: personnel
+    purpose: Drives which documents are owed right now.
+  - path: engagement.project_description
+    group: engagement
+    store: personnel
+    purpose: What the person actually works on; stated on the agreement.
+    optional: true
+
+  # ---- education ----------------------------------------------------
+  - path: education.institution
+    group: education
+    store: personnel
+    purpose: >
+      Names the institution the internship is undertaken through. Part of
+      the basis on which an unpaid internship is lawful.
+  - path: education.degree
+    group: education
+    store: personnel
+    purpose: The programme the internship forms part of.
+    optional: true
+  - path: education.specialization
+    group: education
+    store: personnel
+    purpose: Relevance of the placement to the programme.
+    optional: true
+  - path: education.graduation_year
+    group: education
+    store: personnel
+    purpose: Confirms the person is mid-programme rather than a graduate.
+    optional: true
+  - path: education.email
+    group: education
+    store: personnel
+    purpose: Corresponding with the institution about the placement.
+    optional: true
+  - path: education.currently_enrolled
+    group: education
+    store: personnel
+    purpose: >
+      THE field the unpaid basis rests on. Issuance is refused without it.
+  - path: education.academic_credit
+    group: education
+    store: personnel
+    purpose: Whether the institution awards credit, which shapes the documentation owed.
+    optional: true
+  - path: education.institution_requires_noc
+    group: education
+    store: personnel
+    purpose: >
+      Whether the institution requires a confirmation or no-objection letter
+      before the placement may proceed. Decides whether INS is owed. The
+      onboarding form asked this and nothing acted on it.
+    optional: true
+  - path: education.institution_requires_certificate
+    group: education
+    store: personnel
+    purpose: Whether a completion certificate must be issued at the end.
+    optional: true
+
+  # ---- professional -------------------------------------------------
+  - path: professional.linkedin
+    group: professional
+    store: personnel
+    purpose: A link the person chose to share. Never required.
+    optional: true
+  - path: professional.github
+    group: professional
+    store: personnel
+    purpose: Matching a contributor to a person during code review.
+    optional: true
+  - path: professional.skills
+    group: professional
+    store: personnel
+    purpose: Assigning suitable work.
+    optional: true
+
+  # ---- device and access --------------------------------------------
+  - path: device.type
+    group: device
+    store: personnel
+    purpose: Whether Paridyum equipment is involved, which decides if EQP is owed.
+    optional: true
+  - path: device.os
+    group: device
+    store: personnel
+    purpose: Supporting the person's setup.
+    optional: true
+  - path: access.company_email
+    group: access
+    store: personnel
+    purpose: >
+      The account issued. Recorded so offboarding can prove it was removed.
+    optional: true
+  - path: access.cloud_folder
+    group: access
+    store: personnel
+    purpose: >
+      Link to the remote folder holding this person's documents. Recorded so
+      that erasure can name it: the tool cannot delete a third party's
+      storage, and a tool that reports a complete erasure it did not perform
+      is worse than one that states its boundary. The folder is named by the
+      person identifier, never by a name (ADR-0051).
+    optional: true
+  - path: access.systems
+    group: access
+    store: personnel
+    purpose: >
+      What was granted, when, and when it was revoked. This is the evidence
+      the offboarding checklist's access section asserts.
+    optional: true
+
+  # ---- equipment ----------------------------------------------------
+  - path: equipment.issued
+    group: equipment
+    store: personnel
+    purpose: Whether the Equipment Acknowledgement Form is owed at all.
+    optional: true
+  - path: equipment.device
+    group: equipment
+    store: personnel
+    purpose: What was handed over, so it can be asked for back.
+    optional: true
+  - path: equipment.serial
+    group: equipment
+    store: personnel
+    purpose: Identifies the specific asset.
+    optional: true
+
+  # ---- emergency (separate store) -----------------------------------
+  - path: emergency_contact.name
+    group: emergency_contact
+    store: emergency
+    purpose: Who to call in an emergency involving the person.
+    optional: true
+  - path: emergency_contact.relationship
+    group: emergency_contact
+    store: emergency
+    purpose: Context for the call.
+    optional: true
+  - path: emergency_contact.phone
+    group: emergency_contact
+    store: emergency
+    purpose: How to make the call.
+    optional: true
+
+  # ---- document content ---------------------------------------------
+  # What the certificate and reference letter say. Work product about this
+  # person's engagement rather than data collected from them, but declared
+  # here because it lives in the record and must obey the same rules.
+  - path: certificate.areas
+    group: engagement
+    store: personnel
+    purpose: The areas of experience listed on the Certificate of Internship.
+    optional: true
+  - path: reference.requested
+    group: engagement
+    store: personnel
+    purpose: Whether a reference letter is owed at all.
+    optional: true
+  - path: reference.contributions
+    group: engagement
+    store: personnel
+    purpose: The contributions listed in the Letter of Reference.
+    optional: true
+  - path: reference.qualities
+    group: engagement
+    store: personnel
+    purpose: The qualities the reference letter attests to.
+    optional: true
+  - path: reference.specific_strength
+    group: engagement
+    store: personnel
+    purpose: The single strength the reference letter names.
+    optional: true
+  - path: pre_existing_ip
+    group: engagement
+    store: personnel
+    purpose: >
+      Intellectual property the person owned before the engagement and
+      intends to use. Section 4 of the IP Assignment Agreement.
+    optional: true
+
+  # ---- employment history (employees only) --------------------------
+  - path: employment_history.previous_employer
+    group: employment_history
+    store: personnel
+    purpose: >
+      Continuity of service, and the EPF Form 11 declaration about previous
+      membership. Not collected for an intern, who has no service history
+      that Paridyum needs.
+    optional: true
+  - path: employment_history.previous_role
+    group: employment_history
+    store: personnel
+    purpose: Context for the appointment.
+    optional: true
+  - path: employment_history.relieving_date
+    group: employment_history
+    store: personnel
+    purpose: Confirms the person was free to join on the start date.
+    optional: true
+
+  # ---- compensation (paid engagements only) -------------------------
+  - path: compensation.basis
+    group: compensation
+    store: statutory
+    purpose: Unpaid, stipend, or salary. Decides what the agreement may say.
+  - path: compensation.salary
+    group: compensation
+    store: statutory
+    purpose: The amount. Forbidden for an intern, whose engagement is unpaid.
+    optional: true
+
+  # ---- statutory (paid engagements only) ----------------------------
+  # NONE of these may be collected for an unpaid intern. Each exists because
+  # a specific obligation requires it, and no obligation attaches to an
+  # unpaid student placement.
+  - path: statutory.pan
+    group: statutory
+    store: statutory
+    purpose: Required for TDS. No tax is deducted from an unpaid intern.
+    optional: true
+  - path: statutory.uan
+    group: statutory
+    store: statutory
+    purpose: EPF membership, via Form 11. EPF does not cover student interns.
+    optional: true
+  - path: statutory.esic
+    group: statutory
+    store: statutory
+    purpose: ESI insurance number, where the wage threshold is met.
+    optional: true
+  - path: statutory.bank_account
+    group: statutory
+    store: statutory
+    purpose: Paying someone. There is nothing to pay an unpaid intern.
+    optional: true
+  - path: statutory.aadhaar_last4
+    group: statutory
+    store: statutory
+    purpose: >
+      Last four digits only, to disambiguate a UAN or bank record. The full
+      number is deliberately NOT a field anywhere in this system: nothing
+      Paridyum does requires holding it, and holding it is the risk.
+    optional: true

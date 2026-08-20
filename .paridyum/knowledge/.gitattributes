@@ -1,0 +1,25 @@
+# LF everywhere (ADR-0006). A CRLF shell script fails inside WSL and in containers
+# with "bad interpreter: no such file or directory" — an error that never mentions
+# line endings.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+
+# The research log (RFC-0027) is append-only evidence and machine-read line by line.
+# A CRLF rewrite on checkout would change every line without changing what was read, which
+# knowledge.research_log_is_append_only correctly reports as history being rewritten.
+*.jsonl text eol=lf
+
+# PowerShell is Windows-native; CRLF is correct and expected there.
+*.ps1   text eol=crlf
+
+*.png   binary
+*.jpg   binary
+*.ico   binary

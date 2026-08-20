@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/check-registry.schema.json",
+  "title": "Paridyum Check Registry",
+  "description": "The complete id-space of Paridyum checks, declared under ADR-0014. Every id named in any artifact's `enforced_by` MUST appear here. `tool-forge`'s implemented registry is a subset of this file: an id here but not there is `declared` and is reported, not fatal; an id in neither is `unresolved` and is a hard failure. This file is what makes those two cases distinguishable \u2014 a typo is an id nobody wrote down twice. Validated by `knowledge.declared_checks_manifest_valid`.",
+  "type": "object",
+  "required": [
+    "version",
+    "checks"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Manifest format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per check id. Order is by id, ascending, so diffs stay readable. Uniqueness of `check` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "check",
+          "spec",
+          "owner",
+          "blocks",
+          "declared"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+            "description": "Dotted check id. Same pattern as knowledge.schema.json's enforced_by[].check \u2014 the two must agree or resolution is meaningless."
+          },
+          "spec": {
+            "type": "string",
+            "minLength": 40,
+            "pattern": "^Fails when ",
+            "description": "The acceptance criterion, phrased as the condition under which the check REJECTS. Must begin 'Fails when ' \u2014 a spec that cannot be written as a rejection condition is not a check, it is a preference, and the artifact naming it should be `accepted` rather than `locked` (ADR-0014, carried from ADR-0002). This is the sentence an implementation is reviewed against."
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 2,
+            "description": "The component that implements this check. `forge` means the shipped binary runs it today; `tool-forge` means the repository owes it and nothing enforces it yet \u2014 the distinction is what check-knowledge.sh counts as implemented versus awaiting. `check-*.sh` are the bootstrap gates implementable without Rust."
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"
+            },
+            "description": "Artifact ids whose enforcement waits on this check. Derived from which artifacts cite the id, and kept in sync by `knowledge.orphan_check_declarations`. This is what makes the backlog orderable by consequence rather than by id."
+          },
+          "declared": {
+            "type": "string",
+            "format": "date",
+            "description": "When this id entered the manifest. Never changes, including when the check is implemented \u2014 it is the start of the debt, not a status field."
+          },
+          "frameworks": {
+            "type": "object",
+            "description": "Outward mappings from this control to external framework identifiers, keyed by framework (`ssdf`, `cis`, `csf`, \u2026) with an array of ids as the value. OPTIONAL and deliberately sparse: most entries here govern naming, layout or documentation and map to nothing, and an invented mapping is worse than an absent one because it reads as coverage. Neither the keys nor the id shapes are constrained here \u2014 they are validated by `knowledge.framework_ids_resolve` in the gate against framework-registry.yaml, which holds the per-framework `id_pattern`. That is one source of truth rather than two; restating the framework list in this schema is how the two would drift. A mapping asserts contribution to an outcome, never that the outcome is met.",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "verify_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when the underlying state can be read but not written through any API available to us, so the check can detect drift but never remediate it. `org.two_factor_required` is the type case: GitHub exposes the field on GET and silently ignores it on PATCH."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Implementation hazards worth recording at declaration time \u2014 API quirks, ordering constraints, known false-positive shapes. Not the rationale; that lives in the citing artifact."
+          },
+          "partial": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when the named owner implements only PART of the spec. The inventory counts these separately, because a count that folds partial into implemented overstates enforcement \u2014 which is exactly how docs.manifest_schema_valid and domain.entity_has_single_owner were reported as done while checking less than their names claimed. A note saying so is not enough; the number has to say so."
+          },
+          "resolution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "severity",
+              "citers",
+              "recorded",
+              "reasoning"
+            ],
+            "description": "ADR-0036. Present ONLY when more than one artifact cites this check with different `severity` or `args`. The one-citer model this file's header describes \u2014 'severity lives in each citing artifact' \u2014 is correct and silently assumes a single citer; `repo.claude_md_under_line_budget` had four sources, three thresholds and two severities, and survived because nothing compared them. The resolution binds; the citations become its inputs. Absent one, a conflict is a hard failure (knowledge.no_unresolved_check_parameter_conflict) rather than a value the implementation picks by itself.",
+            "properties": {
+              "severity": {
+                "enum": [
+                  "error",
+                  "warn"
+                ]
+              },
+              "args": {
+                "type": "object"
+              },
+              "citers": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(ADR|ANTI|BET|C|GLO|MKT|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"
+                },
+                "description": "Every artifact whose citation this reconciles. Two or more by definition \u2014 a single citer needs no resolution."
+              },
+              "recorded": {
+                "type": "string",
+                "format": "date"
+              },
+              "reasoning": {
+                "type": "string",
+                "minLength": 40,
+                "description": "Why this value and not the other. A resolution with no reasoning is the silent pick it exists to replace."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-locked-decisions.sh",
+            "timeout": 10,
+            "statusMessage": "Checking locked decisions..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-commands.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for irreversible operations..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-web-sources.sh",
+            "timeout": 10,
+            "statusMessage": "Logging research provenance..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-context.sh",
+            "timeout": 15,
+            "statusMessage": "Loading Paridyum knowledge..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-open-loops.sh",
+            "timeout": 20,
+            "statusMessage": "Recording open loops..."
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/checkpoint-session.sh",
+            "timeout": 120,
+            "statusMessage": "Running gates, committing and pushing..."
+          }
+        ]
+      }
+    ]
+  }
+}
