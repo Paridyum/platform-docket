@@ -97,6 +97,30 @@ fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> tool_docket::domain::
     issue::one(&sb.paths, &reg, person, doc, date(), "rohan").expect("issues")
 }
 
+/// Whether a typesetter is installed.
+///
+/// The tests below render real PDFs, because the guarantees they make are about
+/// output bytes and a mocked typesetter cannot make them. A GitHub runner has
+/// neither TeX Live nor Tectonic, so they SKIP there rather than fail — the
+/// same pattern `pdflatex_is_preferred_when_present` already uses.
+///
+/// Skipping is not free: it means CI does not exercise rendering. That is
+/// recorded as decision debt rather than hidden, and the fix is to install a
+/// typesetter in CI, not to weaken the test.
+fn typesetter_available() -> bool {
+    tool_docket::adapters::typeset::detect().is_ok()
+}
+
+/// Print once why a test did nothing, so a green run is not mistaken for
+/// coverage.
+fn skip_without_typesetter(test: &str) -> bool {
+    if typesetter_available() {
+        return false;
+    }
+    eprintln!("SKIP {test}: no typesetter installed (see DECISION-DEBT D-35)");
+    true
+}
+
 #[test]
 fn the_checked_in_registry_is_valid() {
     // Guards the registry itself: a template renamed without updating
@@ -122,6 +146,9 @@ fn the_checked_in_registry_is_valid() {
 
 #[test]
 fn onboarding_issues_the_whole_preboarding_pack() {
+    if skip_without_typesetter("onboarding_issues_the_whole_preboarding_pack") {
+        return;
+    }
     let sb = Sandbox::new();
     let person = sb.person("t", &[]);
     let reg = registry();
@@ -157,6 +184,9 @@ fn onboarding_issues_the_whole_preboarding_pack() {
 
 #[test]
 fn re_issuing_the_same_stage_produces_nothing() {
+    if skip_without_typesetter("re_issuing_the_same_stage_produces_nothing") {
+        return;
+    }
     let sb = Sandbox::new();
     let person = sb.person("t", &[]);
     let reg = registry();
@@ -171,6 +201,9 @@ fn re_issuing_the_same_stage_produces_nothing() {
 
 #[test]
 fn a_second_person_gets_the_next_sequence_number() {
+    if skip_without_typesetter("a_second_person_gets_the_next_sequence_number") {
+        return;
+    }
     let sb = Sandbox::new();
     let a = sb.person("a", &[]);
     let b = sb.person(
@@ -183,6 +216,9 @@ fn a_second_person_gets_the_next_sequence_number() {
 
 #[test]
 fn each_document_code_has_its_own_sequence() {
+    if skip_without_typesetter("each_document_code_has_its_own_sequence") {
+        return;
+    }
     let sb = Sandbox::new();
     let p = sb.person("t", &[]);
     assert_eq!(issue_one(&sb, &p, "NDA").serial, "PAR/NDA/2026/0001");
@@ -191,6 +227,9 @@ fn each_document_code_has_its_own_sequence() {
 
 #[test]
 fn verify_matches_the_issued_document_and_rejects_a_modified_one() {
+    if skip_without_typesetter("verify_matches_the_issued_document_and_rejects_a_modified_one") {
+        return;
+    }
     let sb = Sandbox::new();
     let p = sb.person("t", &[]);
     let entry = issue_one(&sb, &p, "NDA");
@@ -216,6 +255,9 @@ fn an_unknown_serial_is_an_error_not_a_pass() {
 
 #[test]
 fn issuing_the_same_document_twice_is_byte_identical() {
+    if skip_without_typesetter("issuing_the_same_document_twice_is_byte_identical") {
+        return;
+    }
     // The register records a hash. If rendering were not reproducible, that
     // hash would be meaningless the moment anyone re-ran a build.
     let first = Sandbox::new();

@@ -59,6 +59,30 @@ fn date() -> time::Date {
     parse_iso("2026-08-19").expect("fixed date")
 }
 
+/// Whether a typesetter is installed.
+///
+/// The tests below render real PDFs, because the guarantees they make are about
+/// output bytes and a mocked typesetter cannot make them. A GitHub runner has
+/// neither TeX Live nor Tectonic, so they SKIP there rather than fail — the
+/// same pattern `pdflatex_is_preferred_when_present` already uses.
+///
+/// Skipping is not free: it means CI does not exercise rendering. That is
+/// recorded as decision debt rather than hidden, and the fix is to install a
+/// typesetter in CI, not to weaken the test.
+fn typesetter_available() -> bool {
+    tool_docket::adapters::typeset::detect().is_ok()
+}
+
+/// Print once why a test did nothing, so a green run is not mistaken for
+/// coverage.
+fn skip_without_typesetter(test: &str) -> bool {
+    if typesetter_available() {
+        return false;
+    }
+    eprintln!("SKIP {test}: no typesetter installed (see DECISION-DEBT D-35)");
+    true
+}
+
 #[test]
 fn creating_a_person_allocates_an_identifier_and_a_record() {
     let sb = Sandbox::new();
@@ -548,6 +572,10 @@ fn every_declared_field_states_a_purpose() {
 fn the_pack_groups_documents_by_what_must_be_done_with_them() {
     use tool_docket::application::pack::Action;
 
+    if skip_without_typesetter("the_pack_groups_documents_by_what_must_be_done_with_them") {
+        return;
+    }
+
     // "Which of these must I sign and send back" is the only question someone
     // opening the folder actually has, so that is what the folders answer.
     let sb = Sandbox::new();
@@ -581,6 +609,9 @@ fn the_pack_groups_documents_by_what_must_be_done_with_them() {
 
 #[test]
 fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
+    if skip_without_typesetter("the_pack_verifies_on_its_own_and_leaves_the_store_untouched") {
+        return;
+    }
     let sb = Sandbox::new();
     let reg = registry();
     personnel::create(&sb.paths, &reg, "t", "intern", date(), "rohan").expect("creates");
@@ -620,6 +651,9 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
 
 #[test]
 fn packing_a_person_with_nothing_issued_is_refused() {
+    if skip_without_typesetter("packing_a_person_with_nothing_issued_is_refused") {
+        return;
+    }
     let sb = Sandbox::new();
     let reg = registry();
     personnel::create(&sb.paths, &reg, "t", "intern", date(), "rohan").expect("creates");
@@ -633,6 +667,9 @@ fn packing_a_person_with_nothing_issued_is_refused() {
 
 #[test]
 fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
+    if skip_without_typesetter("rebuilding_a_pack_replaces_it_rather_than_accumulating") {
+        return;
+    }
     let sb = Sandbox::new();
     let reg = registry();
     personnel::create(&sb.paths, &reg, "t", "intern", date(), "rohan").expect("creates");

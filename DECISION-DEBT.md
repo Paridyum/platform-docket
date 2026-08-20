@@ -477,3 +477,29 @@ before the issue step, because issuing would fail.
 The distinction between a bare command and one inside `\dkfill` is load-bearing:
 a form wants a ruled line where a value is absent, and an agreement wants the
 build to stop.
+
+## D-35 — CI does not exercise rendering  (OPEN)
+Found by the first real CI run, 2026-08-20. The integration tests render real
+PDFs, and a GitHub runner has neither TeX Live nor Tectonic, so `test` and
+`coverage` failed with `no typesetter found`.
+
+The tests now SKIP when no typesetter is installed, printing which test and
+why, using the same pattern `pdflatex_is_preferred_when_present` already used.
+That makes CI green and honest, and it is not the same as making CI complete:
+**rendering, determinism and the whole PDF/A claim are currently verified only
+on a developer machine.** A green CI badge does not cover them.
+
+Two ways to close it, and the choice is not mine:
+
+1. **Install Tectonic in the shared workflow.** A single binary, so it is cheap,
+   and it would resolve D-30 as a side effect by exercising that path for real.
+   But `rust-ci.yml` is shared by every `rust`-stack repository under ADR-0021,
+   and most of them will never typeset anything. It would need to be optional —
+   a `typesetter:` input the caller opts into.
+2. **A tool-docket-specific workflow** that installs Tectonic and runs only the
+   render tests. Simpler, and a deviation from ADR-0021's "all logic lives in
+   the shared workflow", which is a decision to take deliberately rather than by
+   adding a file.
+
+Option 1 is better and costs a change to a shared workflow. Until one is taken,
+run `cargo test` locally before trusting a release.

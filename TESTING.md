@@ -67,7 +67,13 @@ Deliberately uncovered, with the reason:
 
 ## Quarantine
 
-None. No test in this repository is skipped, ignored, or tolerated as flaky.
+No test is flaky, ignored, or tolerated.
+
+**Rendering tests SKIP where no typesetter is installed**, which is the case on
+a GitHub runner. They print `SKIP <test>: no typesetter installed` so a green
+run is not mistaken for coverage. This is a real gap, not a quarantine: it means
+rendering, determinism and the PDF/A claim are verified on a developer machine
+and not in CI. Recorded as DECISION-DEBT D-35 with the two ways to close it.
 
 The integration suites are slow rather than flaky — they render real PDFs
 because the guarantees they make are about output bytes, and a test that mocks
