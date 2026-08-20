@@ -18,10 +18,18 @@ jobs:
       # rust-toolchain.toml, so for a binary there is no consumer compiling this
       # with an older compiler and no minimum to support.
       #
-      # integration: true because tests/issuance.rs and tests/records.rs render
-      # real PDFs with pdflatex. They are not testcontainers integration tests,
-      # but they are the slow tier and they are where the guarantees about
-      # output bytes are actually made.
-      integration: true
+      # integration: FALSE, corrected after the first real CI run.
+      #
+      # The shared workflow's integration step filters `test(/^it::/)` -- this
+      # estate's naming convention for the testcontainers tier -- and nextest
+      # exits non-zero when a filter matches nothing. The job failed while all
+      # 219 tests had just passed in `test`.
+      #
+      # It was set true on the reasoning that the rendering tests ARE the slow
+      # tier: forty seconds, real PDFs, the place the guarantees about output
+      # bytes are made. That confused "slow" with "needs a container". The
+      # `test` job already runs everything in tests/*.rs, so nothing is skipped
+      # by turning this off.
+      integration: false
       coverage-total: 70
       coverage-patch: 80
