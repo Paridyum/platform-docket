@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Paridyum/knowledge/test-registry.schema.json",
   "title": "Paridyum Test-Type Registry",
-  "description": "The complete id-space of Paridyum test types, declared under ADR-0029. Every TST- id named in any artifact's `verified_by`, and every test type a standard or a CI workflow refers to by name, MUST appear here. This is the fifth registry in the pattern ADR-0014 started: a list that must be extended, moved out of the places where extending it is expensive. `axes` and `tiers` are declared in the same file rather than as enums in this schema because a new axis or tier is registry data too — putting them here would reintroduce the defect. Validated by `knowledge.test_registry_valid`. Only the JSON Schema subset implemented by scripts/lib/validate-schema.py is used: no $ref, no $defs, no propertyNames, no oneOf.",
+  "description": "The complete id-space of Paridyum test types, declared under ADR-0029. Every TST- id named in any artifact's `verified_by`, and every test type a standard or a CI workflow refers to by name, MUST appear here. This is the fifth registry in the pattern ADR-0014 started: a list that must be extended, moved out of the places where extending it is expensive. `axes` and `tiers` are declared in the same file rather than as enums in this schema because a new axis or tier is registry data too \u2014 putting them here would reintroduce the defect. Validated by `knowledge.test_registry_valid`. Only the JSON Schema subset implemented by scripts/lib/validate-schema.py is used: no $ref, no $defs, no propertyNames, no oneOf.",
   "type": "object",
   "required": [
     "version",
@@ -50,7 +50,7 @@
     "tiers": {
       "type": "array",
       "minItems": 1,
-      "description": "When a test type runs. A tier is the answer to 'what does this cost, and who is waiting for it' — the single decision that keeps a large matrix runnable. A suite with no tier runs everywhere or nowhere, and both are failures.",
+      "description": "When a test type runs. A tier is the answer to 'what does this cost, and who is waiting for it' \u2014 the single decision that keeps a large matrix runnable. A suite with no tier runs everywhere or nowhere, and both are failures.",
       "items": {
         "type": "object",
         "required": [
@@ -69,7 +69,7 @@
           "trigger": {
             "type": "string",
             "minLength": 12,
-            "description": "The event that starts this tier. An event, not a cadence — 'nightly' is a schedule, 'every push to a pull request' is a trigger."
+            "description": "The event that starts this tier. An event, not a cadence \u2014 'nightly' is a schedule, 'every push to a pull request' is a trigger."
           },
           "budget": {
             "type": "string",
@@ -111,7 +111,7 @@
           "test_type": {
             "type": "string",
             "pattern": "^TST-[0-9]{4}$",
-            "description": "Immutable. Never reused, never renumbered — the same rule artifact ids follow, for the same reason: this id is the permanent handle in an artifact's `verified_by`, in a CI job name, and in a test module path."
+            "description": "Immutable. Never reused, never renumbered \u2014 the same rule artifact ids follow, for the same reason: this id is the permanent handle in an artifact's `verified_by`, in a CI job name, and in a test module path."
           },
           "name": {
             "type": "string",
@@ -136,12 +136,12 @@
               "recommended",
               "deferred"
             ],
-            "description": "`required` — a repository matching `applies_to` that has none of this is in violation. `recommended` — expected where the shape applies, never gated, because no check can tell whether it applies. `deferred` — real, not startable, and MUST carry a `trigger`. Same three-way distinction ADR-0018 makes for requirements, and for the same reason: a taxonomy that marks everything required is one nobody can comply with, and one that marks nothing required is a glossary."
+            "description": "`required` \u2014 a repository matching `applies_to` that has none of this is in violation. `recommended` \u2014 expected where the shape applies, never gated, because no check can tell whether it applies. `deferred` \u2014 real, not startable, and MUST carry a `trigger`. Same three-way distinction ADR-0018 makes for requirements, and for the same reason: a taxonomy that marks everything required is one nobody can comply with, and one that marks nothing required is a glossary."
           },
           "trigger": {
             "type": "string",
             "minLength": 12,
-            "description": "REQUIRED when status is `deferred`. The event that makes this test type startable — an event, not a date. A deferred test type without one is a TODO with an id."
+            "description": "REQUIRED when status is `deferred`. The event that makes this test type startable \u2014 an event, not a date. A deferred test type without one is a TODO with an id."
           },
           "detects": {
             "type": "string",
@@ -151,7 +151,52 @@
           "evidence": {
             "type": "string",
             "minLength": 4,
-            "description": "The machine-readable artifact a run produces — junit.xml, an lcov file, a SARIF report, a k6 summary. This is what turns 'we test that' into something answerable after the fact, and it is the field that makes SSDF PO.3.3 true rather than claimed. `none` is a legal value and an admission."
+            "description": "The machine-readable artifact a run produces \u2014 junit.xml, an lcov file, a SARIF report, a k6 summary. This is what turns 'we test that' into something answerable after the fact, and it is the field that makes SSDF PO.3.3 true rather than claimed. `none` is a legal value and an admission."
+          },
+          "artifacts": {
+            "type": "array",
+            "description": "Machine-readable counterpart to `evidence`. STD-0014. `evidence` is prose written for a person and is never parsed \u2014 reading it would make its English load-bearing, which ANTI-0008 forbids. This field is the interface. Optional: a type producing nothing collectable (a manual review, a drill) omits it, and that omission is a fact a report can state rather than a gap it must guess at.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "junit",
+                    "sarif",
+                    "coverage",
+                    "json",
+                    "html",
+                    "binary"
+                  ],
+                  "description": "What the file is, from a closed list. A new kind is a deliberate addition here, not a free-text guess at the producer."
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._/-]+$",
+                  "description": "Path relative to the repository root, as the producing job writes it. OPTIONAL, because it is stack-dependent: TST-0001 lands at reports/junit-unit.xml under TypeScript and target/nextest/ci/junit.xml under Rust. A type used by one stack can name an exact path; one spanning stacks either omits it \u2014 declaring only that the artifact kind exists \u2014 or gives an entry per stack."
+                },
+                "stack": {
+                  "type": "string",
+                  "enum": [
+                    "rust",
+                    "typescript",
+                    "python",
+                    "terraform"
+                  ],
+                  "description": "Which stack this entry describes, where the path differs between them. Absent means the entry applies to every stack the type declares."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "description": "True where the artifact is produced only on some runs \u2014 a trace kept on failure, for instance. Absent means always produced, so a missing file is a defect."
+                }
+              }
+            }
           },
           "stacks": {
             "type": "array",
@@ -182,7 +227,7 @@
           "governed_by": {
             "type": "array",
             "uniqueItems": true,
-            "description": "Artifact ids that state the rules for this test type. This is the reverse of an artifact's `verified_by` and the gate checks nothing about the reverse direction on purpose — a standard may govern a type it does not itself claim to be verified by.",
+            "description": "Artifact ids that state the rules for this test type. This is the reverse of an artifact's `verified_by` and the gate checks nothing about the reverse direction on purpose \u2014 a standard may govern a type it does not itself claim to be verified by.",
             "items": {
               "type": "string",
               "pattern": "^(ADR|ANTI|BET|C|GLO|PAT|REQ|RFC|RUN|STD)-[0-9]{4}$"

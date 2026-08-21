@@ -783,6 +783,36 @@ checks:
       `date` is deliberately not rejected: a calendar date with no instant is legitimate, and
       the check cannot tell a birth date from a misuse.
 
+  # --- deps.* — ADR-0053 -----------------------------------------------------
+  - check: deps.pins_are_not_stale
+    spec: >
+      Fails when a pinned toolchain, dependency or base image in the repository is
+      older than the staleness bound ADR-0053 sets for its kind, measured against the
+      newest release published upstream at the time the check runs.
+    owner: tool-forge
+    blocks: [ADR-0053]
+    declared: 2026-08-20
+    notes: >
+      THE POINT OF THIS CHECK IS THAT IT DOES NOT TRUST THE UPDATE ROBOT. ADR-0010 and
+      ADR-0021 both state that Renovate keeps pins current, and no Renovate configuration
+      has ever existed in this organisation — so the sentence was true of nobody for the
+      whole period it was written down. T-2.10 is what that cost: a pinned default served
+      a compiler eleven months old and surfaced only because `cargo install sqlx-cli`
+      refused to build against it.
+
+      A policy that says "we are always on latest" and is enforced only by a robot
+      degrades silently to "whatever we last merged" the moment the robot stops, and
+      nothing reports the difference. This check is deliberately independent of Renovate:
+      it fails on the OBSERVED age of the pin, whatever did or did not open a pull
+      request. `cargo.toolchain_file_pinned` already enforces that the pin is exact;
+      this enforces that it is current. Neither implies the other, and ADR-0053 needs
+      both to mean anything.
+
+      severity is `warn` for ordinary currency and `error` past the outer bound — see
+      ADR-0053, which owns the numbers, because a bound that changes on upstream's
+      release cadence is ADR-0048 registry data rather than a figure to embed here.
+
+
   # --- docker.* -------------------------------------------------------------
   - check: docker.image_is_distroless_or_slim
     spec: >

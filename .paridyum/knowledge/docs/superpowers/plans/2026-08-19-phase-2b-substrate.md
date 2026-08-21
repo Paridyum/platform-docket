@@ -36,6 +36,10 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **PR size:** ≤ 250 lines fine · 251–400 warn with a stated reason · **> 400 fails**. STD-0007, measured on the branch diff. One task is one PR.
 - **Every PR body cites an artifact id.** `pr.slice_cites_requirement` accepts `REQ-`, `RFC-` or `ADR-`. Cite the ids listed on each task.
 - **Commits are signed.** RFC-0013 decision 3. The signing key is usable on the authoring host and nowhere else (RFC-0023 decision 5, addition of 2026-08-15).
+- **The authoring host and the substrate must be provisioned per RUN-0001 before Task 1.** This
+  plan calls `tofu`, `sops`, `age-keygen` and later `talosctl`, and none of them was on the
+  authoring host when this plan was written — `terraform` was. RUN-0001 owns how each is
+  installed; that list is deliberately not repeated here, per RFC-0015 (a fact has one home).
 - **The substrate pulls; it never receives.** RFC-0023 decision 5: the authoring host commits and pushes, the substrate pulls with a **per-repository read-only deploy key generated on the box**, which never leaves it and signs nothing. No `scp`, no file sync, no remote-mount build.
 
 ### ☠️ The one constraint whose violation cannot be undone
@@ -693,16 +697,49 @@ Origin dials out; no inbound ports. Cites RFC-0016 §1 and §4, RFC-0023 §5."
 
 ### Task 7: The chain, proven by the smallest possible service
 
-**⛔ This task is gated on two decisions that do not exist, and it cannot be written as steps until they do.** Everything in Tasks 1–6 is retrievable from an existing artifact. This is not, and inventing the missing pieces inside an implementation plan is the failure `CLAUDE.md` names first: *never infer architecture, retrieve it*.
+**⛔ This task is gated on one decision that does not exist.** *Revised 2026-08-20: it said two, and the first was already decided in a locked ADR — see below.* Inventing the missing piece inside an implementation plan is the failure `CLAUDE.md` names first: *never infer architecture, retrieve it*. So is declaring a settled question open, which is the same error pointing the other way.
 
 **Slice:** A request from the public internet reaches a pod and returns.
 **Cites:** RFC-0023 exit gate · ADR-0020 · ADR-0021 · GLO-0011
 
-#### Decision owed 1 — the HTTP framework
+#### ~~Decision owed 1 — the HTTP framework~~ — **VOID. Already decided, and locked.**
 
-ADR-0005 locks Rust and `templates/rust-service/` exists, but it holds toolchain, lints, `deny.toml`, `nextest.toml` and CI — **no `src/`, and no artifact anywhere names an HTTP framework.** Searched: no `axum`, `actix`, `warp` or `hyper` appears in any artifact, registry or template. So there is no way to write this service's handler without choosing one, and choosing one in a plan file makes an architectural decision in the least reviewable place in the repository.
+**Corrected 2026-08-20. The claim that stood here was false and is retracted.** It read: *"no
+artifact anywhere names an HTTP framework."* It does.
 
-**This is an ADR**, and it is cheap now and structural later: it is the shape every `platform-` service in ADR-0042's first wave inherits, and RFC-0009's Q5 is already open about how much `lib-` code they share.
+`adr/ADR-0005-rust-as-primary-language.md` is `status: locked`, and its Decision section locks the
+stack that rides along with the language:
+
+| Concern | Locked choice | Rejected |
+| --- | --- | --- |
+| Async runtime | `tokio` | `async-std`, `smol` |
+| HTTP server | **`axum` + `tower`** | `actix-web`, `rocket`, `warp` |
+| Database | `sqlx` (Postgres) | `diesel`, `sea-orm` |
+| Observability | `tracing` + OpenTelemetry | `log`, `env_logger` |
+| Error handling | `thiserror` in libraries, `anyhow` in binaries | `Box<dyn Error>` |
+
+So the handler is `axum`, and several criteria this plan listed as open — the correlation-id path
+for ADR-0044, the OpenTelemetry story — are settled by the same table.
+
+**How the false claim was produced, because the mechanism matters more than the error.** A
+repository-wide search was run with `hyper` among its patterns and its output truncated to the
+first few lines. `hyper` matches *hypervisor*, which appears throughout `device-registry.yaml` and
+the Proxmox artifacts, so the matches that mattered were pushed past the truncation and absence of
+evidence was read as evidence of absence.
+
+ADR-0005's own Gained section names the outcome precisely: *"No per-repository stack debate, and no
+agent inventing an answer to a settled question."* The correct move was the router's first rule —
+**never infer architecture, retrieve it** — and retrieval means reading the artifact, not sampling a
+grep.
+
+**Two live constraints follow from ADR-0005 for this task**, neither of which is optional:
+
+- **`unwrap()` and `expect()` are permitted only in tests**, and a `lib-*` crate returns typed
+  errors via `thiserror` and never panics. `anyhow` is allowed only at a binary's top level. This is
+  called out in the ADR as *"the rule most often violated by generated code"* — which is a direct
+  warning about work of this kind.
+- **Upgrading `axum` or `sqlx` across a major version is an org-wide coordinated event**, so pin
+  deliberately in the first service rather than tracking latest.
 
 #### Decision owed 2 — who owns the chart shape
 
@@ -719,7 +756,7 @@ Recorded here so it is not re-derived when the gates clear:
 - **The build must be in the chain.** RFC-0023's exit gate says *"git → build → OpenTofu → cluster → rented edge"*. A pre-built public image such as `nginx` would prove the network path while skipping `build` and GHCR, so it does **not** satisfy the gate — worth stating, because it is the obvious shortcut and it looks equivalent.
 - **The six recommended labels are the one irreversible detail.** `app.kubernetes.io/name`, `instance`, `version`, `component`, `part-of`, `managed-by`, with `part-of: paridyum` (`helm.declares_recommended_labels`). A label in `metadata` can be added later by a rolling update; **one belonging in `spec.selector` cannot be added at all**, because that field is immutable on an `apps/v1` Deployment.
 - **The image is slim or distroless**, the build stage is stack-shaped and the runtime contract is not (ADR-0020).
-- **The deploy is manually approved and that is correct.** Per GLO-0011 there is exactly one environment, `staging`, gated by a GitHub Environment; ADR-0021's automatic path targets a `dev` that deliberately does not exist. Approving by hand is the design, not a workaround.
+- **The deploy is triggered by a human, not approved by one.** *Corrected 2026-08-20.* This said the deploy is manually approved through a GitHub Environment. That gate does not exist on this plan — required reviewers on private repositories are paid-only, and the API refuses to attach one (ADR-0021 erratum, 2026-08-20). Use a `workflow_dispatch` deploy job instead. Per GLO-0011 there is still exactly one environment, `staging`, and ADR-0021's automatic path still targets a `dev` that deliberately does not exist.
 - **Expect `rust-ci.yml` to be broken.** T-2.1: the checks it declares **have never executed**. This is the first caller. Do not repair it inside this task's PR — it lives in `infra-ci` and is its own slice.
 - **The service must be stateless.** Do not consume the `longhorn` StorageClass here; Task 5 already proved the driver, and coupling the two means a storage failure reads as a chain failure.
 - **Verification is from outside the house**, on both the request and the absence of a listener:
@@ -734,7 +771,17 @@ Expected: the service's body and `200`. That single request is Phase 2b's exit g
 
 #### Recommended sequencing
 
-Take the two decisions as their own work before returning here — an ADR for the framework, and one deliberate slice for the template and chart shape. Then Task 7 becomes an ordinary TDD task: failing test for the handler, minimal handler, Dockerfile, chart, merge, approve, `curl` from outside. **Tasks 1–6 do not depend on either decision and can proceed to completion first**, which is the argument for not blocking the whole plan on them.
+Take the remaining decision as its own work before returning here: one deliberate slice for the
+template and chart shape. The framework needs nothing — ADR-0005 already locked it.
+
+Then Task 7 is an ordinary TDD task: a failing test for an `axum` handler, the minimal handler,
+the Dockerfile, the chart, merge, approve, `curl` from outside. **Tasks 1–6 depend on none of it and
+can proceed to completion first**, which is the argument for not blocking the whole plan here.
+
+**The build stage is no longer open either.** It was deferred pending the framework; with `axum` and
+`tokio` locked, it is an ordinary multi-stage Rust build whose only remaining question is whether to
+link statically for a distroless runtime — a packaging choice that belongs to the chart slice, not to
+an architectural decision.
 
 ---
 

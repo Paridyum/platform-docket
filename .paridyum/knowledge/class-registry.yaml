@@ -40,6 +40,42 @@
 version: 1
 
 classes:
+  - class: console
+    prefix: console-
+    scope: console
+    stacks: [typescript]
+    deployable: false
+    ci: true
+    description: An interface for Paridyum's own operators, run where the operator is.
+    declared: 2026-08-21
+    notes: >
+      ADR-0055. The gap this fills is narrow and was load-bearing: `web` is
+      "served from the cluster" with `deployable: true`, and locked ADR-0020 makes
+      every deployable class owe Kubernetes probes, limits and a Helm chart. An
+      interface running on an HR workstation owes none of those and has no cluster
+      to owe them to. `tool` fits in every respect except "developer-facing", and
+      stretching that word to mean "anyone internal" would leave it carrying no
+      information.
+      `deployable: false` IS THE POINT. A console is run, not deployed, so ADR-0020
+      does not bind it — and ADR-0020's test keeps meaning what it says rather than
+      acquiring an exception for the deployable-but-not-really.
+      THE TEST IS REACHABILITY, NOT INTENT. If tenant traffic can reach it, it is
+      not a console: C-0008 makes it a product and it belongs in `web-`. Chosen
+      that way because reachability is the fact you can check, and "who we meant it
+      for" is not.
+      `stacks: [typescript]` adopts ADR-0046's decisions by reference — Next.js,
+      pnpm, strict TypeScript, RFC-0003's supply chain rules. ADR-0046's
+      `applies_to` is not widened to `console-*`; this class adopts its content
+      rather than a decision written about something else being stretched to cover
+      it. The RSC server/client trust boundary ADR-0046 flags as having "no Rust
+      analogue" applies in full and is still undocumented as an ANTI- artifact.
+      A CONSOLE HOLDS NO BUSINESS RULES. It calls a `tool-` or `platform-` for
+      them. A rule in a console is ANTI-0004 with a different file extension: it
+      then exists twice, and the copy in the interface is the one nobody tests.
+      No template exists — RFC-0028 is `proposed` — so the first `console-`
+      repository is scaffolded by hand and becomes the de facto template without
+      having been reviewed as one.
+
   - class: infra
     prefix: infra-
     scope: infra

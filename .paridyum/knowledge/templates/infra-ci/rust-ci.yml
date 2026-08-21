@@ -170,11 +170,33 @@ jobs:
         if: inputs.integration
         run: cargo nextest run --profile integration --all-features --run-ignored all -E 'test(/^it::/)'
 
+      # STD-0014: the envelope. nextest's junit.xml says which assertions ran and
+      # nothing about repository, commit, tier, or which DECLARED test type this job
+      # implements — and that last one is what lets test-registry.yaml be answered
+      # at all.
+      #
+      # `implements` names the unit AND component tiers because one `cargo nextest
+      # run` executes both, identified by STD-0001's file layout rather than by
+      # separate commands. Declaring one would understate what this job does.
+      # TST-0003 integration is deliberately NOT claimed here: it runs in its own
+      # step, gated on `inputs.integration`, and is off for every current caller.
+      - name: Test evidence envelope (STD-0014)
+        if: always()
+        run: |
+          python3 .paridyum/knowledge/templates/infra-ci/scripts/junit-to-envelope.py \
+            target/nextest/ci/junit.xml \
+            --tier pr \
+            --stack rust \
+            --implements TST-0001,TST-0002 \
+            --out target/nextest/ci/envelope-test.json
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: junit
-          path: target/nextest/ci/junit.xml
+          path: |
+            target/nextest/ci/junit.xml
+            target/nextest/ci/envelope-test.json
 
   coverage:
     name: coverage

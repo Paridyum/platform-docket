@@ -5,49 +5,49 @@ hook (ADR-0011) and surfaced at the start of every session, so that a decision l
 unrecorded is put back in front of the next person to work here — whether or not
 anyone remembers it exists.
 
-<!-- REGENERATED: 2026-08-20 — do not hand-edit below; close the loop and the entry disappears -->
+<!-- REGENERATED: 2026-08-21 — do not hand-edit below; close the loop and the entry disappears -->
 
 ## Open loops
 
 ### Undecided — draft or proposed
 
-- **RFC-0014** `proposed` for 9d — A region is a residency boundary, and every table declares which plane it lives in
+- **RFC-0014** `proposed` for 10d — A region is a residency boundary, and every table declares which plane it lives in
   `rfc/RFC-0014-a-region-is-a-residency-boundary.md`
-- **RFC-0015** `proposed` for 9d — A fact has one home, and nothing crosses a region boundary
+- **RFC-0015** `proposed` for 10d — A fact has one home, and nothing crosses a region boundary
   `rfc/RFC-0015-a-fact-has-one-home.md`
-- **RFC-0016** `proposed` for 9d — The edge is rented, never holds tenant data, and never asserts identity
+- **RFC-0016** `proposed` for 10d — The edge is rented, never holds tenant data, and never asserts identity
   `rfc/RFC-0016-the-edge-is-rented.md`
-- **RFC-0017** `proposed` for 9d — An operator's personal data lives in the operator's region, not the control region
+- **RFC-0017** `proposed` for 10d — An operator's personal data lives in the operator's region, not the control region
   `rfc/RFC-0017-operator-personal-data-is-regional.md`
-- **RFC-0018** `proposed` for 9d — The control plane is one repository, with a closed list and a split trigger
+- **RFC-0018** `proposed` for 10d — The control plane is one repository, with a closed list and a split trigger
   `rfc/RFC-0018-the-control-plane-is-one-repository.md`
-- **RFC-0019** `proposed` for 8d — A datacentre is one Proxmox cluster, and Kubernetes runs on virtual machines above it
+- **RFC-0019** `proposed` for 9d — A datacentre is one Proxmox cluster, and Kubernetes runs on virtual machines above it
   `rfc/RFC-0019-a-datacentre-is-one-proxmox-cluster.md`
-- **RFC-0020** `proposed` for 8d — An external fact is cited and dated, because it changes somewhere else
+- **RFC-0020** `proposed` for 9d — An external fact is cited and dated, because it changes somewhere else
   `rfc/RFC-0020-external-facts-are-cited-and-dated.md`
-- **RFC-0021** `proposed` for 8d — A device hostname is family, country and sequence, and it is not a database
+- **RFC-0021** `proposed` for 9d — A device hostname is family, country and sequence, and it is not a database
   `rfc/RFC-0021-a-device-hostname-is-family-country-and-sequence.md`
-- **RFC-0022** `proposed` for 5d — What must be true for a founder to build on a platform whose operator competes with them
+- **RFC-0022** `proposed` for 6d — What must be true for a founder to build on a platform whose operator competes with them
   `rfc/RFC-0022-the-operator-competes-with-its-tenants.md`
-- **RFC-0023** `proposed` for 5d — The development substrate is production one level down, and the transition is a variable
+- **RFC-0023** `proposed` for 6d — The development substrate is production one level down, and the transition is a variable
   `rfc/RFC-0023-the-development-substrate-is-production-one-level-down.md`
-- **RFC-0025** `proposed` for 2d — The fleet manager bootstraps itself, and Paridyum is customer zero
+- **RFC-0025** `proposed` for 3d — The fleet manager bootstraps itself, and Paridyum is customer zero
   `rfc/RFC-0025-the-fleet-manager-provisions-paridyum.md`
-- **RFC-0026** `proposed` for 2d — The covenant vehicle — where the tithe goes, and what holds it when the sums are small
+- **RFC-0026** `proposed` for 3d — The covenant vehicle — where the tithe goes, and what holds it when the sums are small
   `rfc/RFC-0026-the-covenant-vehicle.md`
-- **RFC-0027** `proposed` for 2d — Research is captured where it happens, because provenance does not survive a memory
+- **RFC-0027** `proposed` for 3d — Research is captured where it happens, because provenance does not survive a memory
   `rfc/RFC-0027-research-is-captured-where-it-happens.md`
-- **RFC-0028** `proposed` for 2d — The web template — what template-web contains, and the five decisions it needs first
+- **RFC-0028** `proposed` for 3d — The web template — what template-web contains, and the five decisions it needs first
   `rfc/RFC-0028-the-web-template.md`
-- **RFC-0029** `proposed` for 1d — A derivation is an artifact, and an estimate is writable only if it is labelled
+- **RFC-0029** `proposed` for 2d — A derivation is an artifact, and an estimate is writable only if it is labelled
   `rfc/RFC-0029-a-derivation-is-an-artifact.md`
-- **RFC-0030** `proposed` for 1d — A task id cited by a governed artifact must resolve, and two files must not disagree about it
+- **RFC-0030** `proposed` for 2d — A task id cited by a governed artifact must resolve, and two files must not disagree about it
   `rfc/RFC-0030-a-cited-task-id-must-resolve.md`
-- **RFC-0031** `proposed` for 1d — The pull request is not the unit of work — stacks, a work-in-progress ceiling, and automatic draining
+- **RFC-0031** `proposed` for 2d — The pull request is not the unit of work — stacks, a work-in-progress ceiling, and automatic draining
   `rfc/RFC-0031-the-pull-request-is-not-the-unit-of-work.md`
-- **RFC-0032** `proposed` for 1d — Every repository carries an SOP, and every repository declares what it provides
+- **RFC-0032** `proposed` for 2d — Every repository carries an SOP, and every repository declares what it provides
   `rfc/RFC-0032-every-repository-carries-an-sop.md`
-- **RFC-0033** `proposed` for 1d — Every deliverable carries a logbook, and how it was built is captured rather than remembered
+- **RFC-0033** `proposed` for 2d — Every deliverable carries a logbook, and how it was built is captured rather than remembered
   `rfc/RFC-0033-every-deliverable-carries-a-logbook.md`
 
 

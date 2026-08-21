@@ -76,9 +76,12 @@ bit on every script silently disappears.
 | `gh`          | forge's GitHub API client                 | `brew`              | `apt`                    | `dnf`               | `pacman`      |
 | rustup/cargo  | primary language (ADR-0005)               | rustup.rs           | rustup.rs                | rustup.rs           | rustup.rs     |
 | `docker`      | local dependencies + image builds         | Desktop (cask)      | Docker Engine            | Docker Engine       | `pacman`      |
-| `kubectl`     | cluster access (ADR-0003)                 | `kubernetes-cli`    | **k8s apt repo**         | `kubernetes-client` | `kubectl`     |
-| `helm`        | chart authoring and linting (ADR-0003)    | `brew`              | `apt`                    | `dnf`               | `pacman`      |
-| `terraform`   | service infrastructure modules (ADR-0003) | `brew`              | **HashiCorp repo**       | **HashiCorp repo**  | `pacman`      |
+| `kubectl`     | cluster access (ADR-0020)                 | `kubernetes-cli`    | **k8s apt repo**         | `kubernetes-client` | `kubectl`     |
+| `helm`        | chart authoring and linting (ADR-0020)    | `brew`              | `apt`                    | `dnf`               | `pacman`      |
+| `tofu`        | provisioning and service modules (ADR-0052) | `opentofu`        | **OpenTofu apt repo** (`tofu`) | **OpenTofu RPM repo** | `opentofu` |
+| `sops`        | secret encryption (RFC-0023 D6)           | `brew`              | **GitHub release**       | **GitHub release**  | `pacman`      |
+| `age`         | key backend for `sops` (RFC-0023 D6)      | `brew`              | `apt`                    | `dnf`               | `pacman`      |
+| `talosctl`    | Talos cluster management (RFC-0019 D2)    | **`siderolabs/tap`** | **install script**      | **install script**  | **install script** |
 | `jq`          | required by the enforcement hooks         | `brew`              | `apt`                    | `dnf`               | `pacman`      |
 | `just`        | task runner in generated repos            | `brew`              | `apt` (universe)         | `dnf`               | `pacman`      |
 | `sqlx-cli`    | migrations, offline query metadata        | `cargo install sqlx-cli --no-default-features --features postgres,rustls` |||
@@ -89,6 +92,26 @@ bit on every script silently disappears.
 **Bold** entries are not in default repositories and need a vendor repository added
 first. `bootstrap.sh` detects this and prints the specific instructions rather than
 failing opaquely.
+
+**`tofu` replaced `terraform` on 2026-08-20, and the replacement is not cosmetic.** ADR-0052
+decides OpenTofu and declines the Terraform binary, because Terraform has shipped under BUSL
+since v1.6 and fails REQ-0012's exitability test — the same test that made RFC-0025 reject
+Sidero Omni. A workstation that installs the HashiCorp binary is provisioning the tool the
+org has decided against, so this row was the decision's last unclosed edge.
+
+**What did *not* change, deliberately:** ADR-0020 still requires a directory named `terraform/`
+in every deployable repository, and `terraform.fmt_and_validate` is still the check id. ADR-0052
+decision 2 explains why both stand — the identifier is vocabulary, and `tofu fmt` and
+`tofu validate` are the two operations the check names. Do not "correct" either to match this row.
+
+The `kubectl` and `helm` rows cited ADR-0003, which is `superseded`. They now cite ADR-0020,
+which supersedes it. The citation was stale rather than wrong: ADR-0020 carries the same
+Kubernetes obligations forward.
+
+`sops` reads its identity from `SOPS_AGE_KEY_FILE`, conventionally
+`~/.config/sops/age/keys.txt`. Under RFC-0023 decision 5 that identity is generated **on the
+substrate** and the signing key stays on the authoring host — the two must not meet on one
+machine.
 
 **Install Rust via rustup on every platform, never from the system package manager.**
 Distro and Homebrew Rust packages cannot switch toolchains, ignore

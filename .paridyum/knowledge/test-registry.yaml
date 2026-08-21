@@ -215,6 +215,13 @@ test_types:
       Logic that is wrong in isolation — a boundary off by one, an unhandled variant, a
       predicate inverted — before any other kind of test can reach it.
     evidence: junit.xml
+    artifacts:
+    - kind: junit
+      path: reports/junit-unit.xml
+      stack: typescript
+    - kind: junit
+      path: target/nextest/ci/junit.xml
+      stack: rust
     stacks: [rust, typescript]
     checks: [test.nextest_configured, test.coverage_meets_threshold, test.no_io_in_unit_tier]
     governed_by: [STD-0001, STD-0008]
@@ -236,6 +243,13 @@ test_types:
       A module that is correct internally and wrong at its own public boundary — the wiring
       between units, exercised without network or database.
     evidence: junit.xml
+    artifacts:
+    - kind: junit
+      path: reports/junit-unit.xml
+      stack: typescript
+    - kind: junit
+      path: target/nextest/ci/junit.xml
+      stack: rust
     stacks: [rust, typescript]
     governed_by: [STD-0001]
     frameworks:

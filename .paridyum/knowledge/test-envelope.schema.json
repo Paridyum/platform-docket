@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paridyum.dev/schemas/test-envelope-1.json",
+  "title": "Paridyum test evidence envelope, version 1",
+  "description": "One test job's report. STD-0014 is the standard; this is its machine contract. A test run produces JUnit, which describes which assertions ran and is anonymous about everything else \u2014 repository, commit, tier, which declared test type it implements, and whether a person or a workflow produced it. This envelope carries those, and wraps the JUnit rather than replacing it. Nothing here parses test names or messages: those are prose, and branching on them is ANTI-0008.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "commit",
+    "ref",
+    "tier",
+    "implements",
+    "stack",
+    "provenance",
+    "started_at",
+    "duration_ms",
+    "outcome",
+    "totals",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "paridyum.test-envelope/1",
+      "description": "A consumer that does not recognise the major version REFUSES the envelope rather than reading the fields it happens to recognise."
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+      "description": "owner/name, as GitHub spells it."
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full SHA. Not abbreviated: an abbreviation is ambiguous across a ledger meant to outlive the run."
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Full ref. refs/pull/N/merge and refs/heads/main say different things about what was tested and must stay distinguishable."
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "pr",
+        "merge",
+        "nightly",
+        "pre-release",
+        "post-deploy",
+        "on-demand"
+      ],
+      "description": "STD-0008's tiers, spelled as test-registry.yaml spells them."
+    },
+    "implements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^TST-[0-9]{4}$"
+      },
+      "description": "Declared test types this job implements. MAY be empty, and empty is a claim \u2014 this job implements no declared type \u2014 never a way to say 'unknown'. Omitting the field is invalid for that reason."
+    },
+    "stack": {
+      "type": "string",
+      "enum": [
+        "rust",
+        "typescript",
+        "python",
+        "terraform",
+        "none"
+      ],
+      "description": "From class-registry.yaml's stack vocabulary, plus `none` for a job that is not language-specific. `python` is declared before any Python repository exists, so the first one does not need a schema change."
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "ci",
+        "local"
+      ],
+      "description": "`ci` means a workflow produced it and its run can be inspected. `local` means one person's machine. A local envelope may never satisfy a gate, and may never be the sole reason a required type reports as running \u2014 see STD-0014."
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "attempt",
+        "url"
+      ],
+      "description": "Required when provenance is `ci`. Identity of the workflow run, so the envelope can be traced to logs that outlive it.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "A pattern, not `format: uri`. The estate's validator implements only `format: date`, so `format: uri` advertised a constraint nothing checked \u2014 found 2026-08-21 and fixed in both places."
+        }
+      }
+    },
+    "submitted_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required when provenance is `local`. Operator identifier as registry/operators.yaml spells it. A local result with no author is an anonymous claim."
+    },
+    "started_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "RFC 3339, UTC, Z. Not local time: a ledger spanning machines cannot order local timestamps."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "errored",
+        "skipped",
+        "timed_out"
+      ],
+      "description": "`errored` is the job failing to run its tests at all, which is not the same as tests failing. Collapsing the two hides infrastructure decay."
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tests",
+        "passed",
+        "failed",
+        "skipped",
+        "errored"
+      ],
+      "description": "Counts. The four outcomes must sum to `tests`; a consumer that finds otherwise refuses the envelope rather than guessing which is wrong.",
+      "properties": {
+        "tests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errored": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Where the raw evidence went, with a digest so a later copy can be checked against what was reported. May be empty.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "junit",
+              "sarif",
+              "coverage",
+              "json",
+              "html",
+              "binary"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "skipped_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Required in substance when outcome is `skipped`. Free text FOR A PERSON and never branched on. A skip with no reason is indistinguishable from a pass downstream, which is how coverage disappears quietly."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "const": "ci"
+          }
+        },
+        "required": [
+          "provenance"
+        ]
+      },
+      "then": {
+        "required": [
+          "run"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "const": "local"
+          }
+        },
+        "required": [
+          "provenance"
+        ]
+      },
+      "then": {
+        "required": [
+          "submitted_by"
+        ],
+        "not": {
+          "required": [
+            "run"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "skipped"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "skipped_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "skipped_reason"
+        ]
+      }
+    }
+  ]
+}

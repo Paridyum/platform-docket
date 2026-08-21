@@ -1,0 +1,242 @@
+# Paridyum shared Next.js / TypeScript CI (ADR-0010, ADR-0021).
+#
+# Destination: Paridyum/infra-ci/.github/workflows/nextjs-ci.yml
+# Callers pin a major tag:
+#
+#   jobs:
+#     ci:
+#       uses: Paridyum/infra-ci/.github/workflows/nextjs-ci.yml@v1
+#
+# Third-party actions are pinned to commit SHAs, not tags (ADR-0010). A tag is
+# mutable; depending on one means an upstream compromise runs arbitrary code with
+# this repository's GITHUB_TOKEN. Renovate keeps the pins current — the trailing
+# `# vX.Y.Z` comment is what it matches on, so do not remove it.
+#
+# WHY THE SCRIPTS COME FROM THE CALLER'S VENDORED SNAPSHOT, NOT FROM THIS REPOSITORY.
+# Identical to rust-ci.yml, and for the same reason found on a real run: the default
+# GITHUB_TOKEN carries `Contents: read` for the CALLING repository only, so a job that
+# checks out Paridyum/infra-ci to get `scripts/` fails with `Repository not found`,
+# and the usual fix is a PAT that REQ-0001 has no home for and that GitHub Free
+# cannot provide as an org secret for a private repository (ADR-0004). ADR-0001
+# already vendors the scripts into every caller at
+# `.paridyum/knowledge/templates/infra-ci/scripts/`.
+#
+# WHY pnpm IS INSTALLED WITH npm RATHER THAN pnpm/action-setup OR corepack.
+# corepack is no longer bundled with Node (absent in 25.x), so `corepack enable pnpm`
+# is not available. `pnpm/action-setup` would work and is one more third-party action
+# to pin, audit and trust with the job's token, for a task that is one npm command.
+# `--ignore-scripts` on that install is deliberate: it is the first package this job
+# fetches and there is no reason for it to run lifecycle code (RFC-0003).
+#
+# TESTS: unit and component only. RFC-0003 selects Vitest 4 and Playwright; the
+# `test` job below runs Vitest, and there is still no Playwright job because no
+# caller has an end-to-end test. It is added when one does, not before.
+#
+# The job is skipped when a caller has no `test` script, so adding this did not
+# break the callers that have no suite. It is NOT skipped when the suite is empty:
+# `passWithNoTests` is left at its default of false in the caller's Vitest config,
+# so a suite that ran nothing fails. A green run that executed no tests is worse
+# than a missing job, because it looks like evidence.
+
+name: nextjs-ci
+
+on:
+  workflow_call:
+    inputs:
+      node-version-file:
+        description: File pinning the Node version. RFC-0003 open question 3 — Node needs an explicit version policy the way Rust pins a toolchain.
+        type: string
+        default: .nvmrc
+      working-directory:
+        description: Directory holding package.json, for callers that are not a single app at the root.
+        type: string
+        default: .
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # One job for the three gates, deliberately, rather than three.
+  #
+  # They share an install, and the install is most of the wall-clock: splitting them
+  # triples a ~30s `pnpm install` to save nothing, because they are ordered anyway —
+  # lint is cheapest and build is dearest, and a type error found by `build` after
+  # `typecheck` already passed is not new information. STD-0008's `pr` tier has a
+  # 10-minute budget and this is how it is kept.
+  gates:
+    name: lint, typecheck, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11 --ignore-scripts
+
+      # `--frozen-lockfile` is the default in CI, but it is stated because it is the
+      # whole point: a lockfile the workflow is allowed to rewrite is a lockfile that
+      # cannot pin anything, and the supply-chain settings in pnpm-workspace.yaml
+      # (minimumReleaseAge, trustPolicy, blockExoticSubdeps) are enforced at
+      # resolution — which is skipped when the lockfile is honoured, so the pins are
+      # what carry them here.
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run lint
+
+      # Next generates PageProps/LayoutProps into .next/types, so a bare
+      # `tsc --noEmit` cannot pass on a clean checkout — which is every CI run.
+      # Callers' `typecheck` script must run `next typegen` first; this fails loudly
+      # if it does not, rather than being "fixed" by adding typegen here and hiding
+      # a broken script from everyone running it locally.
+      - name: Typecheck
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run typecheck
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run build
+
+  test:
+    name: unit and component tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11 --ignore-scripts
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      # Skipped where a caller has no suite, so this job could be added without
+      # breaking them. `--if-present` is not used: it would also swallow a caller
+      # whose script is misnamed, and a test job that quietly does nothing is the
+      # thing this whole file keeps trying not to be.
+      - name: Has a test script?
+        id: has_tests
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no test script in package.json; nothing was run"
+          fi
+
+      - name: Test
+        if: steps.has_tests.outputs.yes == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CI: "true"
+        run: pnpm run test
+
+      # STD-0014: the envelope. JUnit says which assertions ran and is anonymous
+      # about repository, commit, tier and which DECLARED test type this job
+      # implements — which is the only thing that lets test-registry.yaml be
+      # answered. `implements` names both tiers because Vitest runs them under one
+      # include pattern here, so this job genuinely implements both; claiming one
+      # would understate it and claiming a tier it does not run would be worse.
+      #
+      # Failure is not swallowed. An envelope that cannot be produced is a fact
+      # about this run, and a converter that failed quietly would leave a green
+      # pipeline reporting evidence it never wrote.
+      - name: Test evidence envelope (STD-0014)
+        if: always() && steps.has_tests.outputs.yes == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python3 .paridyum/knowledge/templates/infra-ci/scripts/junit-to-envelope.py \
+            reports/junit-unit.xml \
+            --tier pr \
+            --stack typescript \
+            --implements TST-0001,TST-0002 \
+            --out reports/envelope-unit.json
+
+      # STD-0008: every blocking tier publishes a machine-readable artifact. A run
+      # that blocks a change and leaves nothing behind cannot afterwards be
+      # distinguished from a run that was skipped.
+      - name: Publish test evidence
+        if: always() && steps.has_tests.outputs.yes == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: junit-unit
+          path: |
+            ${{ inputs.working-directory }}/reports/junit-unit.xml
+            ${{ inputs.working-directory }}/reports/envelope-unit.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  # The signal `strictDepBuilds: false` gives up, taken back.
+  #
+  # Separate from `gates` on purpose: this is the job whose failure means "a
+  # dependency wants to run code on your machine", and that must be legible in the
+  # checks list rather than buried as step 6 of a job called lint.
+  supply-chain:
+    name: no unreviewed build scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11 --ignore-scripts
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      - name: No unreviewed build scripts
+        working-directory: ${{ inputs.working-directory }}
+        run: bash .paridyum/knowledge/templates/infra-ci/scripts/check-pnpm-builds.sh
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Secret scan
+        run: bash .paridyum/knowledge/templates/infra-ci/scripts/secret-scan.sh
+
+  changelog:
+    name: changelog updated
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Changelog
+        run: bash .paridyum/knowledge/templates/infra-ci/scripts/check-changelog.sh
+
+  governance:
+    name: repository hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Repository hygiene
+        run: bash .paridyum/knowledge/scripts/check-repo.sh

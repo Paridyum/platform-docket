@@ -385,7 +385,7 @@ generated and names a generator that does not exist. Worth either narrowing the 
 case-sensitive, own-line) or making the denial say *which line matched*.
 **Done when:** the match is narrowed, or the denial quotes the triggering line.
 
-### T-2.12 → No policy says when the Rust pin is advanced
+### ~~T-2.12 → No policy says when the Rust pin is advanced~~ — **closed 2026-08-20 by ADR-0053**
 The pin moved four times across 2026-08-15/16 — 1.90.0 → 1.97.1 → 1.94.0 → 1.97.1 — and each move
 was a judgement made from scratch. Rust ships every six weeks, so this recurs indefinitely.
 
@@ -399,6 +399,22 @@ verification required before one lands (`fmt`, `clippy --all-targets --all-featu
 trigger. Pairs with T-2.11, which moves the number out of a locked standard so a bump does not
 require superseding one.
 **Done when:** an ADR states when the pin advances, or a note records why it stays ad hoc.
+
+**ADR-0053 states it.** The operator's direction was to stop hard-pinning and stay on latest; the
+conflict with locked STD-0003 turned out to be apparent rather than real, because STD-0003's erratum
+says what it decides is *"the shape, not the number"* — an exact version, never a channel — and says
+nothing about the number's age. Exactness is reproducibility; currency is age; the opposite of
+latest is stale, not pinned. So the pin stays exact and advances on upstream's release, patch/minor
+and toolchain automerge on green, majors never do, an advisory bypasses the cadence, and a
+dependency raising its floor is its own trigger.
+
+**The part worth reading is decision 7.** Staleness fails the gate independently of Renovate,
+because ADR-0010 and ADR-0021 both assert Renovate keeps pins current and **no Renovate
+configuration has ever existed in this organisation** — so both sentences were true of nobody for
+the whole period they were written. This task existed because of what that cost (T-2.10), and a
+policy enforced only by the same absent robot would have closed it on paper.
+
+⛔ **Still owed, and nothing in ADR-0053 decisions 2-6 operates without it: Renovate itself.**
 
 ### T-2.11 STD-0003 embeds a Rust version, and STD-0003 is locked — **labelled 2026-08-16, not fixed**
 An erratum was appended under ADR-0031 (`9bfb5ad`), verified by the gate as *"errata appended, body

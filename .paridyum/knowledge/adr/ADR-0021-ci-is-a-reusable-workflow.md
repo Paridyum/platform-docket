@@ -185,3 +185,45 @@ which are the repositories that will hold the cluster.
 That is a real gap. It is **preserved rather than fixed here**, because a supersession must
 be provably equivalent to what it replaces and changing behaviour inside one is how detail
 gets lost. Correcting it is a one-line registry change and a separate decision.
+
+## Errata
+
+### 2026-08-20 — the Free-plan deployment gate does not exist on private repositories
+
+**Says:** *"`staging` and `prod` require manual approval through a GitHub Environment — the one
+gate that works on the Free plan, because environment protection rules are not a
+branch-protection feature."*
+
+**Wrong:** the second half is true and the conclusion drawn from it is not. Environment
+protection rules are indeed not a branch-protection feature, and they are still unavailable on
+this organisation's plan. Verified against the API on 2026-08-20: creating an environment on a
+private repository in the `Paridyum` organisation succeeds and returns `"protection_rules":[]`;
+attaching a required reviewer to it is refused with
+
+> `Failed to create the environment protection rule. Please ensure the billing plan supports the required reviewers protection rule.`
+
+The organisation is on the Free plan (ADR-0004) and `knowledge`, `infra-ci` and `tool-forge` are
+private. Required reviewers on private repositories are a paid-plan feature; the free allowance
+covers public repositories. So an environment can be created and it carries no gate — which is
+worse than having none, because the deployment page shows an environment and implies one.
+
+**Intended:** the decision is unaffected — a deploy to `staging` or `prod` is gated on a human,
+and CI does not release on its own. What is wrong is the named mechanism. **No approval gate is
+available on this plan for private repositories**, and the substitute is a `workflow_dispatch`
+deploy that a person triggers rather than approves.
+
+**What the substitute does not give**, stated because it is the reason to revisit this: a trigger
+records who *ran* the deploy, not who *authorised* it, and there is no second pair of eyes by
+construction. Under ADR-0044 the audit trail is append-only and answerable; "the person who
+clicked run" is a weaker answer than "the person who approved" and it is the same person as the
+author. Restoring the original mechanism is a billing change, not an engineering one.
+
+**Why this is an erratum rather than a supersession.** ADR-0031 decision 5 permits an erratum for
+a factual error and forbids one that changes what an artifact decides. The false statement here is
+a claim about a vendor's billing tiers — precisely the class RFC-0020 exists for, and it carried no
+citation or date when written. The decision it sits inside is untouched.
+
+**This falsified work written on 2026-08-19 that relied on it**, corrected the same
+day this erratum was appended: GLO-0011, which asserted that one manually gated environment
+satisfies this ADR completely, and `docs/superpowers/plans/2026-08-19-phase-2b-substrate.md` Task 7,
+which instructed the reader to approve the deploy by hand.

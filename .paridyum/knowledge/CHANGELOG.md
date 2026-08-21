@@ -13,6 +13,233 @@ handle — file names may be reorganised, ids never are.
 
 ### Added
 
+- **`junit-to-envelope.py` — the shared converter STD-0014 requires,** with a 67-case suite
+  wired into `test-checks.sh` so it runs in the blocking tier rather than being remembered.
+  One implementation for every stack: JUnit in, envelope out. It validates what it writes,
+  against the schema *and* the cross-field rules the schema cannot carry, and refuses rather
+  than substituting when JUnit omits `timestamp` or `time` — which this repository's own gate
+  suite does.
+
+  Its most valuable cases prove a claim this repository makes about itself. They corrupt an
+  envelope between build and write, assert the vendored validator **passes** all three, and
+  assert the converter refuses them anyway. So "an envelope satisfying the schema is not
+  thereby valid" is demonstrated rather than asserted.
+
+- **`report-test-coverage.sh` — which declared test types actually run, and how much of the
+  answer is inference.** RFC-0034 rollout step 1, which needs no decision from the RFC. It
+  discovers repositories rather than listing them, resolves each caller's `uses:` against the
+  local reusable workflow so the pipeline can be read, and binds the caller's `with:` inputs so
+  literal gates evaluate.
+
+  **Every row carries a confidence and prints its basis.** `declared` (the pipeline names the
+  TST- id), `direct` (the step list and literal gates settle it), `HEURISTIC` (states the
+  inference and the tool list it searched), or `cannot determine` — which is used when nothing
+  was probed, never collapsed into "not found". It is a *report*, not a check: it exits 0
+  whatever it finds, and its header says why.
+
+  Findings worth acting on, each verified against the repositories:
+  - **`TST-0003 integration` is `required`, tier `pr`, and runs nowhere.** Both Rust callers
+    pass `integration: false` explicitly, neither has a `tests/it/`, and `console-docket`
+    declares no integration script.
+  - **`TST-0013 mutation` is declared and never fires** — the job exists, gated on the nightly
+    tier, and nothing in the estate passes that tier or schedules it.
+  - **`console-docket`'s Playwright harness exists and no CI job invokes it** — already known
+    and recorded there, now visible from the estate level.
+  - **`infra-ci` runs no secret scan on its own code** while shipping the secret-scan job to
+    every other repository.
+  - **`TST-0061 boundary-conformance` rests on one of its three declared checks;** the other two
+    are implemented nowhere.
+
+  And the number that most supports RFC-0034: of the declared types, exactly **one** row is
+  `declared` by a pipeline, because the whole estate names a TST- id in one place. Most types
+  can only be answered by annotating a job with its id, which is what RFC-0034 §1 proposes —
+  every annotation added moves a row from heuristic or unknown to declared.
+
+- **STD-0014 — the test evidence envelope**, and `test-envelope.schema.json` as its machine
+  contract. Implements RFC-0034 §2. JUnit XML is what every stack already emits and is
+  anonymous about everything that matters: repository, commit, tier, which declared test type
+  it implements, and whether a workflow or a laptop produced it. The envelope carries those
+  and wraps the JUnit rather than replacing it, so Rust, TypeScript, Python and anything after
+  them are read by one consumer.
+
+  **`provenance` is the field that earns its place.** `local` exists because
+  `console-docket`'s Playwright suite covers the write path and cannot run in CI — no runner
+  has a typesetter — so rejecting local runs would keep the estate's most valuable suite
+  invisible. Accepting them unlabelled would make the evidence untrustworthy. So a `local`
+  envelope may never satisfy a gate, may never be the sole reason a `required` type reports as
+  running, and is displayed as what it is wherever a number derived from it appears.
+
+  **Two rules the schema cannot enforce are named in the standard rather than assumed.**
+  Verified by mutating a real envelope from a live CI run: eight of ten corruptions are
+  rejected, and the two that are not are both cross-field — `totals` summing to `tests`, which
+  JSON Schema cannot express at any version because it has no arithmetic, and the
+  `provenance`-conditional fields, which the schema expresses with `allOf`/`if`/`then` and the
+  vendored validator declines to implement while saying so out loud. The consequence is a
+  rule: a producer validates against the schema *and* checks those two by hand, because an
+  envelope that satisfies the schema is not thereby valid.
+
+- **`artifacts` on a test type** in `test-registry.schema.json` — the machine-readable
+  counterpart to `evidence`. `evidence` stays prose and is never parsed: it holds sentences
+  like `"junit.xml, trace and video artifacts"` and `"capacity model with the measurements
+  behind it"`, and a collector reading them would make that English load-bearing, which
+  ANTI-0008 forbids by name. Optional, because a type producing nothing collectable — a manual
+  review, a drill — should be able to say so rather than be guessed at.
+
+- **RFC-0034 — test evidence is attributed to a declared type, collected by pull, and read
+  from one place.** `test-registry.yaml` declares a catalogue of test types and nothing can
+  say which of them run: evidence is per-repository, expires at 90 days, and no workflow
+  declares which declared type it implements, so the mapping is a guess. `console-docket`'s
+  Playwright suite covers the write path and runs on a laptop, so its evidence exists
+  nowhere. REQ-0006 §6 asks for CI pass rate and flake rate and neither is obtainable.
+
+  Two constraints did the deciding. **ANTI-0008 forbids the obvious implementation:**
+  `evidence` is prose written for a person — `"junit.xml, trace and video artifacts"` — so a
+  collector that parsed it would make that English load-bearing. A separate machine-readable
+  `artifacts` field is proposed and the prose is left untouched. And **REQ-0001's finding
+  chose pull over push:** org-level Actions secrets do not work for private repositories on
+  Free, so a push design needs one hand-set write credential per repository, growing with the
+  estate, failing silently when one goes stale, and letting any repository forge any other's
+  results. Pull needs one read-only credential in one place.
+
+  Sequenced so the credential decision comes last: an inventory report, then the envelope
+  standard, then emission in the reusable workflows, then a dashboard that reads live state
+  with the operator's own `gh` credentials and no stored secret at all, and only then the
+  ledger. Six alternatives are recorded, including a third-party service (rejected on
+  REQ-0012's exitability test, the same test that rejected Terraform) and doing nothing
+  (survivable at this size, and rejected because nobody reads the workflows so nobody knows).
+
+  Open questions are left open, including the one that gates the last step: whether a
+  read-only organisation-wide CI token falls under REQ-0001, which is titled *runtime* secret
+  management. That is not an agent's call.
+
+- **`nextjs-ci.yml` — the reusable TypeScript/Next.js CI workflow.** ADR-0021 requires CI
+  to be a reusable workflow per stack, called by every class declaring `ci: true`. Only
+  `rust-ci.yml` existed, so the `console` class ADR-0055 added had no CI to call and its
+  gates were enforced by nothing. Five jobs: `gates` (lint, typecheck, build in one job —
+  they share an install, and splitting them triples the install to save nothing),
+  `supply-chain`, `secrets`, `changelog`, `governance`. It deliberately runs **no tests**:
+  RFC-0003 selects Vitest and Playwright, no caller has either, and a test job that passes
+  on an empty suite reports coverage of nothing.
+
+  pnpm is installed with `npm install -g pnpm@11 --ignore-scripts` rather than via
+  `corepack` (no longer bundled with Node, absent in 25.x) or `pnpm/action-setup` (one more
+  third-party action to pin and trust with the job token, for one command). Scripts come
+  from the caller's vendored snapshot for the reason `rust-ci.yml` records: the default
+  `GITHUB_TOKEN` can only read the calling repository.
+
+- **`check-pnpm-builds.sh` — fail when a dependency ships a build script nobody reviewed.**
+  pnpm's own `strictDepBuilds: true` is meant to do this and is unusable in a repository
+  with even one reviewed-and-refused package: the refusal itself trips it, so *every*
+  install exits non-zero, fresh and satisfied alike, taking every `pnpm exec` and CI step
+  with it. The documented escape hatches do not work — an `allowBuilds` entry of `false`
+  does not silence it on pnpm 11.22.0, and the pnpm 10 key `ignoredBuiltDependencies` is no
+  longer read. So callers set `strictDepBuilds: false` and recover the signal here, by
+  asserting that `pnpm ignored-builds` reports nothing under *Automatically ignored* while
+  leaving reviewed refusals silent. Verified in both directions: it passes with a reviewed
+  refusal present and fails, naming the package, when that review is removed.
+
+### Fixed
+
+- **`validate-schema.py` listed `format` as known while implementing only `format: date`.** So
+  `format: uri` in `test-envelope.schema.json` constrained nothing *and* was reported as fully
+  supported — the exact condition the `KNOWN` list exists to prevent, and which its own comment
+  describes removing `propertyNames` to avoid. Now reported per unimplemented value, which
+  immediately surfaced a second instance in `knowledge.schema.json`'s `sources[].url` that had
+  never been enforced either.
+
+- **STD-0014 said "two rules the schema cannot enforce" and there were three.** The third —
+  `skipped_reason` required when `outcome: skipped` — was expressed *nowhere* in the machine
+  contract, so unlike the other two a full JSON Schema validator would not have caught it
+  either, and the section's reasoning did not apply to it. A skip with no reason is
+  indistinguishable from a pass downstream, so it was the omission with the largest
+  consequence. Found by the converter's author reading the schema against the prose instead of
+  trusting it.
+
+  Four related corrections from the same reading: `artifacts[].sha256` is now required (the
+  field table read as mandatory, the schema had it optional); a `local` envelope carrying a
+  `run` is now forbidden (a trace nobody can follow); `submitted_by` no longer cites
+  `registry/operators.yaml`, which does not exist in this repository — the only operator
+  registry belongs to `tool-docket`, so the value is recorded and not verified; and the standard
+  now states what a producer does when JUnit omits a timestamp, what "zero test cases" maps to,
+  and that `timed_out` cannot come from a converter at all because a job killed by a timeout
+  writes no JUnit.
+
+- **RFC-0034 overstated one verification.** It said the JUnit claim was "verified against what
+  is actually installed" for four tools; `cargo nextest` is not installed on this machine. Now
+  states each at the strength it was actually established: Vitest and Playwright demonstrated,
+  nextest declared-in-config but not run locally, pytest neither.
+
+- **The hook `install-hooks.sh` writes was unusable in every consuming repository.** It ran
+  `"$R/scripts/check-commits.sh"` and four siblings against the repository root, which is
+  correct only in a checkout of this repository — everywhere else those scripts are vendored
+  under `.paridyum/knowledge/` (ADR-0001), so the hook resolved paths that do not exist and
+  exited 1 on every commit. A gate that blocks all work rather than bad work is a gate people
+  delete, so this made layer 2 of ADR-0007's ladder worse than absent. The generated hook now
+  locates the snapshot and falls back to the root, and `check-changelog.sh` is pointed at the
+  committing repository's own `CHANGELOG.md` rather than the snapshot's copy of this one.
+  Found on the first commit to `console-docket`.
+
+- **`install-hooks.sh` installed the pre-commit gate outside the repository when run from a
+  vendored snapshot.** It read the hooks directory with `git rev-parse --git-path hooks`,
+  which returns a path relative to the directory passed to `-C`, and then used that path
+  relative to the *caller's* working directory. Those are the same place when the script runs
+  from a checkout of this repository, which is why it went unnoticed; they are not when it
+  runs from `.paridyum/knowledge/scripts/`, where the relative `../../.git/hooks` resolved one
+  level above the consuming repository. The result was a stray `.git/hooks/` directory that is
+  not a git repository, and layer 2 of ADR-0007's ladder reporting as installed while being
+  off — the same defect class as a check that verifies less than its name claims. Now uses
+  `--path-format=absolute`. Found while installing hooks into `console-docket`.
+
+### Changed
+
+- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
+  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
+  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
+  each execute both tiers — identified by STD-0001's file layout rather than by separate
+  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
+  does **not** claim TST-0003: integration runs in its own step, gated on
+  `inputs.integration`, and that gate is off for every current caller.
+
+  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
+  inference into a declared fact.
+
+- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
+  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
+  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
+  `kind` is required now — the registry's job is to say what a type produces, and where it
+  lands is the producing job's business. Putting a repository's directory layout into a
+  locked org-scope registry was the mistake.
+
+- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
+
+- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
+  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
+  new `console-` repository rather than a new class.
+- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
+  is what the secret grants, not where it lives. A credential a *running service* needs is in
+  scope; one that reads only what its holder can already read, used by CI, is not. Written into
+  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
+  every time. It explicitly does not make such a token free — it is still one secret set by hand
+  in one repository, which is the drift REQ-0001 describes, bounded at one.
+- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
+  first console served HR and the wording leaned on that example enough that a testing dashboard
+  for engineers read as though it needed a different class. The test in the ADR already settled
+  it — the class turns on reachability, and nothing in that test mentions who the operator is.
+  Splitting on job title would mean a second class describing the same shape.
+
+- **RUN-0001 now provisions `tofu` rather than `terraform`, and gains `sops`, `age` and
+  `talosctl`.** ADR-0052 decided OpenTofu and declined the Terraform binary — Terraform has
+  shipped under BUSL since v1.6 and fails REQ-0012's exitability test, the same test that made
+  RFC-0025 reject Sidero Omni. The runbook was the decision's last unclosed edge: it was still
+  installing the binary the organisation had decided against, and a workstation provisioned
+  correctly ended up with the wrong tool. The three tools added are the ones Phase 2b's substrate
+  tasks call and the runbook did not install. **ADR-0020's `terraform/` directory and the
+  `terraform.fmt_and_validate` check id are unchanged** — ADR-0052 decision 2 keeps both, because
+  the identifier is vocabulary and `tofu fmt`/`tofu validate` are the operations it names.
+  The `kubectl` and `helm` rows also now cite ADR-0020 rather than superseded ADR-0003.
+
+### Added
+
 - **RFC-0032 — every repository carries an SOP, and every repository declares what it provides.**
   STD-0002 requires the four documents that answer *what is this*, *how is it built*, *what
   changed* and *what is it machine-readably*; the operating question — **I have this job in front
@@ -625,6 +852,41 @@ handle — file names may be reorganised, ids never are.
 
 ### Changed
 
+- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
+  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
+  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
+  each execute both tiers — identified by STD-0001's file layout rather than by separate
+  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
+  does **not** claim TST-0003: integration runs in its own step, gated on
+  `inputs.integration`, and that gate is off for every current caller.
+
+  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
+  inference into a declared fact.
+
+- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
+  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
+  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
+  `kind` is required now — the registry's job is to say what a type produces, and where it
+  lands is the producing job's business. Putting a repository's directory layout into a
+  locked org-scope registry was the mistake.
+
+- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
+
+- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
+  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
+  new `console-` repository rather than a new class.
+- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
+  is what the secret grants, not where it lives. A credential a *running service* needs is in
+  scope; one that reads only what its holder can already read, used by CI, is not. Written into
+  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
+  every time. It explicitly does not make such a token free — it is still one secret set by hand
+  in one repository, which is the drift REQ-0001 describes, bounded at one.
+- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
+  first console served HR and the wording leaned on that example enough that a testing dashboard
+  for engineers read as though it needed a different class. The test in the ADR already settled
+  it — the class turns on reachability, and nothing in that test mentions who the operator is.
+  Splitting on job title would mean a second class describing the same shape.
+
 - **REQ-0006, REQ-0007, REQ-0012, REQ-0015 and REQ-0016 move `deferred` → `accepted`.** Their
   triggers had fired and nobody noticed, because **nothing detects a fired trigger**:
   `knowledge.deferred_requirements_have_triggers` checks a trigger is *present*, and the only
@@ -941,6 +1203,35 @@ handle — file names may be reorganised, ids never are.
 - `README.md` and `CLAUDE.md` state the ADR-0014 resolution rules.
 
 ### Fixed
+
+- **`validate-schema.py` listed `format` as known while implementing only `format: date`.** So
+  `format: uri` in `test-envelope.schema.json` constrained nothing *and* was reported as fully
+  supported — the exact condition the `KNOWN` list exists to prevent, and which its own comment
+  describes removing `propertyNames` to avoid. Now reported per unimplemented value, which
+  immediately surfaced a second instance in `knowledge.schema.json`'s `sources[].url` that had
+  never been enforced either.
+
+- **STD-0014 said "two rules the schema cannot enforce" and there were three.** The third —
+  `skipped_reason` required when `outcome: skipped` — was expressed *nowhere* in the machine
+  contract, so unlike the other two a full JSON Schema validator would not have caught it
+  either, and the section's reasoning did not apply to it. A skip with no reason is
+  indistinguishable from a pass downstream, so it was the omission with the largest
+  consequence. Found by the converter's author reading the schema against the prose instead of
+  trusting it.
+
+  Four related corrections from the same reading: `artifacts[].sha256` is now required (the
+  field table read as mandatory, the schema had it optional); a `local` envelope carrying a
+  `run` is now forbidden (a trace nobody can follow); `submitted_by` no longer cites
+  `registry/operators.yaml`, which does not exist in this repository — the only operator
+  registry belongs to `tool-docket`, so the value is recorded and not verified; and the standard
+  now states what a producer does when JUnit omits a timestamp, what "zero test cases" maps to,
+  and that `timed_out` cannot come from a converter at all because a job killed by a timeout
+  writes no JUnit.
+
+- **RFC-0034 overstated one verification.** It said the JUnit claim was "verified against what
+  is actually installed" for four tools; `cargo nextest` is not installed on this machine. Now
+  states each at the strength it was actually established: Vitest and Playwright demonstrated,
+  nextest declared-in-config but not run locally, pytest neither.
 
 - **The anti-forgetting ledger had been blind to four artifact classes, and the backlog it
   reported was a third short.** `capture-open-loops.sh` (ADR-0011) carried its own hardcoded
@@ -1734,6 +2025,41 @@ handle — file names may be reorganised, ids never are.
 - `guard-commands.sh` PreToolUse hook; `.gitleaks.toml`; `check-commits.sh`.
 
 ### Changed
+
+- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
+  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
+  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
+  each execute both tiers — identified by STD-0001's file layout rather than by separate
+  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
+  does **not** claim TST-0003: integration runs in its own step, gated on
+  `inputs.integration`, and that gate is off for every current caller.
+
+  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
+  inference into a declared fact.
+
+- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
+  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
+  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
+  `kind` is required now — the registry's job is to say what a type produces, and where it
+  lands is the producing job's business. Putting a repository's directory layout into a
+  locked org-scope registry was the mistake.
+
+- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
+
+- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
+  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
+  new `console-` repository rather than a new class.
+- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
+  is what the secret grants, not where it lives. A credential a *running service* needs is in
+  scope; one that reads only what its holder can already read, used by CI, is not. Written into
+  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
+  every time. It explicitly does not make such a token free — it is still one secret set by hand
+  in one repository, which is the drift REQ-0001 describes, bounded at one.
+- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
+  first console served HR and the wording leaned on that example enough that a testing dashboard
+  for engineers read as though it needed a different class. The test in the ADR already settled
+  it — the class turns on reachability, and nothing in that test mentions who the operator is.
+  Splitting on job title would mean a second class describing the same shape.
 
 - `guard-locked-decisions.sh` extended to cover generated code and governance files.
 

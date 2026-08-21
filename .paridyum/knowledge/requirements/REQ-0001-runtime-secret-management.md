@@ -118,6 +118,32 @@ the CLI, SDKs, Kubernetes operator, agent and all integrations. Relevant pieces:
    cloud-native KMS options. Infisical was researched first because it came up first,
    which is not a reason to choose it.
 
+## What this does not cover
+
+**A read-only CI credential is out of scope.** Decided 2026-08-21 while accepting
+RFC-0034, which needs one fine-grained read-only token to collect test evidence
+across the organisation.
+
+The boundary is what the secret gives access to, not where it is stored:
+
+- **In scope:** anything a *running service* needs to function — database
+  credentials, the Zitadel masterkey, service-account keys, signing keys. These are
+  the ones whose absence is discovered at deploy time, which is the failure this
+  requirement is named after, and whose leak grants powers the holder did not have.
+- **Out of scope:** a credential that reads only what the person holding it can
+  already read, used by CI rather than by a service. A read-only token over
+  repositories the operator already owns adds no capability; it automates an
+  existing one.
+
+This is written here rather than left in RFC-0034 so the boundary is not re-argued
+from a design document every time it comes up. It does not make such a token free:
+it is still one secret set by hand in one repository, which is exactly the drift
+this requirement describes — the argument is only that the drift is bounded at one,
+and that read-only is a materially smaller blast radius than write.
+
+If a CI credential ever needs write access to anything outside its own repository,
+it is in scope and this section does not apply to it.
+
 ## Related
 
 - ADR-0004 — GitHub Free plan limitations, and the upgrade trigger

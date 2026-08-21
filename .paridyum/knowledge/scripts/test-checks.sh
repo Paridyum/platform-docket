@@ -1270,6 +1270,19 @@ if [[ -n "$JUNIT_OUT" ]]; then
   printf '\nevidence: %s (%d cases)\n' "$JUNIT_OUT" "$((PASS + FAIL))"
 fi
 
+# ---------------------------------------------------------------------------
+# The STD-0014 converter has its own suite, and it runs here so it is in the
+# blocking tier rather than being something someone remembers to run.
+#
+# Its most valuable cases prove a claim this repository makes about itself: that an
+# envelope satisfying test-envelope.schema.json is NOT thereby valid, because three
+# cross-field rules are unenforceable by the vendored validator. They corrupt an
+# envelope between build and write, assert the validator passes it, and assert the
+# converter refuses it anyway.
+# ---------------------------------------------------------------------------
+expect_ok "junit-to-envelope converter (STD-0014)" \
+  bash "$KB/templates/infra-ci/scripts/test-junit-to-envelope.sh"
+
 printf '\n'
 if [[ $FAIL -gt 0 ]]; then
   printf '%s%d case(s) failed%s, %d passed\n' "$RED" "$FAIL" "$RST" "$PASS"; exit 1

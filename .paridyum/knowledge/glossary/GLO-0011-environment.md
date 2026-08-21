@@ -45,16 +45,30 @@ targets each name and never requires that a `dev` exist.
 
 ## The rule that follows
 
-> **One environment named `staging`, gated manually, satisfies ADR-0021 completely.**
+> **One environment named `staging`, gated on a human, satisfies ADR-0021's intent.**
 
 The automatic path in ADR-0021 has no target, so it does not fire. This is ADR-0021
 **under-satisfied, not contradicted** — which is the distinction that keeps the substrate legal
 without superseding a locked, org-scoped artifact.
 
-⚠️ **The accepted cost, stated because it cuts against Phase 2's own thesis.** The harness must fail
+⚠️ **Corrected 2026-08-20. This entry originally read "gated manually" and named ADR-0021's GitHub
+Environment approval as the mechanism. That mechanism is not available here**, and the claim was
+inherited from ADR-0021 rather than checked. Verified against the API: an environment can be created
+on a private repository in this organisation and it carries no protection rules, because required
+reviewers on private repositories are a paid-plan feature and ADR-0004 puts the organisation on Free.
+The refusal is recorded in ADR-0021's 2026-08-20 erratum.
+
+**So the gate is a `workflow_dispatch` deploy that a person triggers, not an approval they grant.**
+The distinction is not cosmetic and belongs in this entry rather than in the runbook that implements
+it: a trigger records who *ran* a deploy, an approval records who *authorised* it, and only the
+second is a second pair of eyes. Under ADR-0044 the audit trail must answer who caused a change;
+"the person who clicked run" is the same person as the author, and that is the weaker answer.
+Restoring the stronger one is a billing change rather than an engineering one.
+
+⚠️ **The other accepted cost, which cuts against Phase 2's own thesis.** The harness must fail
 before it is trusted, and ADR-0021's automatic post-merge deploy path is the one part of the
-pipeline that this arrangement never exercises. It stays unexercised until a second environment
-exists, and it will first run against whatever that second environment is.
+pipeline this arrangement never exercises. It stays unexercised until a second environment exists,
+and it will first run against whatever that second environment is.
 
 ## What it is not
 

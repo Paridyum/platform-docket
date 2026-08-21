@@ -84,17 +84,18 @@
       "minItems": 1,
       "items": {
         "enum": [
-          "org",
-          "infra",
-          "library",
-          "mobile",
-          "platform",
-          "sdk",
-          "service",
-          "spec",
-          "template",
-          "tool",
-          "web"
+            "org",
+            "console",
+            "infra",
+            "library",
+            "mobile",
+            "platform",
+            "sdk",
+            "service",
+            "spec",
+            "template",
+            "tool",
+            "web"
         ]
       },
       "description": "A union of selectors. `org` matches EVERY repository regardless of class, including one with no recognised class such as `knowledge` or `template-*`; it is not itself a class. Every other value matches repositories of that class. `forge context <repo>` returns the union of artifacts matching `org` and those matching the repo's class, narrowed by `applies_to`. A classless repository is governed by the `org` set, never exempt. `[org, platform, service, library, tool, infra, spec]` is therefore exactly equivalent to `[org]`; several artifacts use the redundant form and mean nothing by it. See ADR-0015."

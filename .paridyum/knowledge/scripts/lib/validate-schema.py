@@ -67,12 +67,19 @@ _Loader.yaml_implicit_resolvers = {
 KNOWN = {
     "type", "required", "properties", "additionalProperties", "enum", "const",
     "pattern", "items", "minItems", "maxItems", "uniqueItems", "minLength",
-    "maxLength", "minimum", "maximum", "format", "description", "default",
+    "maxLength", "minimum", "maximum", "description", "default",
     "$schema", "$id", "title",
 }
 # `propertyNames` was listed as KNOWN and never implemented in validate(), so a schema
 # using it would constrain nothing and be reported as fully supported. No schema uses it,
 # so it is removed rather than implemented — the first one that does will now be told.
+#
+# `format` is the same defect and was found the same way, on 2026-08-21: it sat in KNOWN
+# while validate() implements exactly one value, `date`. So `format: uri` in
+# test-envelope.schema.json constrained nothing AND was reported as supported, which is
+# the condition this list exists to prevent. It is now handled per value below rather than
+# blanket-accepted — the keyword is recognised, and a value nobody implemented is named.
+FORMATS_IMPLEMENTED = {"date"}
 
 TYPES = {
     "string": str, "integer": int, "number": (int, float), "boolean": bool,
@@ -89,7 +96,12 @@ def unsupported(schema, path="", seen=None):
     seen = seen if seen is not None else []
     if isinstance(schema, dict):
         for k, v in schema.items():
-            if k not in KNOWN and not k.startswith("$"):
+            if k == "format":
+                # Recognised as a keyword, reported per unimplemented value. A schema
+                # that advertises `format: uri` and gets no checking should say so.
+                if v not in FORMATS_IMPLEMENTED:
+                    seen.append(f"{path or '<root>'}: format: {v}")
+            elif k not in KNOWN and not k.startswith("$"):
                 seen.append(f"{path or '<root>'}: {k}")
             if k == "properties":
                 for pk, pv in (v.items() if isinstance(v, dict) else []):
