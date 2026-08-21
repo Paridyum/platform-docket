@@ -50,7 +50,7 @@ pub fn definitions(
     }
 
     if let Some(p) = person {
-        defs.absorb("dkP", &p.value);
+        defs.absorb(crate::domain::template::PERSON_PREFIX, &p.value);
         // Dates print in long form on the document, not as ISO.
         for (field, name) in [
             ("engagement.start_date", "dkPEngagementStartDate"),
@@ -396,7 +396,7 @@ pub fn outstanding(
     Ok(out)
 }
 
-/// Fields a document needs that this record does not supply.
+/// Fields a document needs that this record does not supply, as record paths.
 ///
 /// Renders the definitions the document WOULD get, scans the template for
 /// commands it dereferences without a fallback, and reports the difference.
@@ -407,8 +407,17 @@ pub fn outstanding(
 /// own: it says what the class needs to be lawful, not what every template
 /// happens to print.
 ///
+/// **The names returned are record paths, not commands** (D-44). Reporting
+/// `dkPPreExistingIp` moved the problem rather than solving it: the operator
+/// still had to know that meant `pre_existing_ip` before they could edit
+/// anything. `docket next` did this translation for itself while the API and
+/// every other caller did not, so the mapping lives here now and there is one
+/// of it. A command no declared field derives is named as itself and marked
+/// unmapped, never dropped and never guessed at.
+///
 /// # Errors
-/// Fails if a template cannot be read.
+/// Fails if a template cannot be read, or if two declared fields derive the
+/// same command.
 pub fn unsupplied_fields(
     paths: &Paths,
     registry: &Registry,
@@ -429,13 +438,18 @@ pub fn unsupplied_fields(
         None,
         clock::parse_iso("2000-01-01")?,
     );
+    let by_command = crate::domain::template::paths_by_command(&registry.catalogue.fields)?;
     Ok(crate::domain::template::required_commands(&body)
         .into_iter()
         .filter(|c| defs.get(c).is_none())
+        .map(|c| crate::domain::template::field_of(&c, &by_command))
         .collect())
 }
 
 /// Every document owed at this stage that the record cannot yet render.
+///
+/// Each entry pairs the document code with the record paths it is missing, in
+/// the form `unsupplied_fields` reports them.
 ///
 /// # Errors
 /// Fails if the registry or a template cannot be read.

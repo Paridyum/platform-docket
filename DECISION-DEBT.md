@@ -655,19 +655,55 @@ The values left as ordinary defaults are the ones that are not personal data —
 class, stage, department, supervisor, work arrangement, device type — and the
 template says so, so nobody has to guess which of the two kinds a value is.
 
-## D-44 — `unrenderable` names LaTeX macros, not fields
+## D-44 — RESOLVED 2026-08-21 — `unrenderable` names fields, not LaTeX macros
 
-When a record is missing something a template needs, the refusal reads
+When a record was missing something a template needed, the refusal read
 `IPA needs: dkPPreExistingIp`. That is the macro name, not the field: the operator
-has to know that `dkPPreExistingIp` means `pre_existing_ip` to act on it.
+had to know that `dkPPreExistingIp` means `pre_existing_ip` to act on it.
 
-It is a real improvement on what it replaced — the same condition used to reach
-pdflatex and come back as `Undefined control sequence` with a 500 — but it stops
+It was a real improvement on what it replaced — the same condition used to reach
+pdflatex and come back as `Undefined control sequence` with a 500 — but it stopped
 one step short of useful.
 
-**Clears when** `issue::unsupplied_fields` maps the macro back to the field path it
-came from, which is mechanical: the macro name is derived from the path, so the
-inverse is too.
+**Resolved.** `issue::unsupplied_fields` now returns record paths. The same
+refusal reads `IPA needs these record fields: pre_existing_ip`.
+
+**The mapping is built forwards and read backwards, and that is the whole point.**
+`domain::template::paths_by_command` derives the command each declared field in
+`registry/fields.yaml` would define — `dkP` plus `escape::command_name` of the
+path — and indexes the paths by it. Taking the macro apart instead was considered
+and rejected: `command_name` drops every separator, so `dkPIdentityLegalName` is
+an equally faithful rendering of `identity.legal_name`, `identity_legal.name` and
+`identity.legal.name`. The declared paths are the only surviving record of where
+the dots were.
+
+The `dkP` prefix is now a named constant used both to absorb the record and to
+invert it, because two separate literals could drift and the symptom would be
+every field reported as unmapped.
+
+**A command no declared field derives is named as itself and marked unmapped** —
+`\dkPFoo (unmapped: not declared in fields.yaml)`. Dropping it would hide a real
+blocker and leave the build to fail at issuance; inventing a path from the name
+would send someone to edit a field that does not exist. Every `\dkP` command in
+every shipped template maps today, so the form is not currently reached.
+
+**Two declared paths deriving one command is refused, not resolved.** That is a
+registry defect rather than a reporting problem: `Definitions::absorb` would
+define the command twice and the later value would silently win on a signed
+document. Picking one here would hide it.
+
+**Known limit — a sub-key of a field declared at a higher level.**
+`identity.pronouns` is one declared field, so `dkPIdentityPronounsSubject` has no
+declaration of its own and would report as unmapped. It does not arise today: the
+templates reach pronouns through the aliased `dkPPronouns*`, which always carry a
+neutral default and so are never missing. Recovering the sub-key would mean
+guessing its casing back out of the macro, which is exactly what this change
+exists to stop doing.
+
+`docket next` had been doing this translation privately for its own step text
+while the API and every other caller printed the macro; the mapping now lives in
+one place and its local copy is gone. D-34's claim that the difference is reported
+as record paths is now true of every caller, not just that one.
 
 ## D-45 — a skip guard was written on the wrong signal, and CI caught it
 

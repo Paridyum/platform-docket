@@ -365,11 +365,17 @@ fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
     // really an incomplete record, and no indication of which field to fill.
     // Found by enrolling through the API with a partial set of answers, which is
     // exactly what a half-completed form sends.
+    //
+    // The names are record paths rather than LaTeX commands (D-44), so the
+    // refusal says which lines of people/<slug>.yaml to edit. This route reads
+    // them straight through; the translation happens in `unsupplied_fields`.
     let unrenderable = issue::unrenderable(ctx.paths, ctx.registry, &person, &who, &register)?;
     if !unrenderable.is_empty() {
         let reasons = unrenderable
             .iter()
-            .map(|(code, fields)| format!("{code} needs: {}", fields.join(", ")))
+            .map(|(code, fields)| {
+                format!("{code} needs these record fields: {}", fields.join(", "))
+            })
             .collect();
         return Ok(refused(
             &format!("issue the documents owed by {slug}"),

@@ -68,21 +68,6 @@ pub fn steps(paths: &Paths, registry: &Registry, slug: &str) -> Result<Vec<Step>
     Ok(out)
 }
 
-/// The record path a generated command came from, for a message an operator
-/// can act on. `\dkPEngagementSupervisor` means nothing; `engagement.supervisor`
-/// is a line in a file.
-fn field_path_for(registry: &Registry, command: &str) -> Option<String> {
-    registry
-        .catalogue
-        .fields
-        .iter()
-        .find(|f| {
-            let expected = format!("dkP{}", crate::domain::escape::command_name(&f.path));
-            expected == command
-        })
-        .map(|f| f.path.clone())
-}
-
 /// The steps that follow once the record itself is sound.
 fn workflow_steps(
     paths: &Paths,
@@ -99,15 +84,14 @@ fn workflow_steps(
         crate::application::issue::unrenderable(paths, registry, person, who, register)?;
     if !unrenderable.is_empty() {
         for (code, missing) in &unrenderable {
-            let paths_wanted: Vec<String> = missing
-                .iter()
-                .map(|c| field_path_for(registry, c).unwrap_or_else(|| c.clone()))
-                .collect();
+            // Already record paths: `issue::unsupplied_fields` maps the
+            // commands back itself, so every caller gets the readable form and
+            // not just this one (D-44).
             out.push(Step {
                 what: format!(
                     "Fill in {} for {code}: {}",
-                    paths_wanted.len(),
-                    paths_wanted.join(", ")
+                    missing.len(),
+                    missing.join(", ")
                 ),
                 why: format!(
                     "{code} prints these and the record does not have them, so \

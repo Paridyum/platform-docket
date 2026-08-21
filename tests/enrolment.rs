@@ -246,9 +246,11 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
     );
     let (code, missing) = blocked.first().expect("at least one");
     assert_eq!(code, "OFR", "the offer is owed first: {blocked:?}");
+    // A RECORD PATH, not `\dkPEngagementSupervisor` (D-44): the operator has to
+    // be able to find the line to edit without knowing how the class is built.
     assert!(
-        missing.iter().any(|m| m.contains("Supervisor")),
-        "it names what is missing: {missing:?}"
+        missing.iter().any(|m| m == "engagement.supervisor"),
+        "it names what is missing as a record path: {missing:?}"
     );
 }
 
