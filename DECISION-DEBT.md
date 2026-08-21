@@ -567,3 +567,48 @@ region [that] holds staff and operators"* — exactly these users. When
 `platform-identity` exists, OIDC becomes a second authentication adapter beside
 loopback-only, added rather than swapped (ADR-0054). Until then, treat SSH
 access to the HR workstation as equivalent to full access to every record.
+
+## D-39 — `docket serve` is read-only, so the console cannot yet do the job
+
+Every route is a `GET`. Enrolment, issuance, signing, advancing a stage and pack
+assembly all remain CLI-only, so an HR operator still needs a terminal for
+anything that changes a record.
+
+That was the sequencing the design chose (§10), and the reason holds: writes need
+operator resolution first, because a write that cannot name who made it is not
+auditable — and this process has no way to name one. The CLI takes `--by` and
+resolves it against `registry/operators.yaml`; over HTTP the equivalent is the
+SSH account, which the process cannot see from inside a loopback socket.
+
+**Clears when** an operator can be resolved for a request and every write route
+refuses without one, matching the CLI. `SSH_CONNECTION`/`SSH_CLIENT` in the
+server's environment identify the tunnel, not the person, so this is a real design
+question and not a lookup.
+
+## D-40 — a write route will need CSRF protection that the read routes do not
+
+Loopback plus SSH lowers the risk and does not remove it: a page open in the
+operator's browser is reachable by script from any other page in that browser.
+The original design specified a CSRF token on every form; there are no forms now
+that the interface is a separate application, so the shape changes — requiring a
+custom request header is sufficient, because a cross-site HTML form cannot set
+one.
+
+Nothing implements that yet, and nothing needs to while every route is a `GET`
+that writes nothing. It must land in the same change as the first write route, not
+after it.
+
+## D-41 — one connection at a time is correct and undocumented as a limit
+
+The accept loop handles connections serially, so one slow request blocks the
+next. That is deliberate — it is what keeps four append-only hash chains safe
+without file locking — and at three operators it is invisible.
+
+It stops being invisible if a route ever becomes slow. Issuing twelve documents
+through `pdflatex` takes seconds, and as a write route that would block every
+other operator's screen for its duration with no indication why.
+
+**Clears when** either the slow work moves off the request (a job the console
+polls), or the writer is separated from the readers so reads can be concurrent
+while writes stay serialised. Choosing the second means the file-locking argument
+above has to be answered properly rather than assumed away.

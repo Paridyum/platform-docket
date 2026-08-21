@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
+use tool_docket::adapters::http;
 use tool_docket::adapters::{registry::Registry, store, typeset};
 use tool_docket::application::{
     archive, browse, check, comms, enrol, issue, next, pack, personnel, roster, sign, status,
@@ -92,6 +93,17 @@ enum Command {
     },
     /// Validate registries, templates, records and every chain.
     Check,
+    /// Serve the operator API over loopback, for console-docket.
+    ///
+    /// Binds 127.0.0.1 only and refuses anything else. There is no login: SSH
+    /// keys are the authentication and the operating system is the identity, which
+    /// holds only while the socket cannot be reached from another machine. Reach it
+    /// with `ssh -L 8080:127.0.0.1:8080 <host>`.
+    Serve {
+        /// Port to listen on.
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+    },
     /// Record that an issued document came back executed.
     Sign {
         /// Serial, e.g. PAR/NDA/2026/0001.
@@ -355,6 +367,7 @@ fn dispatch(
             cmd_reengage(paths, registry, &slug, &class, date.as_deref(), operator)
         }
         Command::Record { slug } => cmd_record(paths, registry, &slug),
+        Command::Serve { port } => cmd_serve(paths, registry, port),
         Command::Roster { standing } => cmd_roster(paths, registry, standing.as_deref()),
         Command::Event {
             slug,
@@ -1028,5 +1041,22 @@ fn cmd_erase(
     for item in archive::unreachable_copies(folder.as_deref(), record.person_id.as_str()) {
         println!("  - {item}");
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Serve the operator API over loopback.
+///
+/// Read-only so far: every route calls an `application::` function the CLI also
+/// calls, and none of them writes. Writes arrive with operator resolution, which
+/// the design sequences before the first one — a write that cannot name who made
+/// it is not auditable, and this process has no way to name one yet.
+fn cmd_serve(paths: &Paths, registry: &Registry, port: u16) -> Result<ExitCode> {
+    let clock = SystemClock;
+    let ctx = http::router::Context {
+        paths,
+        registry,
+        clock: &clock,
+    };
+    http::server::serve(&ctx, port)?;
     Ok(ExitCode::SUCCESS)
 }

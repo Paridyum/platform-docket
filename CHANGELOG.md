@@ -7,6 +7,38 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`docket serve` — the operator API `console-docket` consumes.** Read-only:
+  `/api/health`, `/api/roster` (with `?standing=`), `/api/person/{slug}`,
+  `/api/check`, `/api/retention`, `/api/emails/{slug}`. Every route calls the
+  same `application::` function the CLI calls, so the console and the command line
+  cannot disagree about what a person owes, and **no route writes anything** —
+  asserted by a test over every route rather than argued from the absence of write
+  handlers.
+
+  **Binds `127.0.0.1` and refuses anything else**, as a function with tests rather
+  than a default. There is no login: SSH keys are the authentication and the
+  operating system is the identity (ADR-0047 gives this tool no identity system of
+  its own, so it must not be reachable without one). Verified live that the
+  listening socket is `127.0.0.1` only and that the LAN address refuses the
+  connection — the property `next dev` in `console-docket` fails.
+
+  The HTTP implementation is ours, on `std::net`, adding **no dependency**. The
+  obvious crate for the job last published in 2022, and the needed surface is one
+  client over loopback with no TLS and no keep-alive. It is strict by choice:
+  chunked encoding, absolute-form targets, HTTP/2 and unparsable `Content-Length`
+  are refused rather than guessed at, with bounds on the request line, header
+  count and body size, and a read/write timeout so a silent client cannot hold the
+  accept loop.
+
+  Connections are handled **one at a time, deliberately**. This process is the only
+  writer to four append-only hash chains, and that is what makes them safe without
+  file locking; a thread per connection would make two concurrent writes possible
+  and a torn chain the failure.
+
+  Wire types live in `adapters::http::dto` rather than `#[derive(Serialize)]` on
+  the `application::` types, so renaming an internal field cannot silently rename a
+  field in a published API.
+
 - `docket` CLI in Rust: `status`, `onboard`, `issue`, `render`, `verify`, `check`.
 - `latex/paridyum.cls`, the single typesetting authority. Absorbs the
   letterhead, boxes, footer, page numbering and signature blocks that were

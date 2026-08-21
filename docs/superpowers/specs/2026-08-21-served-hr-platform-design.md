@@ -1,7 +1,46 @@
 # A served HR platform for `tool-docket`
 
-**Status:** design, approved 2026-08-21. No code written.
+**Status:** design, approved 2026-08-21. **Amended 2026-08-21** — see §0.
 **Supersedes:** nothing. **Depends on:** ADR-0047, ADR-0054, ANTI-0004, C-0007.
+
+## 0. Amendment — the interface moved out, so this serves JSON
+
+This was designed as a server-rendered HTML interface inside `tool-docket`, on the
+reasoning in §2 that a separate repository could only reach the domain by
+extracting it into a `lib-`, which is ANTI-0004.
+
+**§2 stands. §5, §6 and §7 do not.** After this was approved, the operator
+interface became its own repository — `console-docket`, TypeScript and Next.js —
+under ADR-0055, which added a `console` class for exactly this: an interface for
+Paridyum's own operators, `deployable: false`, running where the operator is.
+
+That does not reopen ANTI-0004, because nothing was extracted. No domain rule
+moved. `console-docket` holds no rules at all; it asks this process. The boundary
+is a wire, not a library, and a wire cannot be imported by a third consumer and
+mistaken for a utility.
+
+What changes here:
+
+- **`serve` exposes JSON, not HTML.** Routes gain an `/api/` prefix. §7's mapping
+  of route to application function is otherwise unchanged, which is the point: the
+  same tested functions, one serialisation layer thinner.
+- **§5's technology choice is superseded.** No `tiny_http`. Its last release was
+  2022-10-06, and an unmaintained HTTP server is a poor dependency for a process
+  that handles personal data. The needed surface is small enough to own: loopback
+  only, one client, no TLS, no keep-alive requirement. `serde_json` is already a
+  dependency, so payloads cost nothing new. This is §5's own argument against
+  `axum` — dependency weight is a present cost — carried one step further, and it
+  matches the zero-dependency TUI already in this crate.
+- **`domain::escape::html` is not needed.** JSON is escaped by `serde_json`,
+  which is a tested implementation of a specification rather than our own. The
+  HTML escaping problem moves to `console-docket`, where React escapes by
+  default. §9's first test row is therefore dropped.
+- **CSRF changes shape.** There is no browser form posting to this process; the
+  console is the only client. §5's CSRF token is replaced by an origin-independent
+  scheme in §5a: writes require a header no cross-site form can set.
+
+Everything in §4 (loopback only, SSH as authentication) and §8 (behaviour that
+must not be softened) is unaffected and still binding.
 
 ## 1. What is being built
 

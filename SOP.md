@@ -366,6 +366,69 @@ the point of it.
 
 ---
 
+## Task: serve the API for the HR console
+
+**When:** an HR operator needs `console-docket` rather than the command line.
+**Preconditions:** the store is readable, and nothing else holds the port —
+check with `docket check` and `lsof -nP -iTCP:8080 -sTCP:LISTEN`
+
+    docket serve --port 8080
+
+**Correct output:**
+
+    docket serving on http://127.0.0.1:8080
+    reach it from another machine with:  ssh -L 8080:127.0.0.1:8080 <this-host>
+
+It runs in the foreground until you stop it with Ctrl-C. Nothing is written to a
+log file; connection errors print to stderr where you can see them.
+
+**Verify** — from another terminal, and note this is a different command from the
+one that started it, because a server reporting its own readiness is not evidence:
+
+    curl -s http://127.0.0.1:8080/api/health
+
+    {"ok":true,"version":"0.1.0"}
+
+**Then verify it is NOT reachable from anywhere else.** This is the whole access
+model, so check it rather than trusting it:
+
+    lsof -nP -iTCP:8080 -sTCP:LISTEN
+
+`127.0.0.1:8080` is correct. `*:8080` would mean anyone who can route to this
+machine has full read access to every personnel record, and `docket` will not
+produce that — but check, because the equivalent default in a Node dev server
+does exactly that.
+
+**How an operator reaches it from their own machine:**
+
+    ssh -L 8080:127.0.0.1:8080 <this-host>
+
+Then they open `http://127.0.0.1:8080` on their own machine. The SSH key is the
+authentication and the operating system account is the identity; there is no
+login in the application, deliberately (ADR-0047 — this tool has no identity
+system of its own, so it must not be reachable without one).
+
+**What it serves.** Read-only, as of today: `/api/health`, `/api/roster`
+(optionally `?standing=active`), `/api/person/{slug}`, `/api/check`,
+`/api/retention`, `/api/emails/{slug}`. Every route calls the same
+`application::` function the CLI calls, so the console and the command line
+cannot disagree about what a person owes. **No route writes anything** — that is
+asserted by a test, not merely intended.
+
+**When it goes wrong:**
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `could not bind 127.0.0.1:8080; is another docket already serving?` | the port is taken, often by a `docket serve` you forgot | `lsof -nP -iTCP:8080 -sTCP:LISTEN`, then stop it or pick another port |
+| `refusing to bind <addr>: this server has no authentication of its own` | something tried to bind a routable interface | correct, and not overridable. Use the SSH forward |
+| `HTTP/1.1 404` with `no person with slug X` | the slug is not in the ledger | `docket roster` for the real slugs; 404 means mistyped, 500 would mean broken |
+| `HTTP/1.1 405` | right path, wrong method — e.g. a POST to a read route | no write routes exist yet; use the CLI for writes |
+| `HTTP/1.1 400` and `Transfer-Encoding is not supported` | a client sent a chunked body | send `Content-Length`. This server refuses what it does not implement rather than guessing |
+| `connection error: ...` on stderr, server still running | a client hung up mid-request | ordinary; a failed connection never stops the server |
+| the console shows stale data | there is no cache here; every request reads the store | reload. If it persists, the console is caching, which it must not |
+
+---
+
 ## Task: find documents past their retention period
 
 **When:** periodically, and before any archive transfer.
