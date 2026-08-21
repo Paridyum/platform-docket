@@ -612,3 +612,26 @@ other operator's screen for its duration with no indication why.
 polls), or the writer is separated from the readers so reads can be concurrent
 while writes stay serialised. Choosing the second means the file-locking argument
 above has to be answered properly rather than assumed away.
+
+## D-42 — an unfilled record looks filled in, with a plausible name
+
+`docket new <slug>` copies `people/_TEMPLATE.yaml`, which carries a realistic
+example name (`preferred_name: Asha`, and a full name to match). Until someone
+edits the record, that name is what the roster shows, what a person's page shows,
+and what a document would print.
+
+Found while testing `docket serve`: two freshly enrolled people, `asha` and
+`vikram`, both displayed as the same person, and nothing anywhere said the record
+was untouched. `docket check` does not flag it — every required field is present,
+which is exactly the problem: the template satisfies the schema.
+
+The consequence is not cosmetic. `docket onboard vikram` would issue twelve
+documents naming somebody else, each with a real serial, entered in the register
+and sealed into the chain. Correcting it means re-issuing under new serials,
+because an issued document cannot be edited.
+
+**Clears when** an unedited record is refused rather than accepted. The cheapest
+honest fix is a sentinel the template ships with — a value that is obviously not a
+name — that `check` treats as a blocking error and `issue` refuses outright. A
+realistic placeholder cannot be distinguished from real data by anything except a
+person noticing, which is the part that failed here.
