@@ -665,19 +665,36 @@ fn a_post_with_no_body_where_one_is_required_is_refused() {
     );
 }
 
+/// Whether a typesetter is installed.
+///
+/// Issuing renders real PDFs, and a GitHub runner has neither TeX Live nor
+/// Tectonic — so this test SKIPS there rather than failing, the same pattern the
+/// issuance and engines suites already use. Skipping is not free: it means CI does
+/// not exercise issuance through the API either, which is `tool-docket` D-35.
+fn typesetter_available() -> bool {
+    tool_docket::adapters::typeset::detect().is_ok()
+}
+
 #[test]
 fn onboarding_a_filled_record_issues_and_records_the_operator() {
+    if !typesetter_available() {
+        // Printed, so a green run is never mistaken for coverage.
+        eprintln!(
+            "SKIP onboarding_a_filled_record_issues_and_records_the_operator: \
+             no typesetter installed (D-35)"
+        );
+        return;
+    }
+
     let sandbox = Sandbox::new();
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
     let (status, payload) = post(&sandbox, &reg, "/api/person/asha/onboard", "{}");
-    if status == 409 {
-        // Rendering needs a typesetter, and a runner may not have one. Say so,
-        // so a green run is not mistaken for coverage.
-        eprintln!("SKIP onboarding_a_filled_record_issues: refused -- {payload}");
-        return;
-    }
+    // Checked on the typesetter rather than on the status. An earlier version
+    // treated any 409 as "skip", which meant a genuine refusal — a gate unmet, a
+    // record unfilled — would have been silently accepted as a pass. It also did
+    // not cover the case that actually broke CI: no typesetter is a 500, not a 409.
     assert_eq!(status, 200, "{payload}");
 
     let issued = payload["issued"].as_array().expect("issued");
@@ -703,5 +720,35 @@ fn onboarding_a_filled_record_issues_and_records_the_operator() {
     assert!(!issued_events.is_empty(), "issuing recorded no event");
     for e in issued_events {
         assert_eq!(e.recorded_by, "ruhani", "{e:?}");
+    }
+}
+
+#[test]
+fn the_operators_route_lists_only_those_who_may_act() {
+    let sandbox = Sandbox::new();
+    let reg = registry();
+    let (status, body) = get(&sandbox, &reg, "/api/operators");
+    assert_eq!(status, 200);
+
+    let listed = body.as_array().expect("array");
+    assert!(!listed.is_empty(), "nobody may operate this tool?");
+
+    let ids: Vec<&str> = listed.iter().filter_map(|o| o["id"].as_str()).collect();
+    // An inactive operator is not offered. A name that cannot be used is a name
+    // somebody picks and is then refused for, which reads as a broken tool.
+    for o in &reg.operators {
+        assert_eq!(
+            ids.contains(&o.id.as_str()),
+            o.active,
+            "{} is active={} but listed={}",
+            o.id,
+            o.active,
+            ids.contains(&o.id.as_str())
+        );
+    }
+    // Every id offered must actually be accepted by a write, or the chooser is
+    // offering something that fails.
+    for id in &ids {
+        assert!(reg.operator(id).is_ok(), "{id} is offered but not accepted");
     }
 }

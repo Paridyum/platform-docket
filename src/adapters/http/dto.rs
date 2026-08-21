@@ -304,6 +304,31 @@ impl From<&personnel::Gate> for Blocker {
     }
 }
 
+/// One person who may operate this tool.
+///
+/// Sent so the console can offer a chooser rather than asking an operator to type
+/// their own id. Inactive operators are not sent at all: a name that cannot be
+/// used is a name someone will pick and then be refused for.
+#[derive(Debug, Serialize)]
+pub struct Operator {
+    /// Short id, sent back as `X-Docket-Operator` on every write.
+    pub id: String,
+    /// Name recorded in the log.
+    pub name: String,
+    /// Their role, for the report.
+    pub role: String,
+}
+
+impl From<&crate::adapters::registry::Operator> for Operator {
+    fn from(o: &crate::adapters::registry::Operator) -> Self {
+        Self {
+            id: o.id.clone(),
+            name: o.name.clone(),
+            role: o.role.clone(),
+        }
+    }
+}
+
 /// Documents past their retention period, and the ones that could not be judged.
 ///
 /// `unevaluated` is not an empty-list-shaped afterthought. `retention.yaml`

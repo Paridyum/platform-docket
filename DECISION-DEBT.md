@@ -668,3 +668,22 @@ one step short of useful.
 **Clears when** `issue::unsupplied_fields` maps the macro back to the field path it
 came from, which is mechanical: the macro name is derived from the path, so the
 inverse is too.
+
+## D-45 — a skip guard was written on the wrong signal, and CI caught it
+
+`onboarding_a_filled_record_issues_and_records_the_operator` originally skipped
+when the API returned 409, on the assumption that a refusal meant "no typesetter
+here". Two things were wrong with that. A genuine refusal — a gate unmet, a record
+unfilled — would have been silently accepted as a pass, so the test could not fail
+for the reason it exists. And it did not cover the case that actually broke CI: a
+runner with no typesetter gets a **500**, not a 409, because `issue::one` fails
+inside the handler.
+
+Now guarded on `typeset::detect()`, the same signal the issuance and engines
+suites use, and verified in both directions by running the test binary with an
+empty `PATH`.
+
+**Not itself open debt** — the guard is fixed. Recorded because the shape recurs:
+a skip condition inferred from a symptom rather than from the thing being
+detected will eventually swallow a real failure. D-35 remains the underlying gap:
+CI still does not exercise rendering at all.

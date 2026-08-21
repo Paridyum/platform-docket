@@ -53,6 +53,14 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
         ("GET", ["api", "retention"]) => retention_handler(ctx),
         ("GET", ["api", "emails", slug]) => emails_handler(ctx, slug),
         ("GET", ["api", "form", class]) => form_handler(ctx, class),
+        ("GET", ["api", "operators"]) => Ok(json(
+            &ctx.registry
+                .operators
+                .iter()
+                .filter(|o| o.active)
+                .map(dto::Operator::from)
+                .collect::<Vec<_>>(),
+        )),
 
         ("POST", ["api", "person"]) => enrol_handler(ctx, req),
         ("POST", ["api", "person", slug, "onboard"]) => onboard_handler(ctx, req, slug),
