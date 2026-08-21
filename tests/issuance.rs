@@ -15,6 +15,8 @@ use tool_docket::application::{check, issue, status, verify};
 use tool_docket::config::Paths;
 use tool_docket::domain::person::Person;
 
+mod common;
+
 const ISSUE_DATE: &str = "2026-08-19";
 
 /// Repository root, from the crate manifest rather than the cwd.
@@ -35,11 +37,7 @@ impl Sandbox {
         let people = dir.path().join("people");
         std::fs::create_dir_all(&people).expect("people dir");
         // `personnel::create` copies the checked-in template.
-        std::fs::copy(
-            root().join("people").join("_TEMPLATE.yaml"),
-            people.join("_TEMPLATE.yaml"),
-        )
-        .expect("template");
+        common::filled_template(&root(), &people.join("_TEMPLATE.yaml"));
         let paths = Paths {
             root: root(),
             people,

@@ -6,13 +6,15 @@
 
 use crate::adapters::clock::Clock;
 use crate::adapters::http::dto;
+use crate::adapters::http::operator;
 use crate::adapters::http::request::Request;
 use crate::adapters::http::response::Response;
 use crate::adapters::registry::Registry;
 use crate::adapters::store;
-use crate::application::{archive, check, comms, next, personnel, roster};
+use crate::application::{archive, check, comms, enrol, issue, next, personnel, roster, sign};
 use crate::config::Paths;
 use crate::domain::identity::Standing;
+use crate::domain::signature::Method;
 use anyhow::Result;
 use serde::Serialize;
 
@@ -37,9 +39,9 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
     let segments = req.segments();
     let parts: Vec<&str> = segments;
 
-    // Read-only routes only, so far. Writes arrive with operator resolution,
-    // which §10 of the design sequences BEFORE the first write for the obvious
-    // reason: a write that cannot name who made it is not auditable.
+    // Every write resolves an operator first and refuses without one — see
+    // `operator::resolve`, which is also what makes a cross-site form unable to
+    // forge one of these.
     let result = match (req.method.as_str(), parts.as_slice()) {
         ("GET", ["api", "health"]) => Ok(json(&Health {
             ok: true,
@@ -50,6 +52,12 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
         ("GET", ["api", "check"]) => check_handler(ctx),
         ("GET", ["api", "retention"]) => retention_handler(ctx),
         ("GET", ["api", "emails", slug]) => emails_handler(ctx, slug),
+        ("GET", ["api", "form", class]) => form_handler(ctx, class),
+
+        ("POST", ["api", "person"]) => enrol_handler(ctx, req),
+        ("POST", ["api", "person", slug, "onboard"]) => onboard_handler(ctx, req, slug),
+        ("POST", ["api", "person", slug, "sign"]) => sign_handler(ctx, req, slug),
+        ("POST", ["api", "person", slug, "advance"]) => advance_handler(ctx, req, slug),
 
         // A known path with the wrong method is a 405, not a 404. The distinction
         // matters to whoever is debugging the console: 404 sends them looking for
@@ -93,16 +101,26 @@ fn json<T: Serialize>(value: &T) -> Response {
     }
 }
 
-/// A 404 carries a marker so the dispatcher can tell it from a real failure.
+/// Markers letting the dispatcher tell a category of refusal from a real failure.
 ///
-/// Matching on a message is exactly the fragile thing this avoids elsewhere, so
-/// the marker is a private constant compared against itself rather than prose
-/// anyone might reword.
+/// Matching on a message is the fragile thing this avoids elsewhere, so these are
+/// private constants compared against themselves rather than prose anyone might
+/// reword. A handler attaches one as context; nothing parses English.
 const NOT_FOUND: &str = "docket::http::not_found";
 
+/// The request was understood and the caller may not do it.
+///
+/// Distinct from 500 because the two send an operator to different places: 403
+/// means fix the request, 500 means the tool or the store is broken. An
+/// authorisation failure reported as 500 reads as an outage.
+pub const NOT_PERMITTED: &str = "docket::http::not_permitted";
+
 fn status_for(e: &anyhow::Error) -> u16 {
-    if e.chain().any(|c| c.to_string() == NOT_FOUND) {
+    let marked = |m: &str| e.chain().any(|c| c.to_string() == m);
+    if marked(NOT_FOUND) {
         404
+    } else if marked(NOT_PERMITTED) {
+        403
     } else {
         500
     }
@@ -234,4 +252,251 @@ fn emails_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
     let due = comms::due(ctx.paths, ctx.registry, slug)?;
     let messages: Vec<dto::Message> = due.iter().map(dto::Message::from).collect();
     Ok(json(&messages))
+}
+
+/// A refusal is a 409, not a 400 and not a 500.
+///
+/// The distinction is the whole point of this API: 400 means the request was
+/// wrong, 500 means we are broken, and 409 means the request was understood
+/// perfectly and the domain declined. Only the third is information the operator
+/// can act on, and flattening the three is how a UI comes to render a refusal as
+/// an error and invite a retry.
+const REFUSED: u16 = 409;
+
+/// Parse a JSON body, or say what was wrong with it.
+fn body<T: serde::de::DeserializeOwned>(req: &Request) -> Result<T> {
+    if req.body.is_empty() {
+        anyhow::bail!("this route needs a JSON body and none was sent");
+    }
+    serde_json::from_slice(&req.body)
+        .map_err(|e| anyhow::anyhow!("could not read the request body as JSON: {e}"))
+}
+
+/// `GET /api/form/{class}` — the enrolment questions for a class.
+///
+/// Generated from `registry/fields.yaml`, which is the same source the CLI's
+/// interview reads. The form and the prompts therefore cannot diverge: a field
+/// declared in the registry appears in both with its stated purpose as help, and
+/// a field the class forbids appears in neither. That is the property worth
+/// having — a form written by hand is a second, drifting statement of what may be
+/// collected, and over-collection is a DPDP breach rather than untidiness.
+fn form_handler(ctx: &Context<'_>, class_name: &str) -> Result<Response> {
+    let Some(class) = ctx.registry.catalogue.class(class_name) else {
+        return Err(not_found(&format!("no person class named {class_name}")));
+    };
+    let questions = crate::domain::personnel::questions(&ctx.registry.catalogue, class);
+    Ok(json(&dto::Form {
+        class: class_name.to_owned(),
+        questions: questions.iter().map(dto::Question::from).collect(),
+    }))
+}
+
+/// `POST /api/person` — open a record and allocate an identifier.
+///
+/// Writes the record from the answers, then allocates. That order matches
+/// `docket new --interactive` exactly, and it matters: `personnel::create`
+/// appends to the identity ledger, and a ledger entry for a record that failed to
+/// write would be a permanent row pointing at nothing.
+fn enrol_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
+    let by = operator::resolve(ctx.registry, req)?;
+    let ask: dto::EnrolRequest = body(req)?;
+
+    if ctx.registry.catalogue.class(&ask.class).is_none() {
+        anyhow::bail!("no person class named {}", ask.class);
+    }
+
+    let yaml = enrol::to_yaml(ctx.registry, &ask.class, &ask.answers);
+    enrol::write_record(ctx.paths, &ask.slug, &yaml)?;
+    let record = personnel::create(
+        ctx.paths,
+        ctx.registry,
+        &ask.slug,
+        &ask.class,
+        ctx.clock.today()?,
+        by,
+    )?;
+
+    Ok(json(&dto::Wrote {
+        did: format!(
+            "opened a record for {} as {} and allocated {}",
+            record.slug, record.class, record.person_id
+        ),
+        issued: Vec::new(),
+        stage: None,
+    }))
+}
+
+/// `POST /api/person/{slug}/onboard` — issue everything owed at this stage.
+fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
+    let by = operator::resolve(ctx.registry, req)?;
+    let person = store::person(ctx.paths, slug)?;
+
+    // Refusals first, and NOT forceable from here.
+    //
+    // The CLI has `--force` for the judgement calls. This route deliberately does
+    // not expose it: §8 forbids an interface that offers a way past a refusal, and
+    // a console button that issues defective documents is worse than no button.
+    // An operator who genuinely means to override uses the CLI, where the flag is
+    // typed out and visible in shell history.
+    let refusals = issue::refusals(ctx.registry, &person);
+    if !refusals.is_empty() {
+        return Ok(refused(
+            &format!("issue the documents owed by {slug}"),
+            Vec::new(),
+            refusals,
+        ));
+    }
+
+    let who = personnel::identify(ctx.paths, slug)?;
+    let register = store::register(ctx.paths)?;
+
+    // Refuse BEFORE rendering anything, naming the fields that are missing.
+    //
+    // Without this the first document reaches pdflatex, which fails with
+    // "Undefined control sequence" and a 500 — a LaTeX diagnostic for what is
+    // really an incomplete record, and no indication of which field to fill.
+    // Found by enrolling through the API with a partial set of answers, which is
+    // exactly what a half-completed form sends.
+    let unrenderable = issue::unrenderable(ctx.paths, ctx.registry, &person, &who, &register)?;
+    if !unrenderable.is_empty() {
+        let reasons = unrenderable
+            .iter()
+            .map(|(code, fields)| format!("{code} needs: {}", fields.join(", ")))
+            .collect();
+        return Ok(refused(
+            &format!("issue the documents owed by {slug}"),
+            Vec::new(),
+            reasons,
+        ));
+    }
+
+    let todo = issue::outstanding(ctx.registry, &person, &who, &register)?;
+    let today = ctx.clock.today()?;
+
+    let by_code = ctx.registry.lifecycle.by_code()?;
+    let mut issued = Vec::new();
+    for code in &todo {
+        let Some(doc) = by_code.get(code.as_str()) else {
+            anyhow::bail!("{code}: declared by a stage but not by documents");
+        };
+        let entry = issue::one(ctx.paths, ctx.registry, &person, doc, today, by)?;
+        issued.push(dto::Document {
+            code: entry.code.clone(),
+            serial: entry.serial.clone(),
+            issued_on: entry.issued_on.clone(),
+        });
+    }
+
+    Ok(json(&dto::Wrote {
+        did: if issued.is_empty() {
+            format!("nothing was owed by {slug} at this stage")
+        } else {
+            format!("issued {} document(s) for {slug}", issued.len())
+        },
+        issued,
+        stage: None,
+    }))
+}
+
+/// `POST /api/person/{slug}/sign` — record a document coming back executed.
+fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
+    let by = operator::resolve(ctx.registry, req)?;
+    let ask: dto::SignRequest = body(req)?;
+
+    // The serial must belong to this person. Without this check a request could
+    // record a signature against anybody's document through anybody's URL, and
+    // the signature ledger would be right while the audit trail was misleading.
+    let who = personnel::identify(ctx.paths, slug)?;
+    let register = store::register(ctx.paths)?;
+    let owned = register
+        .iter()
+        .any(|e| e.serial == ask.serial && e.person_id == who.person_id);
+    if !owned {
+        anyhow::bail!(
+            "{} was not issued to {slug}; recording it here would file a signature \
+             against the wrong person",
+            ask.serial
+        );
+    }
+
+    let method = Method::parse(&ask.method)?;
+    let signed_on = crate::adapters::clock::parse_iso(&ask.signed_on)?;
+    let received_on = match ask.received_on.as_deref() {
+        Some(d) => crate::adapters::clock::parse_iso(d)?,
+        None => signed_on,
+    };
+    let scan = ask.scan.as_deref().map(std::path::Path::new);
+
+    let signed = sign::record(
+        ctx.paths,
+        ctx.registry,
+        &ask.serial,
+        method,
+        signed_on,
+        received_on,
+        scan,
+        by,
+    )?;
+
+    Ok(json(&dto::Wrote {
+        did: format!(
+            "recorded {} ({}) as signed on {}",
+            signed.record.serial, signed.title, signed.record.signed_on
+        ),
+        issued: Vec::new(),
+        stage: None,
+    }))
+}
+
+/// `POST /api/person/{slug}/advance` — move to the next lifecycle stage.
+fn advance_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
+    let by = operator::resolve(ctx.registry, req)?;
+    // A body is optional here; absent means `force: false`.
+    let ask: dto::AdvanceRequest = if req.body.is_empty() {
+        dto::AdvanceRequest { force: false }
+    } else {
+        body(req)?
+    };
+
+    let (from, to, gates) = personnel::advance(
+        ctx.paths,
+        ctx.registry,
+        slug,
+        ctx.clock.today()?,
+        ask.force,
+        by,
+    )?;
+
+    // A non-empty `gates` with a successful call means the move did NOT happen.
+    // `personnel::advance` returns the gates instead of moving, which is why this
+    // is a refusal rather than an error.
+    if !gates.is_empty() {
+        return Ok(refused(
+            &format!("advance {slug} from {from} to {to}"),
+            gates.iter().map(dto::Blocker::from).collect(),
+            Vec::new(),
+        ));
+    }
+
+    Ok(json(&dto::Wrote {
+        did: format!("advanced {slug} from {from} to {to}"),
+        issued: Vec::new(),
+        stage: Some(to),
+    }))
+}
+
+/// A refusal: understood, declined, and said so in the shape the UI already reads.
+fn refused(attempted: &str, blockers: Vec<dto::Blocker>, refusals: Vec<String>) -> Response {
+    let payload = dto::Refused {
+        attempted: attempted.to_owned(),
+        blockers,
+        refusals,
+    };
+    match serde_json::to_vec(&payload) {
+        Ok(bytes) => Response {
+            status: REFUSED,
+            body: bytes,
+        },
+        Err(e) => Response::error(500, &format!("could not serialise the refusal: {e}")),
+    }
 }

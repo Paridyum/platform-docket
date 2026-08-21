@@ -467,6 +467,20 @@ fn cmd_status(paths: &Paths, registry: &Registry, slug: &str) -> Result<ExitCode
     Ok(ExitCode::from(1))
 }
 
+/// Report refusals that `--force` cannot bypass, and say so.
+fn report_unforceable(refusals: &[String], slug: &str) {
+    eprintln!("refusing to issue for {slug}:");
+    for r in refusals {
+        eprintln!("  - {r}");
+    }
+    eprintln!(
+        "\n--force does not apply here. Fill the record in first: issuing from an \
+         unedited template writes real serials into the register, sealed into the \
+         chain, on documents that name nobody -- and an issued document can only be \
+         corrected by re-issuing under a new serial."
+    );
+}
+
 fn report_refusals(refusals: &[String], slug: &str) {
     eprintln!("refusing to issue for {slug}:");
     for r in refusals {
@@ -488,6 +502,12 @@ fn cmd_onboard(
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
     let person = store::person(paths, slug)?;
+    // Checked before `force` is even looked at.
+    let unforceable = issue::unforceable(&person);
+    if !unforceable.is_empty() {
+        report_unforceable(&unforceable, slug);
+        return Ok(ExitCode::from(2));
+    }
     let refusals = issue::refusals(registry, &person);
     if !refusals.is_empty() && !force {
         report_refusals(&refusals, slug);
@@ -544,6 +564,13 @@ fn cmd_issue(
         let known: Vec<&str> = by_code.keys().copied().collect();
         bail!("unknown document code {code:?}; known: {}", known.join(" "));
     };
+    // Same gate as `onboard`, and for the same reason: one document issued from
+    // an unedited template is one real serial spent on a document naming nobody.
+    let unforceable = issue::unforceable(&person);
+    if !unforceable.is_empty() {
+        report_unforceable(&unforceable, slug);
+        return Ok(ExitCode::from(2));
+    }
     let refusals = issue::refusals(registry, &person);
     if !refusals.is_empty() && !force {
         report_refusals(&refusals, slug);

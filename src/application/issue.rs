@@ -467,3 +467,28 @@ pub fn refusals(registry: &Registry, person: &Person) -> Vec<String> {
         .map(|b| b.0)
         .collect()
 }
+
+/// Refusals that `--force` may not bypass.
+///
+/// `--force` exists because most refusals are judgement calls an operator may
+/// legitimately overrule — a forum not yet chosen, a certificate area left thin —
+/// and the documents are merely weaker for it.
+///
+/// A record still holding the template's placeholder is not that. Issuing from
+/// one mints real serials, writes them to the register and seals them into the
+/// chain, on documents naming nobody; and an issued document cannot be edited, so
+/// the only correction is re-issuing under new serials. There is no situation in
+/// which an operator means to do that, so the flag does not reach it.
+#[must_use]
+pub fn unforceable(person: &Person) -> Vec<String> {
+    let unfilled = crate::domain::person::unfilled(person);
+    if unfilled.is_empty() {
+        return Vec::new();
+    }
+    vec![format!(
+        "{} field(s) still hold the template's {} placeholder: {}",
+        unfilled.len(),
+        crate::domain::person::UNFILLED,
+        unfilled.join(", ")
+    )]
+}

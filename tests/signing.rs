@@ -10,6 +10,8 @@ use tool_docket::application::{check, issue, personnel, sign, status};
 use tool_docket::config::Paths;
 use tool_docket::domain::signature::Method;
 
+mod common;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -24,11 +26,7 @@ impl Sandbox {
         let dir = tempfile::tempdir().expect("temp dir");
         let people = dir.path().join("people");
         std::fs::create_dir_all(&people).expect("people dir");
-        std::fs::copy(
-            root().join("people").join("_TEMPLATE.yaml"),
-            people.join("_TEMPLATE.yaml"),
-        )
-        .expect("template");
+        common::filled_template(&root(), &people.join("_TEMPLATE.yaml"));
         let paths = Paths {
             root: root(),
             people,

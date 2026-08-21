@@ -1,5 +1,18 @@
 # One person. Create with `docket new <slug> <class>`, then fill this in.
 #
+# EVERY `FILL-ME` MUST BE REPLACED. `docket check` reports each one as an error
+# and `docket issue` refuses outright, because a record that has not been filled
+# in satisfies every structural rule and looks complete.
+#
+# This template used to ship realistic example values, and that was a defect: two
+# freshly enrolled interns both displayed as the same person and nothing flagged
+# it. A plausible placeholder cannot be distinguished from real data by anything
+# except someone noticing.
+#
+# Values NOT marked FILL-ME are organisation defaults -- class, stage, department,
+# supervisor, work arrangement, device type. Change them where they are wrong;
+# they are not personal data and they are safe to leave.
+#
 # people/ is GITIGNORED. Personal data must not enter git: history cannot be
 # erased, which would make DPDP erasure rights unhonourable.
 #
@@ -13,18 +26,18 @@ version: 1
 engagement:
   class: intern                          # intern | employee | contractor
   stage: preboarding                     # offered | preboarding | active | offboarding | alumni
-  role: Software Engineering Intern
+  role: FILL-ME
   department: Platform Engineering
   supervisor: ROHAN BATRA
   work_arrangement: Remote               # Remote | Hybrid | On-site
   hours_per_week: 20
-  start_date: 2026-09-01
-  end_date: 2026-11-30                   # required: unpaid must be time-bound
-  project_description: the internal document generation system
+  start_date: FILL-ME
+  end_date: FILL-ME                      # required: unpaid must be time-bound
+  project_description: FILL-ME
 
 identity:
-  legal_name: Asha Verma
-  preferred_name: Asha
+  legal_name: FILL-ME
+  preferred_name: FILL-ME
   # Never inferred from a name. Defaults to they/them when omitted.
   pronouns:
     subject: they
@@ -33,7 +46,7 @@ identity:
   # REQUIRED. The DPDP Act defines a child as anyone under eighteen (s2(f))
   # and s9 requires verifiable guardian consent before processing a child's
   # data at all. Without this field Paridyum cannot tell whether that applies.
-  date_of_birth: 2005-04-12
+  date_of_birth: FILL-ME
 
 # Only where the intern is under eighteen on their start date. Leave the
 # whole block out otherwise -- `docket check` reports it as over-collection.
@@ -44,16 +57,16 @@ identity:
 #   phone: ...
 
 contact:
-  email: asha.verma@example.com
-  phone: "+91 90000 00000"
-  address: 12 Rajpur Road, Dehradun, Uttarakhand 248001
+  email: FILL-ME
+  phone: FILL-ME
+  address: FILL-ME
 
 education:
-  institution: Graphic Era University
-  degree: B.Tech Computer Science
-  specialization: Software Engineering
-  graduation_year: 2027
-  email: asha.verma@geu.ac.in
+  institution: FILL-ME
+  degree: FILL-ME
+  specialization: FILL-ME
+  graduation_year: FILL-ME
+  email: FILL-ME
   # THE field the unpaid basis rests on. Issuance is refused without it.
   currently_enrolled: true
   academic_credit: true
@@ -61,9 +74,9 @@ education:
   institution_requires_certificate: true
 
 professional:
-  linkedin: linkedin.com/in/example
-  github: github.com/example
-  skills: Rust, TypeScript, PostgreSQL
+  linkedin: FILL-ME
+  github: FILL-ME
+  skills: FILL-ME
 
 device:
   type: Personal Laptop                  # Personal Laptop | Paridyum-Provided
@@ -90,17 +103,13 @@ equipment:
 
 certificate:
   areas:
-    - Rust service development and testing
-    - Deterministic document generation with LaTeX
-    - Version control and code review practice
+    - FILL-ME
 
 reference:
   requested: false
   contributions:
-    - Built the document register and its verification path
-    - Converted the internship document set to a single typeset system
-    - Wrote the reproducibility checks that guard issued documents
-  qualities: technical ability, problem-solving and clear communication
-  specific_strength: reduce a duplicated document set to one maintainable source
+    - FILL-ME
+  qualities: FILL-ME
+  specific_strength: FILL-ME
 
 pre_existing_ip: None

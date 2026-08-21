@@ -568,7 +568,7 @@ region [that] holds staff and operators"* — exactly these users. When
 loopback-only, added rather than swapped (ADR-0054). Until then, treat SSH
 access to the HR workstation as equivalent to full access to every record.
 
-## D-39 — `docket serve` is read-only, so the console cannot yet do the job
+## D-39 — RESOLVED 2026-08-21 — the API writes, and every write names its author
 
 Every route is a `GET`. Enrolment, issuance, signing, advancing a stage and pack
 assembly all remain CLI-only, so an HR operator still needs a terminal for
@@ -580,12 +580,21 @@ auditable — and this process has no way to name one. The CLI takes `--by` and
 resolves it against `registry/operators.yaml`; over HTTP the equivalent is the
 SSH account, which the process cannot see from inside a loopback socket.
 
-**Clears when** an operator can be resolved for a request and every write route
-refuses without one, matching the CLI. `SSH_CONNECTION`/`SSH_CLIENT` in the
-server's environment identify the tunnel, not the person, so this is a real design
-question and not a lookup.
+**Resolved.** Four write routes — enrol, onboard, sign, advance — each resolving an
+operator from an `X-Docket-Operator` header against `registry/operators.yaml` and
+refusing with 403 when it is absent, blank or unknown.
 
-## D-40 — a write route will need CSRF protection that the read routes do not
+**What this is:** attribution exactly as strong as the CLI's `--by`. A claimed
+identifier, checked against the registry so it must name a real operator, not
+proven. SSH is what proves anything: the server binds loopback only, so reaching
+it means holding a key to the machine.
+
+**What it is not:** authorisation. Anyone who can reach the socket may claim to be
+any operator in the registry — which is the CLI's position too, where anyone with a
+shell can pass any `--by`. Per-operator authorisation still waits for
+`platform-identity`, and remains D-38.
+
+## D-40 — RESOLVED 2026-08-21 — the operator header is the CSRF defence
 
 Loopback plus SSH lowers the risk and does not remove it: a page open in the
 operator's browser is reachable by script from any other page in that browser.
@@ -594,9 +603,12 @@ that the interface is a separate application, so the shape changes — requiring
 custom request header is sufficient, because a cross-site HTML form cannot set
 one.
 
-Nothing implements that yet, and nothing needs to while every route is a `GET`
-that writes nothing. It must land in the same change as the first write route, not
-after it.
+**Resolved, and it landed with the first write route rather than after it.** A
+cross-site HTML form cannot set a custom request header, so requiring
+`X-Docket-Operator` on every write means a page in the operator's browser cannot
+forge one. The header is mandatory, so a form post can never satisfy it — the
+defence is the same mechanism as the attribution, which is why there is no separate
+token to expire or store.
 
 ## D-41 — one connection at a time is correct and undocumented as a limit
 
@@ -613,7 +625,7 @@ polls), or the writer is separated from the readers so reads can be concurrent
 while writes stay serialised. Choosing the second means the file-locking argument
 above has to be answered properly rather than assumed away.
 
-## D-42 — an unfilled record looks filled in, with a plausible name
+## D-42 — RESOLVED 2026-08-21 — an unfilled record is refused
 
 `docket new <slug>` copies `people/_TEMPLATE.yaml`, which carries a realistic
 example name (`preferred_name: Asha`, and a full name to match). Until someone
@@ -630,8 +642,29 @@ documents naming somebody else, each with a real serial, entered in the register
 and sealed into the chain. Correcting it means re-issuing under new serials,
 because an issued document cannot be edited.
 
-**Clears when** an unedited record is refused rather than accepted. The cheapest
-honest fix is a sentinel the template ships with — a value that is obviously not a
-name — that `check` treats as a blocking error and `issue` refuses outright. A
-realistic placeholder cannot be distinguished from real data by anything except a
-person noticing, which is the part that failed here.
+**Resolved.** `people/_TEMPLATE.yaml` now ships `FILL-ME` wherever a person's own
+details go. `domain::person::unfilled` finds it at any depth including inside
+sequences, `check` reports each one as a blocking error, and `issue` refuses.
+
+**`--force` does not reach it.** The flag exists for judgement calls an operator
+may legitimately overrule; there is no situation in which someone means to issue
+documents naming nobody, so `issue::unforceable` is checked before `force` is even
+looked at. Both the `onboard` and single-`issue` paths go through it.
+
+The values left as ordinary defaults are the ones that are not personal data —
+class, stage, department, supervisor, work arrangement, device type — and the
+template says so, so nobody has to guess which of the two kinds a value is.
+
+## D-44 — `unrenderable` names LaTeX macros, not fields
+
+When a record is missing something a template needs, the refusal reads
+`IPA needs: dkPPreExistingIp`. That is the macro name, not the field: the operator
+has to know that `dkPPreExistingIp` means `pre_existing_ip` to act on it.
+
+It is a real improvement on what it replaced — the same condition used to reach
+pdflatex and come back as `Undefined control sequence` with a 500 — but it stops
+one step short of useful.
+
+**Clears when** `issue::unsupplied_fields` maps the macro back to the field path it
+came from, which is mechanical: the macro name is derived from the path, so the
+inverse is too.

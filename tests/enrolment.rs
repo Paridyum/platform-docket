@@ -9,6 +9,8 @@ use tool_docket::adapters::registry::Registry;
 use tool_docket::application::enrol;
 use tool_docket::config::Paths;
 
+mod common;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -257,11 +259,7 @@ fn a_complete_record_has_nothing_unrenderable() {
     let dir = tempfile::tempdir().expect("temp dir");
     let people = dir.path().join("people");
     std::fs::create_dir_all(&people).expect("people dir");
-    std::fs::copy(
-        root().join("people").join("_TEMPLATE.yaml"),
-        people.join("_TEMPLATE.yaml"),
-    )
-    .expect("template");
+    common::filled_template(&root(), &people.join("_TEMPLATE.yaml"));
     let paths = Paths {
         root: root(),
         people,

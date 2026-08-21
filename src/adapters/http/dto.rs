@@ -342,3 +342,120 @@ pub struct Overdue {
     /// Days elapsed since then.
     pub days: i64,
 }
+
+// ---------------------------------------------------------------------------
+// Writes. Request bodies in, results out.
+// ---------------------------------------------------------------------------
+
+use serde::Deserialize;
+use std::collections::BTreeMap;
+
+/// `POST /api/person` — open a record.
+#[derive(Debug, Deserialize)]
+pub struct EnrolRequest {
+    /// Filename the record is filed under. Never an identity.
+    pub slug: String,
+    /// Person class. Decides what may be collected at all.
+    pub class: String,
+    /// Answers, keyed by the dotted path they are written to.
+    ///
+    /// `BTreeMap` rather than a struct because the questions are generated from
+    /// `registry/fields.yaml` — a typed struct here would have to be edited every
+    /// time a field is declared, and would silently drop answers to fields it did
+    /// not know about.
+    #[serde(default)]
+    pub answers: BTreeMap<String, String>,
+}
+
+/// `POST /api/person/{slug}/sign` — record a document coming back executed.
+#[derive(Debug, Deserialize)]
+pub struct SignRequest {
+    /// Serial of the document, e.g. `PAR/NDA/2026/0001`.
+    pub serial: String,
+    /// How it was signed: `wet-ink` | `aadhaar-esign` | `electronic`.
+    pub method: String,
+    /// ISO date the person signed.
+    pub signed_on: String,
+    /// ISO date Paridyum received it. Defaults to the signing date.
+    pub received_on: Option<String>,
+    /// Path to the scan. Required for wet-ink.
+    pub scan: Option<String>,
+}
+
+/// `POST /api/person/{slug}/advance` — move to the next lifecycle stage.
+#[derive(Debug, Deserialize)]
+pub struct AdvanceRequest {
+    /// Advance despite unmet gates.
+    ///
+    /// Present because the CLI has it, and absent from the console's UI on
+    /// purpose: §8 forbids an interface that offers a way past the signature
+    /// gate. A caller that sets this is doing something deliberate at a level
+    /// below the screens.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// What a write did.
+#[derive(Debug, Serialize)]
+pub struct Wrote {
+    /// Plain sentence naming what changed, for an operator to read.
+    pub did: String,
+    /// Documents issued by this call, if any.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub issued: Vec<Document>,
+    /// Where the person now is, if the stage changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+}
+
+/// A write that was refused, and why.
+///
+/// Distinct from an error: nothing went wrong, the domain declined. The blockers
+/// are the same shape the person page renders, so a refused write and a held
+/// person read identically in the console.
+#[derive(Debug, Serialize)]
+pub struct Refused {
+    /// What was attempted.
+    pub attempted: String,
+    /// Why it may not happen yet.
+    pub blockers: Vec<Blocker>,
+    /// Refusals that are not stage gates — an unfilled record, a missing forum.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub refusals: Vec<String>,
+}
+
+/// One question the enrolment form must ask.
+#[derive(Debug, Serialize)]
+pub struct Question {
+    /// Dotted path the answer is written to.
+    pub path: String,
+    /// Field group, used to order and head the questions.
+    pub group: String,
+    /// The declared purpose, shown as help.
+    ///
+    /// Always sent. If a field's purpose cannot be written down it should not
+    /// exist, so there is never a reason to hide it from the person being asked.
+    pub purpose: String,
+    /// Whether the class requires an answer.
+    pub required: bool,
+}
+
+impl From<&crate::domain::personnel::Question> for Question {
+    fn from(q: &crate::domain::personnel::Question) -> Self {
+        Self {
+            path: q.path.clone(),
+            group: q.group.clone(),
+            purpose: q.purpose.clone(),
+            required: q.required,
+        }
+    }
+}
+
+/// The enrolment form for a class, generated rather than written.
+#[derive(Debug, Serialize)]
+pub struct Form {
+    /// The class these questions belong to.
+    pub class: String,
+    /// Questions in catalogue order, grouped by `group`.
+    pub questions: Vec<Question>,
+}

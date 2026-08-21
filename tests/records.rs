@@ -12,6 +12,8 @@ use tool_docket::domain::event::Kind;
 use tool_docket::domain::identity::Standing;
 use tool_docket::domain::personnel::Violation;
 
+mod common;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -28,11 +30,7 @@ impl Sandbox {
         let people = dir.path().join("people");
         std::fs::create_dir_all(&people).expect("people dir");
         // `docket new` copies the checked-in template, so it must be present.
-        std::fs::copy(
-            root().join("people").join("_TEMPLATE.yaml"),
-            people.join("_TEMPLATE.yaml"),
-        )
-        .expect("template");
+        common::filled_template(&root(), &people.join("_TEMPLATE.yaml"));
         let paths = Paths {
             root: root(),
             people,
@@ -752,13 +750,13 @@ fn messages_are_addressed_from_the_record() {
     personnel::create(&sb.paths, &reg, "t", "intern", date(), "rohan").expect("creates");
     let due = tool_docket::application::comms::due(&sb.paths, &reg, "t").expect("due");
     let offer = due.iter().find(|m| m.id == "offer").expect("offer");
-    assert_eq!(offer.address.as_deref(), Some("asha.verma@example.com"));
+    assert_eq!(offer.address.as_deref(), Some("test.person@example.com"));
     assert!(
         offer.subject.contains("Software Engineering Intern"),
         "{}",
         offer.subject
     );
-    assert!(offer.body.contains("Asha"), "{}", offer.body);
+    assert!(offer.body.contains("Test"), "{}", offer.body);
     assert!(
         !offer.body.contains('{'),
         "no placeholder may survive: {}",

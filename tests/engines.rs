@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 use tool_docket::adapters::typeset::Engine;
 
+mod common;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -148,11 +150,7 @@ exit 0
 
     let people = dir.path().join("people");
     std::fs::create_dir_all(&people).expect("people dir");
-    std::fs::copy(
-        root().join("people").join("_TEMPLATE.yaml"),
-        people.join("_TEMPLATE.yaml"),
-    )
-    .expect("template");
+    common::filled_template(&root(), &people.join("_TEMPLATE.yaml"));
 
     let run = |args: &[&str]| {
         std::process::Command::new(env!("CARGO_BIN_EXE_docket"))

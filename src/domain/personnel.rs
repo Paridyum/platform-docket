@@ -107,6 +107,15 @@ pub enum Violation {
         /// The dotted path that must be present.
         path: String,
     },
+    /// A field still holds the template's placeholder.
+    ///
+    /// Separate from `Missing` because the two need different instructions and
+    /// have different causes. `Missing` means nobody supplied a value; this means
+    /// the template's value was left in place, which looks supplied and is not.
+    Unfilled {
+        /// The dotted path still holding `person::UNFILLED`.
+        path: String,
+    },
     /// A field is present that the class forbids.
     ///
     /// This is the important one. Collecting a PAN for an unpaid intern is
@@ -143,6 +152,11 @@ impl std::fmt::Display for Violation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Missing { path } => write!(f, "{path} is required and is not set"),
+            Self::Unfilled { path } => write!(
+                f,
+                "{path} still holds the template's {} placeholder -- it looks filled in and is not",
+                crate::domain::person::UNFILLED
+            ),
             Self::Forbidden { path, reason } => write!(f, "{path} must not be collected: {reason}"),
             Self::WrongStore { path, declared } => write!(
                 f,
@@ -313,6 +327,12 @@ pub fn validate(catalogue: &Catalogue, class: &Class, person: &Person) -> Result
     let by_path = catalogue.fields_by_path()?;
     let present = present_paths(person);
     let mut out = Vec::new();
+
+    // Before anything else. A record that has not been filled in satisfies every
+    // structural rule below it, which is the whole reason this exists.
+    for path in crate::domain::person::unfilled(person) {
+        out.push(Violation::Unfilled { path });
+    }
 
     for required in &class.requires {
         if !present.iter().any(|p| p == required) {

@@ -12,6 +12,7 @@
 //! last published in 2022. See §0 of the design.
 
 pub mod dto;
+pub mod operator;
 pub mod request;
 pub mod response;
 pub mod router;

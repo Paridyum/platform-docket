@@ -156,6 +156,30 @@ pub fn to_yaml(
     }
 
     for group in groups {
+        // Answers to TOP-LEVEL fields, which have no dot in their path.
+        //
+        // These used to be dropped silently by the `split_once` below: an
+        // operator typed an answer, it went nowhere, and the only symptom came
+        // much later as `IPA needs: dkPPreExistingIp` from pdflatex — a macro name
+        // for a field the person had in fact supplied. `pre_existing_ip` is
+        // declared in registry/fields.yaml and is exactly this shape, so the one
+        // field on the IP assignment agreement that says what the intern already
+        // owns was unanswerable through the interview.
+        let mut root: Vec<(&String, &String)> = Vec::new();
+        for (path, value) in answers {
+            if path.contains('.') {
+                continue;
+            }
+            if registry
+                .catalogue
+                .fields
+                .iter()
+                .any(|f| f.path == *path && f.group == group)
+            {
+                root.push((path, value));
+            }
+        }
+
         let mut lines: Vec<(String, String)> = Vec::new();
         for (path, value) in answers {
             let Some((head, tail)) = path.split_once('.') else {
@@ -170,7 +194,7 @@ pub fn to_yaml(
                 lines.push((format!("{head}|{tail}"), value.clone()));
             }
         }
-        if lines.is_empty() {
+        if lines.is_empty() && root.is_empty() {
             continue;
         }
         // One YAML mapping per top-level key present in this group.
@@ -197,6 +221,18 @@ pub fn to_yaml(
                 }
                 let _ = writeln!(out, "  {tail}: {}", scalar(&full, v));
             }
+        }
+
+        // Root-level answers, written at column 0 after this group's mappings so
+        // they are not swallowed into the last one.
+        for (path, value) in &root {
+            let _ = writeln!(out);
+            if let Some(p) = purposes.get(path.as_str()) {
+                for line in wrap(p, 68) {
+                    let _ = writeln!(out, "# {line}");
+                }
+            }
+            let _ = writeln!(out, "{path}: {}", scalar(path, value));
         }
     }
     let _ = write!(out, "\n# class: {class_name}\n");
@@ -269,4 +305,89 @@ pub fn write_record(paths: &Paths, slug: &str, body: &str) -> Result<()> {
         .with_context(|| format!("creating {}", paths.people.display()))?;
     std::fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+// The lint configuration denies expect/unwrap for the crate; an assertion IS the
+// point of a test.
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::to_yaml;
+    use crate::adapters::registry::Registry;
+    use crate::config::Paths;
+    use std::collections::BTreeMap;
+
+    fn registry() -> Registry {
+        Registry::load(&Paths::resolve(std::path::Path::new(env!(
+            "CARGO_MANIFEST_DIR"
+        ))))
+        .expect("registry loads")
+    }
+
+    #[test]
+    fn an_answer_to_a_top_level_field_is_not_dropped() {
+        // `pre_existing_ip` has no dot in its path. It used to be discarded here
+        // in silence, and the only symptom was pdflatex later reporting a macro
+        // name for a field the operator had actually answered.
+        let mut answers = BTreeMap::new();
+        answers.insert("pre_existing_ip".to_owned(), "None".to_owned());
+        let yaml = to_yaml(&registry(), "intern", &answers);
+        assert!(yaml.contains("pre_existing_ip:"), "{yaml}");
+
+        // And the result must still parse, which is the part a text-assembled
+        // document can get wrong: a root key written at the wrong indentation is
+        // swallowed into the mapping above it.
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        assert_eq!(
+            parsed.get("pre_existing_ip").and_then(|v| v.as_str()),
+            Some("None")
+        );
+    }
+
+    #[test]
+    fn a_top_level_answer_survives_alongside_nested_ones() {
+        let mut answers = BTreeMap::new();
+        answers.insert("identity.legal_name".to_owned(), "Priya Nair".to_owned());
+        answers.insert("engagement.role".to_owned(), "Intern".to_owned());
+        answers.insert("pre_existing_ip".to_owned(), "None".to_owned());
+        let yaml = to_yaml(&registry(), "intern", &answers);
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        assert_eq!(
+            parsed
+                .get("identity")
+                .and_then(|v| v.get("legal_name"))
+                .and_then(|v| v.as_str()),
+            Some("Priya Nair")
+        );
+        assert_eq!(
+            parsed.get("pre_existing_ip").and_then(|v| v.as_str()),
+            Some("None")
+        );
+    }
+
+    #[test]
+    fn the_generated_record_carries_a_stage_so_it_can_be_advanced() {
+        // A record with no `stage:` line reads as the first stage but could not be
+        // advanced, because `personnel::advance` edits that line. `advance` now
+        // writes it when absent; this asserts the shape it looks for is what an
+        // answered stage produces.
+        let mut answers = BTreeMap::new();
+        answers.insert("engagement.stage".to_owned(), "preboarding".to_owned());
+        let yaml = to_yaml(&registry(), "intern", &answers);
+
+        // Quoted, which is what `scalar` does. The assertion is on the parsed
+        // value rather than the text, because the text shape is not the contract —
+        // `personnel::advance` handles quoted, unquoted and commented forms, and
+        // asserting one spelling here would just duplicate that knowledge badly.
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        assert_eq!(
+            parsed
+                .get("engagement")
+                .and_then(|e| e.get("stage"))
+                .and_then(|v| v.as_str()),
+            Some("preboarding"),
+            "{yaml}"
+        );
+    }
 }

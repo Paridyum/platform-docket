@@ -101,6 +101,55 @@ impl std::fmt::Display for Blocker {
     }
 }
 
+/// The value the template ships with, wherever a person's own details go.
+///
+/// It exists because a *plausible* placeholder cannot be told apart from real
+/// data by anything except a person noticing, and that is exactly what failed:
+/// `docket new` copied a template carrying a realistic name, two freshly enrolled
+/// interns both displayed as the same person, and `docket check` reported nothing
+/// wrong because every required field was present. The template satisfied the
+/// schema.
+///
+/// Chosen to be impossible to mistake for a name, a date or an address, and to
+/// survive a copy-paste into a form. Anything containing it is unfilled.
+pub const UNFILLED: &str = "FILL-ME";
+
+/// Paths still holding the template's placeholder, deepest first.
+///
+/// Scans values rather than a list of paths, so a field added to
+/// `registry/fields.yaml` and the template is covered without editing this
+/// function — a hardcoded list is a list that goes stale silently.
+#[must_use]
+pub fn unfilled(person: &Person) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_unfilled(&person.value, String::new(), &mut out);
+    out.sort();
+    out
+}
+
+fn collect_unfilled(value: &Value, path: String, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) if text.contains(UNFILLED) => out.push(path),
+        Value::Mapping(map) => {
+            for (key, child) in map {
+                let Some(name) = key.as_str() else { continue };
+                let next = if path.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{path}.{name}")
+                };
+                collect_unfilled(child, next, out);
+            }
+        }
+        Value::Sequence(items) => {
+            for (i, child) in items.iter().enumerate() {
+                collect_unfilled(child, format!("{path}[{i}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Everything that must hold before this person's documents may be issued.
 ///
 /// `forum` is threaded in from `org.yaml` rather than read here, because the
@@ -108,6 +157,25 @@ impl std::fmt::Display for Blocker {
 #[must_use]
 pub fn blockers(person: &Person, forum: Option<&str>) -> Vec<Blocker> {
     let mut out = Vec::new();
+
+    // FIRST, and on its own, because everything below it is a question about a
+    // record someone has actually filled in. An unedited template answers every
+    // one of those questions plausibly and wrongly, and issuing from it produces
+    // real documents, with real serials, naming somebody else -- which cannot be
+    // corrected by editing, only by re-issuing under new serials.
+    let unfilled = unfilled(person);
+    if !unfilled.is_empty() {
+        out.push(Blocker(format!(
+            "{} field(s) still hold the template's {UNFILLED} placeholder and have not been \
+             filled in: {}. Issuing now would produce documents that name nobody.",
+            unfilled.len(),
+            unfilled.join(", ")
+        )));
+        // Returning early is deliberate. The blockers below would each report a
+        // missing or unparsable value that is really the same one fact, and a
+        // list of eleven consequences buries the one instruction that matters.
+        return out;
+    }
 
     if forum.is_none_or(str::is_empty) {
         out.push(Blocker(
@@ -160,7 +228,7 @@ pub fn blockers(person: &Person, forum: Option<&str>) -> Vec<Blocker> {
 // denied for the crate; only assertions inside test modules are exempt.
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use super::{Person, blockers};
+    use super::{Person, blockers, unfilled};
     use crate::domain::lifecycle::Condition;
 
     fn person(yaml: &str) -> Person {
@@ -301,5 +369,60 @@ mod tests {
         let p = person("identity: {legal_name: X}\n");
         assert!(p.get("does.not.exist").is_none());
         assert!(!p.flag("also.missing"));
+    }
+
+    #[test]
+    fn an_unedited_template_value_is_found_at_any_depth() {
+        let p = person(
+            "identity: {legal_name: FILL-ME, preferred_name: Asha}\ncontact: {email: FILL-ME}\n",
+        );
+        assert_eq!(unfilled(&p), vec!["contact.email", "identity.legal_name"]);
+    }
+
+    #[test]
+    fn a_placeholder_inside_a_list_is_found_with_its_index() {
+        // certificate.areas and reference.contributions are sequences, and a
+        // scan that only walked mappings would report a filled-in record.
+        let p = person("certificate: {areas: [Rust, FILL-ME]}\n");
+        assert_eq!(unfilled(&p), vec!["certificate.areas[1]"]);
+    }
+
+    #[test]
+    fn a_filled_record_reports_nothing() {
+        let p = person("identity: {legal_name: Vikram Rao}\ncontact: {email: v@example.com}\n");
+        assert!(unfilled(&p).is_empty());
+    }
+
+    #[test]
+    fn a_placeholder_embedded_in_a_longer_value_still_counts() {
+        // Someone half-edits a line. It looks filled in, and is not.
+        let p = person("engagement: {role: Intern, project_description: FILL-ME later}\n");
+        assert_eq!(unfilled(&p), vec!["engagement.project_description"]);
+    }
+
+    #[test]
+    fn a_non_string_value_is_never_a_placeholder() {
+        let p = person("engagement: {hours_per_week: 20}\neducation: {currently_enrolled: true}\n");
+        assert!(unfilled(&p).is_empty());
+    }
+
+    #[test]
+    fn an_unfilled_record_blocks_issuance_before_anything_else_is_reported() {
+        let p = person("identity: {legal_name: FILL-ME}\n");
+        let blocking = blockers(&p, Some("Dehradun"));
+        // Exactly one, and it is the placeholder. The record is also missing a
+        // date of birth, an end date and enrolment, and reporting those too would
+        // bury the single instruction that matters.
+        assert_eq!(blocking.len(), 1, "{blocking:?}");
+        assert!(blocking[0].0.contains("FILL-ME"), "{:?}", blocking[0]);
+    }
+
+    #[test]
+    fn a_record_with_no_placeholders_reports_its_real_blockers() {
+        // Proves the early return above is not swallowing everything.
+        let p = person("identity: {legal_name: Vikram Rao}\n");
+        let blocking = blockers(&p, Some("Dehradun"));
+        assert!(blocking.len() > 1, "{blocking:?}");
+        assert!(!blocking.iter().any(|b| b.0.contains("FILL-ME")));
     }
 }

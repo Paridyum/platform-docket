@@ -408,12 +408,33 @@ authentication and the operating system account is the identity; there is no
 login in the application, deliberately (ADR-0047 — this tool has no identity
 system of its own, so it must not be reachable without one).
 
-**What it serves.** Read-only, as of today: `/api/health`, `/api/roster`
-(optionally `?standing=active`), `/api/person/{slug}`, `/api/check`,
-`/api/retention`, `/api/emails/{slug}`. Every route calls the same
-`application::` function the CLI calls, so the console and the command line
-cannot disagree about what a person owes. **No route writes anything** — that is
-asserted by a test, not merely intended.
+**What it serves.** Reads: `/api/health`, `/api/roster` (optionally
+`?standing=active`), `/api/person/{slug}`, `/api/check`, `/api/retention`,
+`/api/emails/{slug}`, `/api/form/{class}`. Writes: `POST /api/person` (enrol),
+`/api/person/{slug}/onboard`, `/sign`, `/advance`. Every route calls the same
+`application::` function the CLI calls, so the console and the command line cannot
+disagree about what a person owes.
+
+**Every write needs an operator, or it is refused.** Send an `X-Docket-Operator`
+header naming someone in `registry/operators.yaml`:
+
+```
+curl -X POST -H 'X-Docket-Operator: ruhani' -d '{}' \
+  http://127.0.0.1:8080/api/person/asha/onboard
+```
+
+Without it the answer is 403 and nothing is written. This is the same attribution
+the CLI's `--by` provides and no stronger: it names a real operator, and SSH is
+what proves who is at the keyboard. It is also what stops a page in the operator's
+browser forging a write, since a cross-site form cannot set a custom header.
+
+**A 409 is a refusal, not a failure.** It means the request was understood and the
+domain declined — a gate not met, a record not filled in. The body carries
+`blockers` and `refusals` saying which. A 400 means the request was malformed and a
+500 means something is broken; those are different problems.
+
+**Writes cannot be forced from here.** `onboard` has no force at all: fix the
+record, or use the CLI where `--force` is typed out and visible in shell history.
 
 **When it goes wrong:**
 
