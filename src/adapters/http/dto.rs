@@ -449,6 +449,49 @@ pub struct Refused {
     pub refusals: Vec<String>,
 }
 
+/// The version of the wire contract this build speaks.
+///
+/// ## Why a number separate from the package version
+///
+/// `CARGO_PKG_VERSION` moves when anything ships. This moves only when the shape
+/// of a response changes in a way that an existing `console-docket` would read
+/// wrong or fail to read at all — so a console can decide, from one cheap request,
+/// whether it is talking to a build it understands.
+///
+/// ## The failure it exists to end
+///
+/// A `docket serve` left running from before a change served the old shape
+/// indefinitely. The console refused the response, correctly, and the operator got
+/// a redacted Server Component error: a React error code and a digest. The cause
+/// was a binary nobody had rebuilt, and nothing in the system could say so — the
+/// diagnosis was "almost always this means", which is a guess printed confidently.
+///
+/// ## When to change it
+///
+/// **Bump on any change that removes a field, renames one, changes a field's type,
+/// or adds a field an existing console would require.** Adding a field that older
+/// consoles ignore does not need a bump; adding one they must have does, because
+/// `console-docket` validates the shape it reads and refuses what is missing.
+///
+/// Do not reuse a number and do not go backwards. It is not semver — there is no
+/// meaning in the gap between 2 and 3 beyond "these are different".
+///
+/// **There is deliberately no test asserting this constant's value.** One was
+/// written — `assert!(CONTRACT >= 2)` — and clippy correctly rejected it as an
+/// assertion with a constant value: it is folded at compile time and can never
+/// fail at runtime, so it would have been a test that verifies nothing while
+/// appearing to guard the rule. The rule lives here, in the history below, and in
+/// review. A real guard would have to compare this against the value on the
+/// previous commit, which is a CI check and not a unit test; it has not been
+/// written because lowering this number is not a mistake anyone makes by accident.
+///
+/// ## History
+///
+/// - **1** — the shape as first served.
+/// - **2** — `Question` gained `choices` and `default`. This is the change whose
+///   absence produced the incident above.
+pub const CONTRACT: u32 = 2;
+
 /// One question the enrolment form must ask.
 #[derive(Debug, Serialize)]
 pub struct Question {

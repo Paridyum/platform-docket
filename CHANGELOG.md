@@ -7,6 +7,25 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`/api/health` carries a wire contract version, and `scripts/serve.sh` cannot start a
+  stale binary.** Two halves of one fix.
+
+  `contract` moves only when the shape of a response changes in a way a client would read
+  wrong — unlike `version`, which moves whenever anything ships. So a console can decide,
+  from one cheap request that needs no store, whether it is talking to a build it
+  understands, instead of printing a confident guess in prose.
+
+  `scripts/serve.sh` builds before it serves, so there is no ordering left to get wrong, and
+  it refuses an occupied port rather than spending a minute building and then dying on a
+  bind error. That second check is not hypothetical: while it was being tested, a `docket
+  serve` from an earlier session was still holding 8080, answered a readiness probe, and was
+  briefly mistaken for the new server.
+
+  Both exist because their absence had a cost. A binary from before a shape change served
+  the old shape indefinitely; `console-docket` refused every response, correctly, and the
+  operator saw a React error code and a digest. The instruction on offer was "remember to
+  rebuild", and a sentence telling somebody to remember is not a fix.
+
 - **A document can declare itself `on_request`**, meaning it is issued when somebody asks
   rather than owed by a lifecycle stage. `docket check` no longer warns about one, and now
   **refuses** a document that is both `on_request` and owed by a stage.

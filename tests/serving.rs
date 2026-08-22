@@ -133,7 +133,27 @@ fn health_answers_without_a_store() {
     assert_eq!(body["ok"], true);
     // The version is the crate's, so a console can tell which docket it reached.
     assert!(body["version"].is_string());
+
+    /*
+      And the contract, which is the field a client should act on.
+
+      `version` moves whenever anything ships. `contract` moves only when the shape
+      of a response changes in a way a client would read wrong — so it answers the
+      question a client is actually asking, and it answers it in one cheap request
+      that needs no store.
+
+      This exists because its absence had a cost. A `docket serve` from before a
+      shape change served the old shape indefinitely; the console refused every
+      response, correctly, and the operator was shown a redacted React error code.
+      Nothing in the system could state the cause, so the console guessed at it in
+      prose. It does not have to guess now.
+    */
+    assert_eq!(
+        body["contract"],
+        serde_json::json!(tool_docket::adapters::http::dto::CONTRACT)
+    );
 }
+
 
 #[test]
 fn the_roster_says_what_the_cli_says() {

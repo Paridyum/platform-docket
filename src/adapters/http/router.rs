@@ -46,6 +46,7 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
         ("GET", ["api", "health"]) => Ok(json(&Health {
             ok: true,
             version: env!("CARGO_PKG_VERSION"),
+            contract: dto::CONTRACT,
         })),
         ("GET", ["api", "roster"]) => roster_handler(ctx, req),
         ("GET", ["api", "person", slug]) => person_handler(ctx, slug),
@@ -95,10 +96,15 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
 }
 
 /// `/api/health` payload.
+///
+/// `contract` is the one a client should act on. `version` moves whenever anything
+/// ships; `contract` moves only when the shape of a response changes in a way a
+/// client would read wrong, which is the question a client is actually asking.
 #[derive(Debug, Serialize)]
 struct Health {
     ok: bool,
     version: &'static str,
+    contract: u32,
 }
 
 /// Serialise, or report the failure to serialise rather than hiding it.

@@ -369,13 +369,22 @@ the point of it.
 ## Task: serve the API for the HR console
 
 **When:** an HR operator needs `console-docket` rather than the command line.
-**Preconditions:** the store is readable, and nothing else holds the port —
-check with `docket check` and `lsof -nP -iTCP:8080 -sTCP:LISTEN`
+**Preconditions:** the store is readable. The script checks the port itself.
 
-    docket serve --port 8080
+    scripts/serve.sh --port 8080
+
+**Not `docket serve` directly, and this is the point of the script.** A binary
+built before the last change serves the old wire contract quietly and
+indefinitely; `console-docket` then refuses every response and — because a browser
+never receives a Server Component's real message — shows a React error code and a
+digest. That happened. The script builds before it serves, so there is no ordering
+left to get wrong, and it refuses an occupied port rather than spending a minute
+building and then dying on a bind error.
 
 **Correct output:**
 
+    docket: building (release) — this is what stops a stale binary serving
+    docket: wire contract 2, serving on 127.0.0.1:8080
     docket serving on http://127.0.0.1:8080
     reach it from another machine with:  ssh -L 8080:127.0.0.1:8080 <this-host>
 
@@ -387,7 +396,13 @@ one that started it, because a server reporting its own readiness is not evidenc
 
     curl -s http://127.0.0.1:8080/api/health
 
-    {"ok":true,"version":"0.1.0"}
+    {"ok":true,"version":"0.1.0","contract":2}
+
+**Check the `contract`, not just the `ok`.** It is the number `console-docket`
+compares against, and it is the one that says whether this server is the build the
+console expects. A response without a `contract` field at all is a binary from
+before the field existed, which means the server has been running longer than you
+think.
 
 **Then verify it is NOT reachable from anywhere else.** This is the whole access
 model, so check it rather than trusting it:
@@ -441,6 +456,8 @@ record, or use the CLI where `--force` is typed out and visible in shell history
 | What you see | What it means | What to do |
 |---|---|---|
 | `could not bind 127.0.0.1:8080; is another docket already serving?` | the port is taken, often by a `docket serve` you forgot | `lsof -nP -iTCP:8080 -sTCP:LISTEN`, then stop it or pick another port |
+| `docket: something is already listening on 127.0.0.1:8080` from `scripts/serve.sh` | the same thing, caught before a minute of building | as above. The old server is still answering, so anything probing the port will think the new one started |
+| The console says **"This console and docket disagree"** and names a missing field | this server is older than that console — the two ship together | stop this server, `git pull`, and start it again with `scripts/serve.sh`. The console's screen states both contract numbers, so you do not have to guess which side is behind |
 | `refusing to bind <addr>: this server has no authentication of its own` | something tried to bind a routable interface | correct, and not overridable. Use the SSH forward |
 | `HTTP/1.1 404` with `no person with slug X` | the slug is not in the ledger | `docket roster` for the real slugs; 404 means mistyped, 500 would mean broken |
 | `HTTP/1.1 405` | right path, wrong method — e.g. a POST to a read route | no write routes exist yet; use the CLI for writes |
