@@ -154,7 +154,6 @@ fn health_answers_without_a_store() {
     );
 }
 
-
 #[test]
 fn the_roster_says_what_the_cli_says() {
     let sandbox = Sandbox::new();
