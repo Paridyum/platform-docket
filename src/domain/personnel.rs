@@ -42,6 +42,40 @@ pub struct Field {
     /// Whether it may be absent.
     #[serde(default)]
     pub optional: bool,
+    /// Every value this field accepts, where the set is closed.
+    ///
+    /// Empty means the field takes free text, which is most of them — a name, an
+    /// institution and an address have no enumerable set and inventing one would
+    /// stop an operator recording the truth.
+    ///
+    /// Declared here rather than in the code that asks the question, because two
+    /// interfaces ask it: `docket new --interactive` and the console's enrolment
+    /// wizard. When the list lived in `application::enrol` as a `match`, only the
+    /// CLI knew about it — the wizard rendered a free-text box for a true/false
+    /// field, and the two interfaces to the same registry behaved differently.
+    #[serde(default)]
+    pub choices: Vec<String>,
+    /// A starting value that is safe to write without being asked.
+    ///
+    /// Only where one genuinely is. There is no default for a name, a date or an
+    /// institution: an invented one would be written into an agreement and signed.
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+impl Field {
+    /// Whether this field takes true or false and nothing else.
+    ///
+    /// Derived from `choices` rather than declared separately, so a flag is
+    /// simply a field whose declared set happens to be the two boolean literals.
+    /// This decides how the answer is written into the record — a flag is emitted
+    /// unquoted so the YAML holds a boolean, not the string `"true"`.
+    #[must_use]
+    pub fn is_flag(&self) -> bool {
+        self.choices.len() == 2
+            && self.choices.iter().any(|c| c == "true")
+            && self.choices.iter().any(|c| c == "false")
+    }
 }
 
 /// The class and field registries together.
@@ -184,6 +218,10 @@ pub struct Question {
     pub purpose: String,
     /// Whether the class requires an answer.
     pub required: bool,
+    /// Every value this field accepts, or empty for free text.
+    pub choices: Vec<String>,
+    /// A safe starting value, where the registry declares one.
+    pub default: Option<String>,
 }
 
 /// What to ask when opening a record for this class.
@@ -213,6 +251,8 @@ pub fn questions(catalogue: &Catalogue, class: &Class) -> Vec<Question> {
             // belongs in the file, not in front of someone answering a prompt.
             purpose: first_sentence(f.purpose.trim()),
             required: class.requires.contains(&f.path),
+            choices: f.choices.clone(),
+            default: f.default.clone(),
         })
         .collect();
     // Required first; then in the order a person would answer, not
@@ -402,6 +442,64 @@ mod tests {
     use super::{Catalogue, Violation, present_paths, questions, validate};
     use crate::domain::person::Person;
 
+    /// Parsing a declared value set, and what makes one a flag.
+    mod declarations {
+        use super::super::FieldFile;
+
+        fn parse(yaml: &str) -> FieldFile {
+            serde_yaml::from_str(yaml).expect("fields parse")
+        }
+
+        #[test]
+        fn a_field_declaring_true_and_false_is_a_flag() {
+            // This decides how the answer is written into the record: a flag is
+            // emitted unquoted so the YAML holds a boolean, and `person.flag()`
+            // reads it as one. The string `"true"` is not the same value.
+            let f = parse(
+                r#"
+fields:
+  - {path: a.b, group: g, store: personnel, purpose: p, choices: ["true", "false"]}
+"#,
+            );
+            assert!(f.fields[0].is_flag());
+        }
+
+        #[test]
+        fn order_does_not_decide_whether_it_is_a_flag() {
+            let f = parse(
+                r#"
+fields:
+  - {path: a.b, group: g, store: personnel, purpose: p, choices: ["false", "true"]}
+"#,
+            );
+            assert!(f.fields[0].is_flag());
+        }
+
+        #[test]
+        fn a_longer_set_containing_true_is_not_a_flag() {
+            // `unknown` is a third answer, so the field is not a boolean and must
+            // not be written as one.
+            let f = parse(
+                r#"
+fields:
+  - {path: a.b, group: g, store: personnel, purpose: p, choices: ["true", "false", "unknown"]}
+"#,
+            );
+            assert!(!f.fields[0].is_flag());
+        }
+
+        #[test]
+        fn a_field_declaring_nothing_takes_free_text() {
+            // Which is most of them. A name and an institution have no
+            // enumerable set, and inventing one would stop an operator recording
+            // the truth.
+            let f = parse("fields:\n  - {path: a.b, group: g, store: personnel, purpose: p}\n");
+            assert!(f.fields[0].choices.is_empty());
+            assert!(f.fields[0].default.is_none());
+            assert!(!f.fields[0].is_flag());
+        }
+    }
+
     fn catalogue() -> Catalogue {
         let classes: super::ClassFile = serde_yaml::from_str(
             r"
@@ -426,7 +524,7 @@ classes:
             r"
 fields:
   - {path: identity.legal_name, group: identity, store: personnel, purpose: names the party}
-  - {path: education.currently_enrolled, group: education, store: personnel, purpose: unpaid basis}
+  - {path: education.currently_enrolled, group: education, store: personnel, purpose: unpaid basis, choices: ['true', 'false'], default: 'true'}
   - {path: statutory.pan, group: statutory, store: statutory, purpose: TDS}
 ",
         )

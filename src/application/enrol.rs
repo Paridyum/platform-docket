@@ -9,32 +9,22 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, Write};
 
-/// Sensible starting values, so a blank answer is usually right.
+/// Whether this field takes true/false, according to the registry.
 ///
-/// Only where a default is genuinely safe. There is no default for a name, a
-/// date or an institution — an invented one would be written into an agreement.
-fn default_for(path: &str) -> Option<&'static str> {
-    match path {
-        "identity.pronouns" => Some("they/them/their"),
-        "engagement.work_arrangement" => Some("Remote"),
-        "engagement.stage" => Some("offered"),
-        "education.currently_enrolled" => Some("true"),
-        "equipment.issued" | "reference.requested" => Some("false"),
-        _ => None,
-    }
-}
-
-/// Whether this field takes true/false.
-fn is_flag(path: &str) -> bool {
-    matches!(
-        path,
-        "education.currently_enrolled"
-            | "education.academic_credit"
-            | "education.institution_requires_noc"
-            | "education.institution_requires_certificate"
-            | "equipment.issued"
-            | "reference.requested"
-    )
+/// This and the defaults above it used to be two hardcoded `match` arms in this
+/// file. They were a second statement of the registry's vocabulary, and only this
+/// interface could read it: `docket new --interactive` offered a default and a
+/// true/false answer while the console's enrolment wizard, generated from the same
+/// catalogue, rendered a free-text box for the same field. Both now come from
+/// `fields.yaml`, so the two interfaces cannot drift again.
+fn flag_paths(registry: &Registry) -> std::collections::BTreeSet<&str> {
+    registry
+        .catalogue
+        .fields
+        .iter()
+        .filter(|f| f.is_flag())
+        .map(|f| f.path.as_str())
+        .collect()
 }
 
 /// Ask the questions this class declares, and return the answers.
@@ -98,7 +88,7 @@ pub fn interview(
             &label,
             &q.purpose,
             q.required,
-            default_for(&q.path),
+            q.default.as_deref(),
         )?;
         if let Some(v) = answer {
             answers.insert(q.path.clone(), v);
@@ -145,6 +135,10 @@ pub fn to_yaml(
         .iter()
         .map(|f| (f.path.as_str(), f.purpose.trim()))
         .collect();
+    // Which paths hold a boolean, from the registry rather than from a list here.
+    // It decides quoting: a flag is emitted bare so the record holds `true`, not
+    // the string `"true"`, and `person.flag()` reads it as the former.
+    let flags = flag_paths(registry);
 
     // Group in the order the catalogue declares, so the file reads the way the
     // interview ran.
@@ -219,7 +213,7 @@ pub fn to_yaml(
                         let _ = writeln!(out, "  # {line}");
                     }
                 }
-                let _ = writeln!(out, "  {tail}: {}", scalar(&full, v));
+                let _ = writeln!(out, "  {tail}: {}", scalar(&full, v, &flags));
             }
         }
 
@@ -232,7 +226,7 @@ pub fn to_yaml(
                     let _ = writeln!(out, "# {line}");
                 }
             }
-            let _ = writeln!(out, "{path}: {}", scalar(path, value));
+            let _ = writeln!(out, "{path}: {}", scalar(path, value, &flags));
         }
     }
     let _ = write!(out, "\n# class: {class_name}\n");
@@ -240,8 +234,8 @@ pub fn to_yaml(
 }
 
 /// Quote a value unless it is a bare flag or number.
-fn scalar(path: &str, value: &str) -> String {
-    if is_flag(path) {
+fn scalar(path: &str, value: &str, flags: &std::collections::BTreeSet<&str>) -> String {
+    if flags.contains(path) {
         let v = value.trim().to_lowercase();
         return if matches!(v.as_str(), "y" | "yes" | "true" | "1") {
             "true".to_owned()

@@ -27,6 +27,7 @@ fields:
       Correct reference in a reference letter and a certificate. Never
       inferred from a name; defaults to they/them when not given.
     optional: true
+    default: "they/them/their"
   - path: identity.date_of_birth
     group: identity
     store: personnel
@@ -111,6 +112,10 @@ fields:
     group: engagement
     store: personnel
     purpose: Remote, hybrid or on-site. Stated on the agreement.
+    # The purpose sentence already names the set; this is the same statement in a
+    # form the interfaces can offer. `docket check` fails if they disagree.
+    choices: [Remote, Hybrid, On-site]
+    default: "Remote"
   - path: engagement.hours_per_week
     group: engagement
     store: personnel
@@ -132,6 +137,8 @@ fields:
     group: engagement
     store: personnel
     purpose: Drives which documents are owed right now.
+    choices: [offered, preboarding, active, offboarding, alumni]
+    default: "offered"
   - path: engagement.project_description
     group: engagement
     store: personnel
@@ -170,11 +177,14 @@ fields:
     store: personnel
     purpose: >
       THE field the unpaid basis rests on. Issuance is refused without it.
+    choices: ["true", "false"]
+    default: "true"
   - path: education.academic_credit
     group: education
     store: personnel
     purpose: Whether the institution awards credit, which shapes the documentation owed.
     optional: true
+    choices: ["true", "false"]
   - path: education.institution_requires_noc
     group: education
     store: personnel
@@ -183,11 +193,13 @@ fields:
       before the placement may proceed. Decides whether INS is owed. The
       onboarding form asked this and nothing acted on it.
     optional: true
+    choices: ["true", "false"]
   - path: education.institution_requires_certificate
     group: education
     store: personnel
     purpose: Whether a completion certificate must be issued at the end.
     optional: true
+    choices: ["true", "false"]
 
   # ---- professional -------------------------------------------------
   - path: professional.linkedin
@@ -247,6 +259,8 @@ fields:
     store: personnel
     purpose: Whether the Equipment Acknowledgement Form is owed at all.
     optional: true
+    choices: ["true", "false"]
+    default: "false"
   - path: equipment.device
     group: equipment
     store: personnel
@@ -289,6 +303,8 @@ fields:
     store: personnel
     purpose: Whether a reference letter is owed at all.
     optional: true
+    choices: ["true", "false"]
+    default: "false"
   - path: reference.contributions
     group: engagement
     store: personnel

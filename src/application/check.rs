@@ -280,7 +280,85 @@ fn register(items: &mut Vec<Finding>, paths: &Paths) -> Result<usize> {
 }
 
 /// The person-class and field registries are internally consistent.
+/// Declared value sets, and the two ways one can quietly become wrong.
+///
+/// `fields.yaml` may declare `choices` for a field, and both interfaces offer
+/// exactly that list — the CLI interview and the console's enrolment wizard. Two
+/// things can go wrong with a list written in one file about facts that live in
+/// another, and both produce a record that passes here and is refused later:
+///
+/// - **A default outside its own set.** The interview writes it when the operator
+///   presses return, so every record made that way is wrong from the first field.
+/// - **`engagement.stage` disagreeing with the lifecycle.** The stages are declared
+///   in `lifecycle.yaml`, which is their home; the copy in `fields.yaml` exists so
+///   the question can be offered as a list. A stage offered here that the lifecycle
+///   does not know is a record that no stage gate will ever match.
+fn declared_choices(items: &mut Vec<Finding>, registry: &Registry) {
+    choice_findings(
+        &registry.catalogue.fields,
+        &registry.lifecycle.stages,
+        items,
+    );
+}
+
+/// The same, over just the two lists it reads.
+///
+/// Split out so it can be tested. Building a whole `Registry` needs all seven
+/// files, and a check nobody can exercise cheaply is a check that goes untested —
+/// which is the failure this file exists to catch, in this file.
+fn choice_findings(
+    fields: &[crate::domain::personnel::Field],
+    stages: &[crate::domain::lifecycle::Stage],
+    items: &mut Vec<Finding>,
+) {
+    for f in fields {
+        if let Some(d) = &f.default
+            && !f.choices.is_empty()
+            && !f.choices.contains(d)
+        {
+            err(
+                items,
+                format!(
+                    "fields.yaml: {} defaults to {d:?}, which is not one of its declared \
+                     choices ({}) — the interview writes that default on a blank answer",
+                    f.path,
+                    f.choices.join(", ")
+                ),
+            );
+        }
+    }
+
+    let Some(field) = fields.iter().find(|f| f.path == "engagement.stage") else {
+        return;
+    };
+    if field.choices.is_empty() {
+        return;
+    }
+    let declared: BTreeSet<&str> = stages.iter().map(|s| s.name.as_str()).collect();
+    let offered: BTreeSet<&str> = field.choices.iter().map(String::as_str).collect();
+    for extra in offered.difference(&declared) {
+        err(
+            items,
+            format!(
+                "fields.yaml: engagement.stage offers {extra:?}, which lifecycle.yaml \
+                 does not declare — no stage gate would ever match it"
+            ),
+        );
+    }
+    for missing in declared.difference(&offered) {
+        warn(
+            items,
+            format!(
+                "fields.yaml: engagement.stage does not offer {missing:?}, which \
+                 lifecycle.yaml declares — a record cannot be opened at that stage"
+            ),
+        );
+    }
+}
+
 fn catalogue(items: &mut Vec<Finding>, registry: &Registry) {
+    declared_choices(items, registry);
+
     let by_path = match registry.catalogue.fields_by_path() {
         Ok(m) => m,
         Err(e) => {
@@ -616,4 +694,105 @@ fn walk(dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
     }
     out.sort();
     Ok(out)
+}
+
+#[cfg(test)]
+// A test that cannot assert an expected value is not a test. The lint stays
+// denied for the crate; only assertions inside test modules are exempt.
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::choice_findings;
+    use crate::domain::lifecycle::Stage;
+    use crate::domain::personnel::{Field, FieldFile};
+
+    fn fields(yaml: &str) -> Vec<Field> {
+        let parsed: FieldFile = serde_yaml::from_str(yaml).expect("fields parse");
+        parsed.fields
+    }
+
+    fn stages(names: &[&str]) -> Vec<Stage> {
+        names
+            .iter()
+            .map(|n| {
+                serde_yaml::from_str::<Stage>(&format!(
+                    "stage: {n}\ndescription: d\nowes: []\n"
+                ))
+                .expect("stage parses")
+            })
+            .collect()
+    }
+
+    fn run(yaml: &str, declared: &[&str]) -> Vec<String> {
+        let mut items = Vec::new();
+        choice_findings(&fields(yaml), &stages(declared), &mut items);
+        items.into_iter().map(|f| f.message).collect()
+    }
+
+    #[test]
+    fn a_default_outside_its_own_choices_is_blocking() {
+        // The interview writes the default when the operator presses return, so
+        // this makes every record opened that way wrong from the first field.
+        let found = run(
+            "fields:\n  - {path: a.b, group: g, store: personnel, purpose: p, \
+             choices: ['true', 'false'], default: 'maybe'}\n",
+            &[],
+        );
+        assert_eq!(found.len(), 1, "expected exactly one finding: {found:?}");
+        assert!(found[0].contains("a.b"), "{}", found[0]);
+        assert!(found[0].contains("maybe"), "{}", found[0]);
+    }
+
+    #[test]
+    fn a_default_with_no_declared_set_is_fine() {
+        // Most fields are free text with a sensible starting value —
+        // `identity.pronouns` defaults to they/them and accepts anything.
+        let found = run(
+            "fields:\n  - {path: a.b, group: g, store: personnel, purpose: p, default: 'x'}\n",
+            &[],
+        );
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_stage_the_lifecycle_does_not_declare_is_blocking() {
+        // Offering it opens records at a stage no gate will ever match, and the
+        // person is stuck there with no way forward that any rule describes.
+        let found = run(
+            "fields:\n  - {path: engagement.stage, group: engagement, store: personnel, \
+             purpose: p, choices: [offered, banished]}\n",
+            &["offered", "active"],
+        );
+        // The missing `active` is a warning, so both are reported.
+        assert!(
+            found.iter().any(|m| m.contains("banished") && m.contains("lifecycle.yaml")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_stage_the_lifecycle_declares_but_nobody_offers_is_only_a_warning() {
+        // Not being able to OPEN a record at `alumni` is a reasonable thing to
+        // decide on purpose, unlike offering one that does not exist.
+        let mut items = Vec::new();
+        choice_findings(
+            &fields(
+                "fields:\n  - {path: engagement.stage, group: engagement, store: personnel, \
+                 purpose: p, choices: [offered]}\n",
+            ),
+            &stages(&["offered", "alumni"]),
+            &mut items,
+        );
+        assert_eq!(items.len(), 1, "{items:?}");
+        assert!(!items[0].blocking, "{items:?}");
+    }
+
+    #[test]
+    fn the_two_lists_agreeing_reports_nothing() {
+        let found = run(
+            "fields:\n  - {path: engagement.stage, group: engagement, store: personnel, \
+             purpose: p, choices: [offered, active], default: offered}\n",
+            &["offered", "active"],
+        );
+        assert!(found.is_empty(), "{found:?}");
+    }
 }

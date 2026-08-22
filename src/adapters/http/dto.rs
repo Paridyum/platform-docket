@@ -463,6 +463,23 @@ pub struct Question {
     pub purpose: String,
     /// Whether the class requires an answer.
     pub required: bool,
+    /// Every value this field accepts, or empty for free text.
+    ///
+    /// Sent so a console can offer the same closed list the CLI interview offers.
+    /// It is empty for most fields and that is not an omission: a name, an
+    /// institution and an address have no enumerable set, and a client that
+    /// invented one would stop an operator recording the truth.
+    ///
+    /// A client MUST NOT infer a set from a field's name. `engagement.start_date`
+    /// looks like a date and this is deliberately silent about that, because
+    /// whether "on joining" is a valid answer belongs here and not to a browser.
+    pub choices: Vec<String>,
+    /// A safe starting value, where the registry declares one.
+    ///
+    /// The same default the interview offers on a blank answer. A client may
+    /// prefill it; it is not a value the operator has agreed to, so a client that
+    /// prefills MUST let it be changed and cleared.
+    pub default: Option<String>,
 }
 
 impl From<&crate::domain::personnel::Question> for Question {
@@ -472,6 +489,8 @@ impl From<&crate::domain::personnel::Question> for Question {
             group: q.group.clone(),
             purpose: q.purpose.clone(),
             required: q.required,
+            choices: q.choices.clone(),
+            default: q.default.clone(),
         }
     }
 }

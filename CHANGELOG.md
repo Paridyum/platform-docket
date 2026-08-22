@@ -7,6 +7,31 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`fields.yaml` declares `choices` and `default` per field**, and both interfaces
+  offer them. A field whose declared set is exactly `true` and `false` is a flag, which
+  is how the record decides to write a bare boolean rather than the string `"true"`.
+
+  These two facts already existed — as `is_flag` and `default_for`, two hardcoded
+  `match` arms in `application::enrol`. They were a second statement of the registry's
+  vocabulary and only the CLI could read them: `docket new --interactive` offered a
+  default and a true/false answer, while the console's enrolment wizard, generated from
+  the same catalogue, rendered a free-text box for the same field. Both matches are gone
+  and both interfaces read the registry, so they cannot drift again.
+
+  `GET /api/form/{class}` sends both. It stays silent about types it could only infer —
+  `engagement.start_date` looks like a date and the API says nothing, because whether
+  "on joining" is a valid answer belongs here and not to a browser.
+
+- **`docket check` refuses two ways a declared set goes quietly wrong.** A `default`
+  outside its own `choices` is blocking — the interview writes it on a blank answer, so
+  every record opened that way would be wrong from the first field. And
+  `engagement.stage` offering a stage `lifecycle.yaml` does not declare is blocking,
+  because a record opened at it would sit at a stage no gate can ever match. The reverse
+  — a declared stage nobody offers — is a warning, since not being able to open a record
+  at `alumni` is a reasonable thing to decide on purpose.
+
+### Added
+
 - **Write routes on `docket serve`,** so the console can do the job rather than
   only describe it: `POST /api/person` (enrol), `/onboard`, `/sign`, `/advance`,
   plus `GET /api/form/{class}` for the enrolment questions.
