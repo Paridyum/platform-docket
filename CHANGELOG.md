@@ -7,6 +7,16 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`scripts/gates.sh`** — fmt, clippy, the test suite and `docket check`, each exit code
+  reported separately, nothing piped.
+
+  Not a convenience. Running the four by hand is how a failing gate gets recorded as
+  passing: `cargo fmt --check 2>&1 | head -20` followed by reading `$?` returns the exit
+  code of `head`, so a visible diff reads as clean. That happened twice in one day, both
+  times by someone who had already written the rule against it down. A lesson in a document
+  does not install itself. Confirmed to fail on the exact defect that slipped through, and
+  to pass once it was fixed.
+
 - **`/api/health` carries a wire contract version, and `scripts/serve.sh` cannot start a
   stale binary.** Two halves of one fix.
 

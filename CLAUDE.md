@@ -45,10 +45,21 @@ a render.
 
 ## Before you claim it works
 
-    cargo test && cargo clippy --all-targets && cargo fmt --check && cargo run -- check
+    scripts/gates.sh
+
+Runs fmt, clippy, the test suite and `docket check`, and reports each exit code
+separately. Use it rather than the four commands by hand.
+
+**The reason is not convenience.** Running them by hand is how a failing gate gets
+recorded as passing: `cargo fmt --check 2>&1 | head -20` followed by reading `$?`
+returns the exit code of `head`, so a visible diff reads as clean. That happened
+twice in one day, both times by someone who had written the rule against it down.
+Nothing in `gates.sh` is piped, so there is no exit code to lose.
 
 `docket check` is the one that catches registry and record problems; the Rust
-gate alone will not.
+gate alone will not. It exits 0 on warnings, so `gates.sh` reports the warning
+count separately — a registry that has started warning is worth looking at even
+though nothing is broken yet.
 
 ## What this repository does not do
 
