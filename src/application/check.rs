@@ -714,10 +714,8 @@ mod tests {
         names
             .iter()
             .map(|n| {
-                serde_yaml::from_str::<Stage>(&format!(
-                    "stage: {n}\ndescription: d\nowes: []\n"
-                ))
-                .expect("stage parses")
+                serde_yaml::from_str::<Stage>(&format!("stage: {n}\ndescription: d\nowes: []\n"))
+                    .expect("stage parses")
             })
             .collect()
     }
@@ -764,7 +762,9 @@ mod tests {
         );
         // The missing `active` is a warning, so both are reported.
         assert!(
-            found.iter().any(|m| m.contains("banished") && m.contains("lifecycle.yaml")),
+            found
+                .iter()
+                .any(|m| m.contains("banished") && m.contains("lifecycle.yaml")),
             "{found:?}"
         );
     }
