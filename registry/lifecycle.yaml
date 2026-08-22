@@ -31,6 +31,7 @@ documents:
     kind: issued
     signed_by: [ceo, cto]
     retention: personnel
+    on_request: true
     note: >
       Generated from the register, so it cannot describe a pack it was not
       built from. Issued by `docket pack`, not owed by a stage: it describes
@@ -43,12 +44,14 @@ documents:
     kind: issued
     signed_by: [director]
     retention: contract
+    on_request: true
     note: >
       Not part of the internship lifecycle -- it is a general letter about
       Paridyum's status, addressed to whoever asks. It is declared here so
-      it can be issued with a real serial and land in the register, and it
-      is owed by no stage, which `check` reports as a warning rather than an
-      error. That warning is correct and is the intended state.
+      it can be issued with a real serial and land in the register.
+      `on_request` is that fact written down: it used to be left to `check`
+      to report as a warning every run, which made the warning list
+      permanently non-empty and therefore unread.
 
   - code: AGR
     id: internship-agreement
@@ -166,13 +169,18 @@ documents:
     template: templates/form/publicity-consent.tex
     kind: collected
     retention: personnel
+    on_request: true
     note: >
-      OWED BY NO STAGE, deliberately, and `check` reports that as a warning
-      which is the intended state. Using a person's name or photograph in
-      marketing is not covered by the DPDP s7 employment legitimate use, so it
-      needs specific consent -- and a consent that a lifecycle stage REQUIRES
-      is not freely given. Offer it; never demand it. Issue it on request with
-      `docket issue <slug> PUB`.
+      OWED BY NO STAGE, deliberately, and `on_request` is how that is now
+      declared rather than reported as a warning every run. Using a person's
+      name or photograph in marketing is not covered by the DPDP s7 employment
+      legitimate use, so it needs specific consent -- and a consent that a
+      lifecycle stage REQUIRES is not freely given. Offer it; never demand it.
+      Issue it on request with `docket issue <slug> PUB`.
+
+      `check` now REFUSES a document that is both `on_request` and owed by a
+      stage, which is the mistake that would quietly turn this consent into a
+      demand.
 
   - code: EXF
     id: exit-feedback

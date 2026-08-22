@@ -7,6 +7,21 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **A document can declare itself `on_request`**, meaning it is issued when somebody asks
+  rather than owed by a lifecycle stage. `docket check` no longer warns about one, and now
+  **refuses** a document that is both `on_request` and owed by a stage.
+
+  PCK, LTR and PUB were each already carrying a `note` saying the warning was intended — so
+  `check` reported three warnings on every clean run, for years of runs to come. A warning
+  list that is never empty is one an operator learns to scroll past, which is exactly how the
+  next genuine orphan would have hidden among the three known ones. It reports 0 errors and
+  **0 warnings** now.
+
+  The new refusal is a real control, not tidiness: PUB is consent to use a person's name or
+  photograph, which the DPDP s7 employment legitimate use does not cover. A consent a stage
+  *requires* is not freely given, so a stage quietly coming to owe it is the mistake worth
+  blocking.
+
 - **`fields.yaml` declares `choices` and `default` per field**, and both interfaces
   offer them. A field whose declared set is exactly `true` and `false` is a flag, which
   is how the record decides to write a bare boolean rather than the string `"true"`.

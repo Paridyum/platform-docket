@@ -160,8 +160,20 @@ fn documents(
 /// Every stage owes documents that exist, and every document is owed by some
 /// stage -- an unowed document can never be issued by `onboard`.
 fn stages(items: &mut Vec<Finding>, registry: &Registry, by_code: &BTreeMap<&str, &Document>) {
+    stage_findings(items, &registry.lifecycle, by_code);
+}
+
+/// The same, over just the lifecycle it reads.
+///
+/// Split out so it can be tested. Building a whole `Registry` needs all seven
+/// files, and a check nobody can exercise cheaply is a check that goes untested.
+fn stage_findings(
+    items: &mut Vec<Finding>,
+    lifecycle: &crate::domain::lifecycle::Lifecycle,
+    by_code: &BTreeMap<&str, &Document>,
+) {
     let mut owed: BTreeSet<&str> = BTreeSet::new();
-    for stage in &registry.lifecycle.stages {
+    for stage in &lifecycle.stages {
         for code in &stage.owes {
             if !by_code.contains_key(code.as_str()) {
                 err(
@@ -175,7 +187,21 @@ fn stages(items: &mut Vec<Finding>, registry: &Registry, by_code: &BTreeMap<&str
             owed.insert(code.as_str());
         }
     }
-    for code in by_code.keys() {
+    for (code, doc) in by_code {
+        // Declared on-request: not an orphan, and saying so every run would teach
+        // an operator to scroll past the list that the next real orphan appears in.
+        if doc.on_request {
+            if owed.contains(code) {
+                err(
+                    items,
+                    format!(
+                        "{code}: declared on_request but a stage also owes it — \
+                         it cannot be both offered and required"
+                    ),
+                );
+            }
+            continue;
+        }
         if !owed.contains(code) {
             warn(items, format!("{code}: declared but owed by no stage"));
         }
@@ -794,5 +820,124 @@ mod tests {
             &["offered", "active"],
         );
         assert!(found.is_empty(), "{found:?}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod on_request_tests {
+    use crate::domain::lifecycle::Lifecycle;
+
+    /// The document/stage halves of `lifecycle.yaml`, parsed as the real thing.
+    fn lifecycle(yaml: &str) -> Lifecycle {
+        serde_yaml::from_str(yaml).expect("lifecycle parses")
+    }
+
+    const OWED: &str = "
+documents:
+  - code: NDA
+    id: nda
+    title: t
+    template: x.tex
+    kind: issued
+    retention: personnel
+stages:
+  - stage: preboarding
+    description: d
+    owes: [NDA]
+";
+
+    const ORPHAN: &str = "
+documents:
+  - code: NDA
+    id: nda
+    title: t
+    template: x.tex
+    kind: issued
+    retention: personnel
+stages:
+  - stage: preboarding
+    description: d
+    owes: []
+";
+
+    const ON_REQUEST: &str = "
+documents:
+  - code: PUB
+    id: pub
+    title: t
+    template: x.tex
+    kind: collected
+    retention: personnel
+    on_request: true
+stages:
+  - stage: preboarding
+    description: d
+    owes: []
+";
+
+    const BOTH: &str = "
+documents:
+  - code: PUB
+    id: pub
+    title: t
+    template: x.tex
+    kind: collected
+    retention: personnel
+    on_request: true
+stages:
+  - stage: preboarding
+    description: d
+    owes: [PUB]
+";
+
+    /// `stages()` needs a `by_code`; both come from the same parsed lifecycle.
+    fn findings(yaml: &str) -> Vec<super::Finding> {
+        let life = lifecycle(yaml);
+        let by_code = life
+            .documents
+            .iter()
+            .map(|d| (d.code.as_str(), d))
+            .collect();
+        let mut items = Vec::new();
+        super::stage_findings(&mut items, &life, &by_code);
+        items
+    }
+
+    #[test]
+    fn a_document_no_stage_owes_is_still_reported() {
+        // The warning has to keep working. Declaring the three intentional ones
+        // was only worth doing if a real orphan still shows up.
+        let found = findings(ORPHAN);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].message.contains("NDA"), "{found:?}");
+        assert!(!found[0].blocking, "{found:?}");
+    }
+
+    #[test]
+    fn a_document_declared_on_request_is_not_an_orphan() {
+        // Previously this warned on every run, which made the warning list
+        // permanently non-empty and therefore unread.
+        assert!(
+            findings(ON_REQUEST).is_empty(),
+            "{:?}",
+            findings(ON_REQUEST)
+        );
+    }
+
+    #[test]
+    fn a_document_owed_by_a_stage_is_not_reported() {
+        assert!(findings(OWED).is_empty(), "{:?}", findings(OWED));
+    }
+
+    #[test]
+    fn being_both_offered_and_required_is_blocking() {
+        // The mistake that would quietly turn publicity consent into a demand.
+        // A consent a stage requires is not freely given, so this is not a
+        // tidiness warning — it is the control.
+        let found = findings(BOTH);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].blocking, "{found:?}");
+        assert!(found[0].message.contains("PUB"), "{found:?}");
     }
 }

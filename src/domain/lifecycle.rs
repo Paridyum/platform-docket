@@ -66,6 +66,20 @@ pub struct Document {
     #[serde(default)]
     /// Condition under which this document applies at all.
     pub required_if: Option<Condition>,
+    /// Issued when someone asks for it, rather than owed by a lifecycle stage.
+    ///
+    /// Three documents are like this and each for a different reason: a pack
+    /// cover sheet describes a pack rather than being part of one, a business
+    /// letter is not about an internship at all, and publicity consent must not
+    /// be demanded — a consent a stage REQUIRES is not freely given.
+    ///
+    /// Declared rather than left to `check` to warn about forever. The warning
+    /// "declared but owed by no stage" is right for a document nobody wired up and
+    /// wrong for these, and a warning that is always present is one an operator
+    /// learns to scroll past — which is how the next genuine orphan hides among
+    /// the three known ones.
+    #[serde(default)]
+    pub on_request: bool,
 }
 
 /// One stage of the internship, and what it adds to the obligations.
