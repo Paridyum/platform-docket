@@ -194,8 +194,13 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
         (Vec::new(), Vec::new())
     } else {
         let person = store::person(ctx.paths, slug)?;
-        let gates =
-            personnel::unmet_gates(ctx.paths, ctx.registry, &dossier.identity, person.stage())?;
+        let gates = personnel::unmet_gates(
+            ctx.paths,
+            ctx.registry,
+            &dossier.identity,
+            person.stage(),
+            person.class(),
+        )?;
         let steps = next::steps(ctx.paths, ctx.registry, slug)?;
         (steps, gates)
     };

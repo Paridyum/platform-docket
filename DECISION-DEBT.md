@@ -723,3 +723,64 @@ empty `PATH`.
 a skip condition inferred from a symptom rather than from the thing being
 detected will eventually swallow a real failure. D-35 remains the underlying gap:
 CI still does not exercise rendering at all.
+
+
+## D-46 — Officer confidentiality prose exists twice, and nothing checks that it agrees
+
+`nda-officer.tex` is an adaptation of `nda.tex`, not a generalisation of it. RFC-0042
+decision 2 records why: the intern NDA says "Intern" sixteen times and "internship" six,
+and "the internship" is the arrangement rather than the party, so making one template serve
+both would have meant editing the operative text of a document interns have already signed.
+
+**The debt is that a change to the confidentiality terms is now a change to make twice**,
+and no test compares them. The obvious fix — diffing the two templates — fails immediately,
+because they are supposed to differ. A real fix probably factors the clause bodies into
+shared includes with the party term as a macro, which is a bigger change to live legal text
+than this work warranted.
+
+**Also open: `COC`, `ISP` and `DPN` do not exist as officer documents.** An officer holds
+the most access in the estate and has agreed to no acceptable-use policy. They want drafting
+as officer documents in their own right, not as edits to the intern set.
+
+## D-47 — Nothing validates `engagement.job_id` against a posting that exists
+
+`engagement.job_id` records which posting an engagement answered. Nothing resolves it:
+`tool-docket` does not read `web-paridyum`, by design — the repositories have no shared
+build under ADR-0001, and a document issued today must render identically in 2036 when the
+posting file is long gone.
+
+The consequence, stated in RFC-0041 rather than hidden: **a typo in `job_id` is a wrong
+recorded fact and nothing complains.** A weaker check is possible sooner — a script in the
+console reading both working copies — and was not built, because a check that only runs
+where both repositories happen to be cloned reports absence as failure.
+
+Closes when postings and person records live in one store, which is ADR-0063 Phase B and
+blocked on persistence.
+
+## D-49 — Nothing checks that a class template is not gitignored
+
+`people/*` is ignored so personal data never enters git history, with one negation per template.
+`_TEMPLATE-officer.yaml` was written and silently ignored: `docket new <slug> officer` then falls
+back to `_TEMPLATE.yaml` on a fresh clone, which produces a record carrying `education` — a field
+the officer class forbids — and `docket check` rejects it as over-collection the moment it is
+written. The failure reads as a product defect rather than as a missing file.
+
+Caught by running `git check-ignore` while reviewing the diff, which is not a process. A glob
+negation was considered and rejected: `!people/_TEMPLATE*.yaml` would also admit anything a person
+happened to name that way, and this directory is the one place in the repository where a false
+negative is personal data in git history. So the fix is per-template lines, and the gap is that
+nothing asserts every class in `person-classes.yaml` with a template has one.
+
+## D-48 — Nothing detects a stale `team.json`
+
+`docket team` exports the published officer register for `web-paridyum` to commit. The two
+repositories have no shared build (ADR-0001), so if somebody edits `signatories.yaml` or
+`team.yaml` and does not re-export, the public page keeps naming the old office and nothing
+complains.
+
+The web side asserts the export's shape — names upper-case as documents print them, a summary in
+both locales, and that no officer appears in their own countersignature list. **It cannot assert
+freshness**, because freshness is a fact about a file in another repository.
+
+Closes with a check that runs where both are cloned, or with an export step in whatever
+publishes the site. Not with a test on either side alone.

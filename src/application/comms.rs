@@ -182,7 +182,9 @@ pub fn due(paths: &Paths, registry: &Registry, slug: &str) -> Result<Vec<Rendere
 
     // Cumulative, like the documents: reaching `active` does not mean the
     // preboarding messages were sent.
-    let reached = registry.lifecycle.owed_upto(person.stage())?;
+    let reached = registry
+        .lifecycle
+        .owed_upto_for(person.stage(), Some(person.class()))?;
     let _ = reached;
     let stages: Vec<&str> = registry
         .lifecycle

@@ -66,6 +66,18 @@ pub struct Entry {
     /// The engine's reported version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_version: Option<String>,
+    /// Signatory ids who signed for Paridyum, as resolved at issue.
+    ///
+    /// RECORDED BECAUSE IT CAN BE SUBSTITUTED. An officer's documents route to the
+    /// Director, and where the Director is the SUBJECT the routing falls through to
+    /// another signatory so that nobody signs their own document. Who actually signed
+    /// is therefore not derivable from `lifecycle.yaml` alone, and a register that
+    /// cannot answer "who signed this" for a document it issued is not doing its job.
+    ///
+    /// `skip_serializing_if` so entries sealed before this field existed keep their
+    /// exact bytes, and therefore their digests.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signed_by: Vec<String>,
     /// Digest of the entry before this one.
     pub prev_sha256: String,
     /// Digest of this entry, sealing it onto the chain.
@@ -163,6 +175,7 @@ mod tests {
             texlive: "2026".to_owned(),
             engine: None,
             engine_version: None,
+            signed_by: vec!["cto".to_owned()],
             prev_sha256: String::new(),
             entry_sha256: String::new(),
         }

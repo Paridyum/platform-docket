@@ -12,4 +12,5 @@ pub mod personnel;
 pub mod roster;
 pub mod sign;
 pub mod status;
+pub mod team;
 pub mod verify;

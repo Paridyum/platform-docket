@@ -1,8 +1,13 @@
 # tool-docket
 
-Paridyum's internship document system. Fourteen documents, one typesetting
+Paridyum's people-document system. Twenty-three documents, one typesetting
 authority, one home for every fact, and a register that makes an issued
 document verifiable years later.
+
+Mostly an internship system, because that is who Paridyum engages — but a
+document is declared for the person **classes** it applies to, so a director
+is not issued a Certificate of Internship and an officer is not asked which
+university they attended.
 
 Rust, class `tool`, binary `docket` (C-0007). Requires TeX Live with
 `pdflatex` on `PATH`.
@@ -137,14 +142,14 @@ template hard-codes the address, the email or an officer's name.
 | `person-classes.yaml` | intern / employee / contractor: what each may hold, must hold, and must not |
 | `fields.yaml` | every field, its purpose, its store. 54 of them |
 | `signatories.yaml` | who may sign, and under what designation |
-| `lifecycle.yaml` | the 13 documents, and what each stage owes |
+| `lifecycle.yaml` | the 23 documents, which classes each applies to, and what each stage owes |
 | `retention.yaml` | how long each class is kept, **and why** |
 
-Change the office address in `org.yaml` and every one of the fourteen
+Change the office address in `org.yaml` and every one of the twenty-three
 documents picks it up on the next build. That was the point: the address
 used to appear verbatim in eleven files.
 
-## The 14 documents
+## The documents
 
 Ten are transcribed from the `.docx` originals, which are the source of
 truth for content — the extractor used for that migration is archived with
@@ -156,6 +161,15 @@ than something the production system does. Four are additions.
 **Policies** — Information Security & Acceptable Use, POSH *(new)*, Data Protection Notice *(new)*
 **Forms** — Intern Onboarding, Emergency Contact, Equipment Acknowledgement, Offboarding Checklist
 **Certificates** — Certificate of Internship, Letter of Reference
+**Officer documents** — Non-Disclosure Agreement *(new)*, IP Assignment *(new)*
+
+The last two are separate files rather than the intern ones generalised. The
+intern NDA says "Intern" sixteen times and "internship" six, and "the
+internship" is the arrangement rather than the party — one template serving
+both would have meant editing the operative text of a document interns have
+already signed. RFC-0042 records the trade and `DECISION-DEBT.md` D-46 records
+what it costs: the confidentiality terms now exist twice and nothing checks
+that they agree.
 
 Forms are dual-purpose: fields the person record knows are pre-filled,
 fields it does not are ruled lines to complete by hand. Nobody retypes what

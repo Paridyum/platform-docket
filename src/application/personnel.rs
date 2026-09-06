@@ -64,7 +64,18 @@ pub fn create(
     let created_on = clock::to_iso(date)?;
 
     if !record_exists {
-        let template = paths.people.join("_TEMPLATE.yaml");
+        // A CLASS-SPECIFIC TEMPLATE WHERE ONE EXISTS. `_TEMPLATE.yaml` is the intern
+        // record: it carries education, a guardian block and certificate content, all
+        // of which the officer class forbids or does not permit. Copying it for an
+        // officer produces a record `docket check` rejects as over-collection the
+        // moment it is written, which reads as a product defect rather than as the
+        // registry doing its job.
+        let specific = paths.people.join(format!("_TEMPLATE-{class_name}.yaml"));
+        let template = if specific.exists() {
+            specific
+        } else {
+            paths.people.join("_TEMPLATE.yaml")
+        };
         let body = fs::read_to_string(&template)
             .with_context(|| format!("reading {}", template.display()))?;
         fs::create_dir_all(&paths.people)
@@ -333,7 +344,7 @@ pub fn advance(
     };
     let to = next.name.clone();
 
-    let gates = unmet_gates(paths, registry, &record, &from)?;
+    let gates = unmet_gates(paths, registry, &record, &from, person.class())?;
     if !gates.is_empty() && !force {
         return Ok((from, to, gates));
     }
@@ -473,6 +484,7 @@ pub fn unmet_gates(
     registry: &Registry,
     record: &Record,
     stage: &str,
+    class: &str,
 ) -> Result<Vec<Gate>> {
     let Some(stage) = registry.lifecycle.stage(stage) else {
         return Ok(Vec::new());
@@ -483,6 +495,16 @@ pub fn unmet_gates(
     let mut out = Vec::new();
 
     for code in &stage.requires_signed {
+        // THE GATE IS NARROWED TO THE CLASS, and it has to be. `preboarding` requires
+        // the internship agreement and the intern IP assignment executed; an officer is
+        // never issued either, so an unfiltered gate would refuse to advance them for
+        // want of a document nothing will ever produce.
+        if by_code
+            .get(code.as_str())
+            .is_some_and(|d| !d.applies_to(class))
+        {
+            continue;
+        }
         let title = by_code
             .get(code.as_str())
             .map_or_else(|| code.clone(), |d| d.title.clone());

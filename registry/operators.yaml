@@ -24,6 +24,11 @@ operators:
     role: Chief Executive Officer
     active: true
 
+  - id: aditya
+    name: ADITYA SHRIVASTAVA
+    role: Chief Operations Officer
+    active: true
+
   - id: priyanshu
     name: PRIYANSHU SHARMA
     role: Director

@@ -142,6 +142,68 @@ To check a copy someone sent you rather than the stored one, add
 
 ---
 
+## Task: publish the officers page
+
+`registry/team.yaml` holds the public summary for each officer and nothing else — the name and
+designation come from `signatories.yaml`, and `docket team` joins them. Edit the summary here,
+then export:
+
+    docket team > ../../web/web-paridyum/team.json
+
+Then commit that file **in `web-paridyum`**. It is not read across repositories: there is no
+shared build, and a public page reading this repository at build time would render differently
+depending on which machine built it.
+
+**Re-export after any change to `signatories.yaml`.** Nothing detects a stale `team.json` —
+recorded as D-48 rather than solved.
+
+| What you see | What it means |
+| --- | --- |
+| `team.yaml names "x", which signatories.yaml does not declare` | The join key is wrong, or the officer was never recorded. A page must not name an office the company does not hold. |
+| `team.yaml publishes "x", who is no longer an active signatory` | They ceased to hold office. Set `public: false` rather than leaving them on the site — and do not delete the signatory entry, which documents already issued name. |
+
+## Task: record an officer, and issue what an officer owes
+
+RFC-0042. An officer is **appointed, not engaged by offer**, so this is not the intern
+sequence with a different word in it. Four documents fewer, one signatory, and two of the
+usual steps do not exist.
+
+    export DOCKET_OPERATOR=rohan
+    docket new aditya-shrivastava officer      # copies people/_TEMPLATE-officer.yaml
+    $EDITOR people/aditya-shrivastava.yaml     # replace every FILL-ME
+    docket check                               # catches over-collection and placeholders
+    docket next aditya-shrivastava             # says what is owed: NDO, IPO
+    docket onboard aditya-shrivastava
+    docket pack aditya-shrivastava
+
+**What is different, and why.**
+
+| | Intern | Officer |
+| --- | --- | --- |
+| Template | `_TEMPLATE.yaml` | `_TEMPLATE-officer.yaml` — no education, no guardian |
+| Documents | 12 at preboarding | `NDO`, `IPO` |
+| Signed for Paridyum by | CEO **and** CTO | the **Director** alone |
+| Offer, institution letter, certificate | yes | **never issued** |
+| `end_date` | required | not required — an office is held until vacated |
+
+**Failures you will actually hit.**
+
+| What you see | What it means |
+| --- | --- |
+| `CRT: not issued to a person of class "officer"` | Working as designed. A Certificate of Internship names an internship; the registry declares it `classes: [intern]`. |
+| `... would be signing their own document` | The Director's own `NDO`/`IPO` route to him as signatory. Add `signed_by_class` for the document, or issue his under the CEO. **Do not force it** — a document signed by its own subject is evidence of nothing. |
+| `education.institution: not permitted for class officer` | You filled in `_TEMPLATE.yaml` rather than the officer one. Delete the block; the officer class forbids it, and collecting it is over-collection under DPDP purpose limitation. |
+| `docket advance` refuses | Check the gate list. It is narrowed to the class, so an officer is gated on `NDO` and `IPO` only. |
+
+**Before adding a new officer to `signatories.yaml`.** That file decides who may bind
+Paridyum — governance-altering under C-0004, and it needs a **dated instrument** (a
+directors' resolution, or founders' written consent while there is no CIN) recorded in
+`instrument`, with `appointed_on` set. **Check the legal-name spelling against the
+instrument**: this file recorded a name in error once and it had to be removed. When an
+officer ceases, set `active: false` and `ceased_on` — never delete the entry, because
+documents already issued name their signatory, and a register that cannot say who was an
+officer in 2026 cannot verify a document issued in 2026.
+
 ## Task: an intern is hired as an employee
 
 **When:** an internship ends and the same person joins in another capacity.

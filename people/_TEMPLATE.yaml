@@ -27,6 +27,12 @@ engagement:
   class: intern                          # intern | employee | contractor
   stage: preboarding                     # offered | preboarding | active | offboarding | alumni
   role: FILL-ME
+  # Optional. The id of the posting this person answered, as published at
+  # /careers/<id> -- e.g. rust-platform-intern-2026. A posting id is frozen
+  # once published and never reused (RFC-0041), so it stays resolvable years
+  # later. Leave it out for anyone not recruited through a posting; nothing
+  # requires it and a required field here would be satisfied with a fiction.
+  # job_id: rust-platform-intern-2026
   department: Platform Engineering
   supervisor: ROHAN BATRA
   work_arrangement: Remote               # Remote | Hybrid | On-site

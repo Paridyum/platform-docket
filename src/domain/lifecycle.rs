@@ -53,6 +53,15 @@ pub struct Document {
     pub title: String,
     /// Path to the template, from the root.
     pub template: String,
+    /// Person classes this document applies to.
+    ///
+    /// WRITTEN OUT EXPLICITLY IN THE REGISTRY, never left to a default. Empty means
+    /// every class, which is the backwards-compatible reading and NOT the one the
+    /// registry relies on: an officer is not offered a position, has no guardian and
+    /// has no institution to confirm, and several templates say "Intern" in their body
+    /// text. A document owed to the wrong class produces a document that is false.
+    #[serde(default)]
+    pub classes: Vec<String>,
     /// How the document is handled.
     pub kind: Kind,
     /// Retention class name.
@@ -60,6 +69,14 @@ pub struct Document {
     #[serde(default)]
     /// Signatory ids who sign for Paridyum.
     pub signed_by: Vec<String>,
+    /// Signatories for a particular person class, where they differ.
+    ///
+    /// RFC-0042 decision 4: an officer's documents are executed by the Director, not by
+    /// the CEO/CTO pair, so that no document is signed by its own subject. Keyed by
+    /// class because who signs depends on who the document is ABOUT, which `signed_by`
+    /// alone cannot express.
+    #[serde(default)]
+    pub signed_by_class: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     /// Who countersigns, where anyone does.
     pub countersigned_by: Option<String>,
@@ -109,6 +126,27 @@ pub struct Lifecycle {
 }
 
 impl Document {
+    /// Whether this document is owed to someone of `class` at all.
+    ///
+    /// An empty `classes` means every class. That is the permissive reading, chosen so
+    /// that a document added without the field keeps working rather than silently
+    /// disappearing from everyone's obligations — the failure that is hardest to see.
+    #[must_use]
+    pub fn applies_to(&self, class: &str) -> bool {
+        self.classes.is_empty() || self.classes.iter().any(|c| c == class)
+    }
+
+    /// Who signs this document for Paridyum, given who it is about.
+    ///
+    /// Falls back to `signed_by` where the class has no override, which is every
+    /// document for an intern.
+    #[must_use]
+    pub fn signatories_for(&self, class: &str) -> &[String] {
+        self.signed_by_class
+            .get(class)
+            .map_or(self.signed_by.as_slice(), Vec::as_slice)
+    }
+
     /// Whether this document is owed a signature back.
     ///
     /// True for anything both parties sign, anything collected from the
@@ -173,6 +211,18 @@ impl Lifecycle {
     /// # Errors
     /// Fails if `stage` is not declared in the registry.
     pub fn owed_upto(&self, stage: &str) -> Result<Vec<String>> {
+        self.owed_upto_for(stage, None)
+    }
+
+    /// Every document owed at `stage` and before, narrowed to a person class.
+    ///
+    /// `None` means every class, which is what callers that have no person want — the
+    /// pack manifest and `check`'s "declared but owed by no stage" sweep both reason
+    /// about the registry rather than about somebody.
+    ///
+    /// # Errors
+    /// Fails if `stage` is not declared in the registry.
+    pub fn owed_upto_for(&self, stage: &str, class: Option<&str>) -> Result<Vec<String>> {
         let Some(position) = self.stages.iter().position(|s| s.name == stage) else {
             let known: Vec<&str> = self.stages.iter().map(|s| s.name.as_str()).collect();
             bail!("unknown stage {stage:?}; registry declares {known:?}");
@@ -180,12 +230,27 @@ impl Lifecycle {
         let mut owed = Vec::new();
         for s in self.stages.iter().take(position + 1) {
             for code in &s.owes {
+                if !self.applies(code, class) {
+                    continue;
+                }
                 if !owed.contains(code) {
                     owed.push(code.clone());
                 }
             }
         }
         Ok(owed)
+    }
+
+    /// Whether `code` applies to `class`, treating an unknown code as applying.
+    ///
+    /// An undeclared code is `check`'s problem to report, not this function's to hide:
+    /// dropping it here would turn a registry error into a document quietly never owed.
+    fn applies(&self, code: &str, class: Option<&str>) -> bool {
+        let Some(class) = class else { return true };
+        self.documents
+            .iter()
+            .find(|d| d.code == code)
+            .is_none_or(|d| d.applies_to(class))
     }
 }
 

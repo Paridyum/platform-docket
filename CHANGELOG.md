@@ -7,6 +7,159 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`docket team`, and `registry/team.yaml`** — what Paridyum publishes about its officers.
+
+  Three files, three purposes: `signatories.yaml` is authority, `operators.yaml` is access,
+  `team.yaml` is disclosure. A name and a designation are NOT restated in the third — they live
+  in the first and `docket team` joins them, because the office someone holds must not be able
+  to differ between the document they sign and the page that names them. Same rule `org.yaml`
+  states for the office address, for the same reason.
+
+  Nothing in it derives from `people/`. That directory holds personal data under a stated
+  purpose per field and is gitignored so DPDP erasure stays honourable; a home address must not
+  become publishable by living in the same system as a job title. What is published is a
+  decision taken in a reviewed diff.
+
+  It emits JSON on stdout for `web-paridyum` to commit rather than being read across
+  repositories: there is no shared build (ADR-0001), and a public page reading a gitignored
+  directory at build time would render differently depending on which machine built it.
+
+  The export carries `documents_signed_by` — who countersigns each officer — computed with the
+  **same function issuance uses**, so the public page and the paper cannot disagree.
+
+- **`scripts/bootstrap-officers.sh`** — two passes, and the pause between them is the point.
+
+  Pass one opens four records and stops. It does NOT invent a date of birth or an address: the
+  template ships `FILL-ME` because it used to ship realistic values and two freshly enrolled
+  people displayed as the same person with nothing flagging it. A bootstrap that filled them in
+  to look complete would be that defect on purpose. Pass two checks, then issues — and `docket
+  issue` refuses a record still holding a placeholder, so pass two cannot quietly succeed on an
+  unfilled one.
+
+### Changed
+
+- **A document routed to its own subject is now SUBSTITUTED rather than refused.**
+
+  Officer documents route to the Director (RFC-0042 decision 4), so the Director's own routed to
+  himself and issuance refused — correct, and unhelpful, since his documents still had to exist.
+  The routed signatory is now replaced by the first active signatory in registry order who is
+  not the subject.
+
+  **Registry order rather than anything cleverer**, because the substitute must be the same
+  person every time: who signed a legal document must not depend on hash order or on how many
+  documents came before it. Refusal survives for the one case no ordering fixes — every
+  eligible signatory being the subject.
+
+  Verified end to end: the Director's own NDA renders with **RUHANI KHURANA, Chief Executive
+  Officer (CEO)** in the Paridyum signature block and PRIYANSHU SHARMA countersigning as
+  Officer. Asserted against `pdftotext` output, not the register, because the register can be
+  right while the paper is wrong and the paper is what somebody signs.
+
+- **`Entry.signed_by`** records who actually signed, since after substitution it is no longer
+  derivable from `lifecycle.yaml`. `skip_serializing_if` keeps existing entries byte-identical,
+  and therefore their sealed digests.
+
+### Fixed
+
+- **`people/_TEMPLATE-officer.yaml` was gitignored, and would not have reached a clone.**
+  `people/*` is ignored so personal data never enters history, with one negation per template.
+  The new one had none, so `docket new <slug> officer` would have fallen back to the intern
+  template on any fresh checkout — producing a record carrying `education`, which the officer
+  class forbids, and which `docket check` rejects as over-collection the instant it is written.
+  A glob negation was rejected: this directory is the one place where a false negative is
+  personal data in git history. Recorded as D-49.
+
+- **Two intern preconditions were refusing issuance for every class.** `blockers` reported
+  `education.currently_enrolled is false` and `engagement.end_date is unset` for an officer.
+  Both are the intern class's and say so in their own message text — they exist because an
+  unpaid student placement is not employment. `person-classes.yaml` forbids `education` for an
+  officer and requires no end date, so **the refusals were unsatisfiable**: the operator could
+  not clear them without breaking a different rule.
+
+  Found by running the bootstrap, which is the argument for running it rather than reasoning
+  about it. The DPDP s9 child check deliberately stays unscoped: it is about processing a
+  child's data and says nothing about internships.
+
+- **An `officer` class, and documents scoped to the class they belong to.** RFC-0042.
+
+  Paridyum's officers were covered by nothing. CEO, CTO and Director existed in
+  `operators.yaml` and `signatories.yaml` — files that say who may run the tool and who may
+  sign for Paridyum — and nowhere else. No person record, no NDA, no IP assignment, while
+  every intern will sign all three. The people who write most of the work product were the
+  unlogged exception.
+
+  A fourth officer is being appointed, and there was no defined way to do it.
+
+  **`lifecycle.yaml` now declares `classes:` on every document**, written out explicitly
+  rather than defaulted. Before this the set was implicitly "all fourteen", which is correct
+  only while every person is an intern. `docket issue` refuses a document whose class does
+  not match: a Certificate of Internship issued to a director is a document that is FALSE,
+  and a false document carrying a serial and a register entry is worse than none.
+
+  **The stage gate is narrowed to the class too**, and it had to be. `preboarding` requires
+  the internship agreement and the intern IP assignment executed; an officer receives
+  neither, so an unfiltered gate would have refused to advance them forever, waiting on a
+  document nothing would ever produce.
+
+  **Nobody signs their own document.** `signed_by_class` routes an officer's documents to
+  the Director, and issuance is refused where subject and signatory resolve to the same
+  person — a CEO's NDA signed by that CEO is evidence of nothing. Compared on legal name,
+  because that is the string a reader of the PDF sees and the two registries share no key.
+  Asserted against the RENDERED PDF TEXT rather than the register, because the register can
+  be right while the paper is wrong.
+
+  **`\paridyumsignblock`** resolves the signature block from the document instead of the
+  template naming the CEO/CTO pair in twenty-one places. One template now serves both, and
+  `signed_by` in the registry is the single statement of who signs.
+
+- **`NDO` and `IPO` — officer NDA and IP assignment, as their own templates.**
+
+  An earlier draft of RFC-0042 said `NDA`, `COC`, `ISP` and `DPN` applied to an officer
+  "unchanged". **They do not, and implementation is what found it.** `nda.tex` says "Intern"
+  sixteen times and "internship" six; `infosec-acceptable-use.tex` says them twenty-eight
+  and eleven; `code-of-conduct.tex` states "This internship is unpaid and part-time", which
+  is false of a director. The party term is a macro away, but "the internship" is the
+  ARRANGEMENT, not the person — generalising it would edit the operative text of documents
+  interns have already signed, for the convenience of a different class of person.
+
+  So officers get their own two, and the intern set stays `classes: [intern]`. The cost is
+  two copies of confidentiality prose that will drift, and nothing checks that they agree.
+  It is the smaller cost. **`COC`, `ISP` and `DPN` for officers are not written**, and their
+  absence is recorded rather than papered over with a claim that they applied.
+
+  The assignee is PARIDYUM, not an individual — operator decision, recorded in RFC-0042 §3,
+  with §8's future-entity clause carrying it into the company on registration, the same
+  clause the Internship Agreement already relies on. Worth confirming with counsel at
+  incorporation; it is an operator decision, not a legal opinion.
+
+- **`people/_TEMPLATE-officer.yaml`**, and `docket new` picks a class-specific template
+  where one exists.
+
+  `_TEMPLATE.yaml` is the intern record: education, a guardian block, certificate content.
+  Copying it for an officer produces a record `docket check` rejects as over-collection the
+  moment it is written, which reads as a product defect rather than as the registry working.
+
+- **`engagement.job_id`** — optional, declared in `fields.yaml`, naming the published posting
+  an engagement answered. RFC-0041, implementing ADR-0063 decision 4.
+
+  It makes "who did we hire for this posting" a question with an answer. Optional and staying
+  optional: a direct approach, a returning intern or a founder has no posting to name, and a
+  required field would be satisfied with a fiction. Nothing resolves it — the repositories
+  have no shared build, and a document issued today must render identically in 2036 when the
+  posting is gone. A typo in it is caught by nothing until both live in one store, which is
+  stated in RFC-0041 rather than hidden.
+
+- **Appointment provenance on a signatory** — `appointed_on`, `instrument`, `note`.
+
+  Adding a name to `signatories.yaml` decides who may bind Paridyum: governance-altering
+  under C-0004, needing a human and a dated instrument. The evidence now travels with the
+  entry instead of in someone's memory. This file has recorded a name in error once already.
+
+- **ADITYA SHRIVASTAVA recorded as Chief Operations Officer**, in both registries.
+  **`appointed_on` and `instrument` are `null` and the entry says so.** The operator
+  confirmed the appointment; the instrument has not been produced, and the legal-name
+  spelling has not been checked against one.
+
 - **`scripts/gates.sh`** — fmt, clippy, the test suite and `docket check`, each exit code
   reported separately, nothing piped.
 

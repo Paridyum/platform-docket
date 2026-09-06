@@ -49,6 +49,17 @@ impl Person {
         self.string("engagement.stage").unwrap_or("offered")
     }
 
+    /// The class this person is engaged under. Defaults to `intern`.
+    ///
+    /// Defaulting matches `stage()` above and matches the template, where `class:
+    /// intern` is an organisation default rather than a `FILL-ME`. Every record the
+    /// system has held so far is an intern, so the default is also the safe reading:
+    /// it owes MORE documents than any other class, never fewer.
+    #[must_use]
+    pub fn class(&self) -> &str {
+        self.string("engagement.class").unwrap_or("intern")
+    }
+
     /// Whether this person is a child under the DPDP Act on a given date.
     ///
     /// The Act defines a child as anyone who has not completed eighteen
@@ -189,7 +200,19 @@ pub fn blockers(person: &Person, forum: Option<&str>) -> Vec<Blocker> {
     {
         out.push(Blocker("identity.legal_name is unset".to_owned()));
     }
-    if !person.flag("education.currently_enrolled") {
+    // THE TWO CHECKS BELOW ARE THE INTERN CLASS'S, NOT EVERY CLASS'S, and they read
+    // that way in their own message text: "the unpaid basis rests on it" and "an unpaid
+    // internship must be time-bound". Both are preconditions of the position that an
+    // unpaid student placement is not employment. An officer holds office: there is no
+    // institution behind it and no end date, which `person-classes.yaml` states by
+    // forbidding `education` for the class and not requiring `engagement.end_date`.
+    //
+    // Applied to an officer they refuse issuance for want of two facts the registry
+    // says must not be collected — a refusal the operator cannot satisfy without
+    // breaking a different rule.
+    let is_intern = person.class() == "intern";
+
+    if is_intern && !person.flag("education.currently_enrolled") {
         out.push(Blocker(
             "education.currently_enrolled is false: the unpaid basis rests on it".to_owned(),
         ));
@@ -197,6 +220,12 @@ pub fn blockers(person: &Person, forum: Option<&str>) -> Vec<Blocker> {
     // DPDP s2(f) defines a child as anyone under eighteen, and s9 requires
     // verifiable guardian consent before processing their data at all.
     // Measured at the start date, because that is when processing begins.
+    //
+    // NOT CLASS-SCOPED, unlike the two checks around it. s9 is about processing a
+    // child's personal data and says nothing about internships, so it applies to
+    // whoever the record is about. An officer under eighteen would be a surprise; a
+    // check that skipped them because the surprise seemed unlikely would be the wrong
+    // kind of assumption to encode.
     match person
         .string("engagement.start_date")
         .and_then(|d| crate::adapters::clock::parse_iso(d).ok())
@@ -215,7 +244,7 @@ pub fn blockers(person: &Person, forum: Option<&str>) -> Vec<Blocker> {
         )),
         Some(_) => {}
     }
-    if person.string("engagement.end_date").is_none() {
+    if is_intern && person.string("engagement.end_date").is_none() {
         out.push(Blocker(
             "engagement.end_date is unset: an unpaid internship must be time-bound".to_owned(),
         ));

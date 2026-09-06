@@ -153,6 +153,8 @@ enum Command {
     },
     /// Regenerate the archive index and payload manifest.
     Index,
+    /// Print the published team as JSON, for the public web surface.
+    Team,
     /// Report documents past their retention period.
     Retention {
         /// Evaluate as at this date, ISO. Defaults to today.
@@ -348,6 +350,7 @@ fn dispatch(
         ),
         Command::Emails { slug, only } => cmd_emails(paths, registry, &slug, only.as_deref()),
         Command::Index => cmd_index(paths, registry),
+        Command::Team => cmd_team(registry),
         Command::Retention { date } => cmd_retention(paths, registry, date.as_deref()),
         Command::New {
             slug,
@@ -810,6 +813,17 @@ fn cmd_emails(
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// Print the published team as JSON.
+///
+/// STDOUT, so it is redirected into the web repository and committed there. The two
+/// repositories have no shared build (ADR-0001) and `people/` is gitignored, so a public
+/// page cannot read this at build time without its content depending on which machine
+/// built it. Exporting makes the published set a reviewed diff instead.
+fn cmd_team(registry: &Registry) -> Result<ExitCode> {
+    print!("{}", tool_docket::application::team::export_json(registry)?);
+    Ok(ExitCode::SUCCESS)
 }
 
 fn cmd_index(paths: &Paths, registry: &Registry) -> Result<ExitCode> {

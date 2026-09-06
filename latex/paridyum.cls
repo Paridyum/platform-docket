@@ -214,6 +214,30 @@
   \end{tabularx}
 }
 
+% Signature block resolved from the document rather than named in the template.
+%
+% WHO SIGNS DEPENDS ON WHO THE DOCUMENT IS ABOUT. An intern's NDA is signed by the
+% CEO and CTO; an officer's is signed by the Director, so that nobody signs their own
+% document (RFC-0042 decision 4). `docket` emits \dkSignerOne* always and \dkSignerTwo*
+% only where the document has a second signatory, and this renders whichever it got.
+% The alternative was a second copy of four templates differing in one line.
+\newcommand{\paridyumsignblock}{%
+  \ifcsname dkSignerTwoName\endcsname
+    \paridyumofficers{\dkSignerOneName}{\dkSignerOneDesignation}%
+                     {\dkSignerTwoName}{\dkSignerTwoDesignation}%
+  \else
+    \textbf{For \dkOrgName}
+
+    \vspace{0.5em}
+    \begin{tabularx}{\textwidth}{@{}X X@{}}
+      \textbf{\dkSignerOneDesignation} & \\[2.5em]
+      \rule{6cm}{0.4pt} & \\
+      Name: \dkSignerOneName & \\
+      Date: \rule{4cm}{0.4pt} &
+    \end{tabularx}
+  \fi
+}
+
 % Counterparty signature block. #1 role label, #2 name
 \newcommand{\paridyumcountersign}[2]{%
   \textbf{#1}

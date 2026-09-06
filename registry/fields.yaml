@@ -99,6 +99,13 @@ fields:
     group: engagement
     store: personnel
     purpose: Stated on the agreement, the certificate and the reference letter.
+  - path: engagement.job_id
+    group: engagement
+    store: personnel
+    purpose: >
+      Names the published job posting this engagement answered, so the terms
+      advertised are recoverable from the record. Not rendered on any document.
+    optional: true
   - path: engagement.department
     group: engagement
     store: personnel

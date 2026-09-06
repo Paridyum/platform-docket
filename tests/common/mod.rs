@@ -42,6 +42,55 @@ pub fn filled_template(from_root: &Path, into: &Path) {
     std::fs::write(into, out).expect("fixture written");
 }
 
+/// The officer template, filled the same way.
+///
+/// SEPARATE FROM `filled_template` because the officer record is a different shape and
+/// a different set of fields: no education, no guardian, no end date. Reusing the intern
+/// filler would leave `role` as an internship title on a director.
+pub fn filled_officer_template(from_root: &Path, into: &Path) {
+    let source = from_root.join("people").join("_TEMPLATE-officer.yaml");
+    let body = std::fs::read_to_string(&source).expect("officer template readable");
+
+    let mut out = String::with_capacity(body.len());
+    for line in body.lines() {
+        out.push_str(&fill_officer_line(line));
+        out.push('\n');
+    }
+
+    assert!(
+        !out.lines()
+            .any(|l| !l.trim_start().starts_with('#') && l.contains("FILL-ME")),
+        "the officer fixture still holds a placeholder; a new FILL-ME field needs a value \
+         in tests/common/mod.rs."
+    );
+    std::fs::write(into, out).expect("officer fixture written");
+}
+
+fn fill_officer_line(line: &str) -> String {
+    if !line.contains("FILL-ME") || line.trim_start().starts_with('#') {
+        return line.to_owned();
+    }
+    let key = line.split(':').next().unwrap_or("").trim();
+    let value = match key {
+        "role" => "Chief Operations Officer",
+        "start_date" => "2026-09-06",
+        "legal_name" => "Test Officer",
+        "preferred_name" => "Test",
+        "date_of_birth" => "1995-04-12",
+        "email" => "test.officer@example.com",
+        "phone" => "\"+91 90000 00000\"",
+        "address" => "1 Example Road, Dehradun 248001",
+        "linkedin" => "https://example.com/in/test-officer",
+        "github" => "https://example.com/test-officer",
+        "skills" => "operations",
+        // Same fallback as the intern filler: an unrecognised field gets something
+        // valid rather than aborting the suite. The assertion in the caller is what
+        // catches a placeholder that survived.
+        _ => "example",
+    };
+    line.replacen("FILL-ME", value, 1)
+}
+
 /// One line, with its placeholder replaced by something valid for that field.
 ///
 /// Keyed on the field name because the values are not interchangeable: a date

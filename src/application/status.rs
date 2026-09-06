@@ -108,7 +108,10 @@ pub fn report(
     let by_code = registry.lifecycle.by_code()?;
     let mut lines = Vec::new();
 
-    for code in registry.lifecycle.owed_upto(person.stage())? {
+    for code in registry
+        .lifecycle
+        .owed_upto_for(person.stage(), Some(person.class()))?
+    {
         let Some(doc) = by_code.get(code.as_str()) else {
             continue;
         };

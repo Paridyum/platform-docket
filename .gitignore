@@ -11,4 +11,14 @@ store/
 # The shape of a record is not data, and a fresh clone needs it: `docket new`
 # copies it and twenty tests read it. Excluding the whole directory left a
 # checkout that could not open a record.
+#
+# ONE NEGATION PER TEMPLATE, not a glob. `!people/_TEMPLATE*.yaml` would also
+# admit anything a person happened to name that way, and this directory is the
+# one place in the repository where a false negative is personal data in git
+# history. Adding a class template means adding a line here -- deliberately.
 !people/_TEMPLATE.yaml
+!people/_TEMPLATE-officer.yaml
+
+# macOS Finder metadata. Untracked noise that a durability-checkpoint commit would
+# otherwise sweep into history.
+.DS_Store

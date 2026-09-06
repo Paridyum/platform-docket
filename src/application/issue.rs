@@ -22,6 +22,23 @@ pub fn definitions(
     reference: Option<&Serial>,
     date: time::Date,
 ) -> Definitions {
+    definitions_for(registry, person, reference, date, None)
+}
+
+/// As `definitions`, resolving the signature block for one document.
+///
+/// WHO SIGNS DEPENDS ON WHO THE DOCUMENT IS ABOUT, which is why this cannot live in the
+/// template. `\dkSignerOne*` and `\dkSignerTwo*` are emitted from the document's
+/// `signed_by`, narrowed by `signed_by_class` — so `\paridyumsignblock` renders the
+/// CEO/CTO pair for an intern and the Director alone for an officer, from one template.
+#[must_use]
+pub fn definitions_for(
+    registry: &Registry,
+    person: Option<&Person>,
+    reference: Option<&Serial>,
+    date: time::Date,
+    document: Option<&Document>,
+) -> Definitions {
     let mut defs = Definitions::new();
 
     if let Some(org) = registry.org_node() {
@@ -37,6 +54,17 @@ pub fn definitions(
         ("dkOrgLegalStatus", "dkLegalStatus"),
     ] {
         defs.alias(from, to);
+    }
+
+    if let Some(doc) = document {
+        let class = person.map_or("intern", Person::class);
+        let signers = doc.signatories_for(class);
+        for (n, id) in ["One", "Two"].iter().zip(signers.iter()) {
+            if let Some(s) = registry.active_signatories().find(|s| &s.id == id) {
+                defs.set(format!("dkSigner{n}Name"), &s.legal_name);
+                defs.set(format!("dkSigner{n}Designation"), &s.designation);
+            }
+        }
     }
 
     for s in registry.active_signatories() {
@@ -151,6 +179,104 @@ pub fn add_history(defs: &mut Definitions, paths: &Paths, person: &Person) -> Re
     Ok(())
 }
 
+/// Refuse a document that is going to the wrong person.
+///
+/// TWO REFUSALS, BOTH ABOUT A DOCUMENT THAT WOULD BE WRONG RATHER THAN ABSENT — which is
+/// why they are here and not in `check`. A document reaches this function with a serial
+/// about to be allocated and a register entry about to be sealed; refusing afterwards is
+/// not possible, because the register is append-only by design.
+///
+/// # Errors
+/// Fails if the document is not declared for this person's class, or if the person would
+/// be signing it for Paridyum.
+/// Who signs this document for Paridyum, with the subject substituted out.
+///
+/// AUTOMATIC SUBSTITUTION, DETERMINISTIC, AND RECORDED. Officer documents route to the
+/// Director (RFC-0042 decision 4), and the Director's own therefore route to himself —
+/// a document signed by its own subject is evidence of nothing. Rather than refuse it,
+/// the routed signatory is replaced by **the first active signatory in registry order
+/// who is not the subject**.
+///
+/// Registry order rather than any cleverness, because the substitute has to be the same
+/// person every time this is asked: who signed a legal document must not depend on a
+/// hash order or on how many documents came before it. And the result is written to the
+/// register entry's `signed_by`, because after substitution the signatory is no longer
+/// derivable from `lifecycle.yaml` and the paper is the only other place it appears.
+///
+/// Returns an empty list only where no eligible signatory exists at all, which the
+/// caller refuses on — one signatory who is also the subject is a real dead end.
+pub fn resolve_signatories(
+    registry: &Registry,
+    person: &Person,
+    document: &Document,
+) -> Vec<String> {
+    let routed = document.signatories_for(person.class());
+    let subject = person
+        .string("identity.legal_name")
+        .map(|n| n.trim().to_owned());
+
+    let is_subject = |id: &String| {
+        subject.as_ref().is_some_and(|name| {
+            registry
+                .active_signatories()
+                .any(|s| &s.id == id && s.legal_name.eq_ignore_ascii_case(name))
+        })
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    for id in routed {
+        if is_subject(id) {
+            // The substitute must not itself be the subject, and must not already be
+            // signing this document — otherwise a two-signatory document would collapse
+            // to one name printed twice.
+            if let Some(alt) = registry
+                .active_signatories()
+                .map(|s| s.id.clone())
+                .find(|cand| !is_subject(cand) && !routed.contains(cand) && !out.contains(cand))
+            {
+                out.push(alt);
+            }
+        } else if !out.contains(id) {
+            out.push(id.clone());
+        }
+    }
+    out
+}
+
+/// Refuse a document that is going to the wrong person.
+///
+/// A DOCUMENT THAT DOES NOT APPLY TO THIS CLASS IS NOT ISSUED, EVER — and it is refused
+/// here rather than in `check` because by this point a serial is about to be allocated
+/// and a register entry about to be sealed, and the register is append-only by design.
+/// Several templates say "Intern" in their body text; issuing a Certificate of
+/// Internship to a director produces a document that is FALSE, and a false document
+/// carrying a serial is worse than none.
+///
+/// # Errors
+/// Fails if the document is not declared for this person's class, or if no signatory
+/// other than the subject exists to sign it.
+fn refuse_if_misrouted(person: &Person, document: &Document, signatories: &[String]) -> Result<()> {
+    if !document.applies_to(person.class()) {
+        bail!(
+            "{}: not issued to a person of class {:?}; the registry declares it for {:?}",
+            document.code,
+            person.class(),
+            document.classes
+        );
+    }
+
+    // Substitution has already run. Reaching here empty means every eligible signatory
+    // was the subject, which no ordering can fix.
+    if signatories.is_empty() && !document.signatories_for(person.class()).is_empty() {
+        bail!(
+            "{}: no signatory other than the subject is available; \
+             registry/signatories.yaml has nobody else active",
+            document.code
+        );
+    }
+    Ok(())
+}
+
 /// Issue one document: render it, keep the PDF, and seal a register entry.
 ///
 /// # Errors
@@ -188,6 +314,10 @@ pub fn one_with(
     // record that has none. That is not a limitation: a document with no
     // identified recipient is exactly what the register exists to prevent.
     let who = crate::application::personnel::identify(paths, &person.slug)?;
+
+    let signatories = resolve_signatories(registry, person, document);
+    refuse_if_misrouted(person, document, &signatories)?;
+
     let template = paths.root.join(&document.template);
     if !template.exists() {
         bail!(
@@ -222,7 +352,8 @@ pub fn one_with(
     let engine_version = engine.version();
 
     let work = tempfile::tempdir().context("creating a working directory")?;
-    let mut defs = definitions(registry, Some(person), Some(&serial), date);
+    let mut defs = definitions_for(registry, Some(person), Some(&serial), date, Some(document));
+    override_signers(&mut defs, registry, &signatories);
     defs.set(
         "dkDocVerify",
         &serial::verification_code(serial.as_str(), &person.slug, &issued_on, &template_hash),
@@ -280,6 +411,7 @@ pub fn one_with(
             stored: &stored,
             engine: engine.as_str(),
             engine_version: &engine_version,
+            signed_by: &signatories,
         },
         existing.last(),
     )?;
@@ -299,6 +431,21 @@ pub fn one_with(
     Ok(entry)
 }
 
+/// Overwrite the signature block with the signatories that actually signed.
+///
+/// `definitions_for` resolves the ROUTED signatories from `lifecycle.yaml`; substitution
+/// happens afterwards, so these are set last and later values win. Without this the
+/// register would record the substitute and the paper would name the subject — the worse
+/// of the two failures, because the paper is what somebody signs.
+fn override_signers(defs: &mut Definitions, registry: &Registry, signatories: &[String]) {
+    for (n, id) in ["One", "Two"].iter().zip(signatories.iter()) {
+        if let Some(sig) = registry.active_signatories().find(|s| &s.id == id) {
+            defs.set(format!("dkSigner{n}Name"), &sig.legal_name);
+            defs.set(format!("dkSigner{n}Designation"), &sig.designation);
+        }
+    }
+}
+
 /// The facts a register entry is built from.
 ///
 /// A struct rather than nine positional arguments: `clippy.toml` caps them at
@@ -315,6 +462,8 @@ struct RegisterEntry<'a> {
     stored: &'a str,
     engine: &'a str,
     engine_version: &'a str,
+    /// Resolved AFTER substitution, so the entry records who actually signed.
+    signed_by: &'a [String],
 }
 
 /// Build and seal the register entry for one issuance.
@@ -332,6 +481,7 @@ fn register_entry(f: &RegisterEntry<'_>, previous: Option<&Entry>) -> Result<Ent
         kind: f.document.kind.as_str().to_owned(),
         issued_on: f.issued_on.to_owned(),
         retention: f.document.retention.clone(),
+        signed_by: f.signed_by.to_vec(),
         template_sha256: f.template_hash.to_owned(),
         pdf_sha256: f.pdf_sha256.to_owned(),
         pdf_path: f.stored.to_owned(),
@@ -382,7 +532,10 @@ pub fn outstanding(
         .map(|e| e.code.as_str())
         .collect();
     let mut out = Vec::new();
-    for code in registry.lifecycle.owed_upto(person.stage())? {
+    for code in registry
+        .lifecycle
+        .owed_upto_for(person.stage(), Some(person.class()))?
+    {
         let Some(doc) = by_code.get(code.as_str()) else {
             continue;
         };
@@ -432,11 +585,15 @@ pub fn unsupplied_fields(
         fs::read_to_string(&template).with_context(|| format!("reading {}", template.display()))?;
 
     // The date is irrelevant to which commands get defined, so any will do.
-    let defs = definitions(
+    // THE DOCUMENT IS PASSED so the signature-block commands resolve here too;
+    // without it `\dkSignerOneName` reads as a field the person record is missing,
+    // and `docket check` reports every class-scoped document as incomplete.
+    let defs = definitions_for(
         registry,
         Some(person),
         None,
         clock::parse_iso("2000-01-01")?,
+        Some(document),
     );
     let by_command = crate::domain::template::paths_by_command(&registry.catalogue.fields)?;
     Ok(crate::domain::template::required_commands(&body)

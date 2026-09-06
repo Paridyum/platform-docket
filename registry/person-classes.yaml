@@ -108,6 +108,44 @@ classes:
       - statutory.esic
     unpaid: false
 
+  - class: officer
+    prefix: OFC
+    description: >
+      A person holding office at Paridyum -- director, or an officer
+      designated by the directors. APPOINTED BY INSTRUMENT, NOT ENGAGED BY
+      OFFER, which is why the offer, the internship agreement, the guardian
+      consent and the certificate are not owed here: they describe an
+      internship and several say so in their body text.
+      Holding office is not employment. Where an officer is ALSO employed or
+      contracted, that is a separate engagement under its own class and its
+      own record -- this class collects nothing about pay.
+    permits:
+      - identity
+      - contact
+      - engagement          # office held, from when
+      - professional
+      - device
+      - access
+      - equipment
+    requires:
+      - identity.legal_name
+      - contact.email
+      - engagement.role
+      - engagement.start_date
+    forbids:
+      - guardian            # an officer is not a minor
+      - education           # irrelevant to holding office, so not collected
+      - statutory
+      - compensation
+    unpaid: true
+    note: >
+      `compensation` and `statutory` are FORBIDDEN rather than merely absent,
+      on the same reasoning the employee class states: declared now so the
+      model needs no rework, collectable only when someone actually holds a
+      paid office. Nobody does.
+      No `end_date` is required. An office is held until it is vacated, and
+      demanding a date at appointment would invite a fictional one.
+
 # WHERE A RECORD IS KEPT. Not one file. Split by who may read it and why,
 # because a single personnel file forces the most sensitive item in it to set
 # the access level for everything else.

@@ -1,0 +1,72 @@
+# What Paridyum publishes about its officers. THE PUBLIC HALF, and only that.
+#
+# THREE FILES, THREE PURPOSES, AND THE SPLIT IS THE POINT.
+#   signatories.yaml  who may sign on behalf of Paridyum -- authority
+#   operators.yaml    who may run this tool -- access
+#   team.yaml         what may be said about them in public -- disclosure
+#
+# A name and a designation are NOT restated here. They live in
+# signatories.yaml and `docket team` joins them, because the office someone
+# holds must not be able to differ between the document they sign and the
+# page that names them. That is the same rule org.yaml states for the office
+# address, for the same reason.
+#
+# NOTHING HERE COMES FROM people/. That directory holds personal data under a
+# stated purpose per field, it is gitignored so DPDP erasure stays honourable,
+# and a date of birth or a home address must not become publishable by being
+# in the same system as a job title. What is published is a DECISION, taken in
+# a reviewed diff, not a projection of whatever the record happens to hold.
+#
+# `public: false` withholds a person from the page while keeping their entry,
+# so removing somebody from the website is not the same act as removing them
+# from the register.
+version: 1
+
+team:
+  - id: ceo
+    public: true
+    order: 1
+    summary:
+      en: >
+        Runs the company and signs for it. Decides what Paridyum takes on and
+        what it turns down, which at this stage is most of the job.
+      ar: >
+        تدير الشركة وتوقّع عنها. تقرّر ما تتولّاه باريديوم وما ترفضه، وهو
+        الجزء الأكبر من العمل في هذه المرحلة.
+
+  - id: cto
+    public: true
+    order: 2
+    summary:
+      en: >
+        Builds the substrate and the tooling on it, and wrote the governance
+        this estate is held to. Every decision here is an artifact before it is
+        code.
+      ar: >
+        يبني البنية الأساسية والأدوات التي تعمل عليها، وكتب الحوكمة التي تلتزم
+        بها هذه المنظومة. كل قرار هنا وثيقة قبل أن يكون شيفرة.
+
+  - id: coo
+    public: true
+    order: 3
+    summary:
+      en: >
+        Runs operations: the sequences that have to happen the same way twice,
+        and the ones that must not be improvised.
+      ar: >
+        يدير العمليات: التسلسلات التي يجب أن تتكرّر بالطريقة نفسها، وتلك التي
+        لا يصحّ الاجتهاد فيها.
+
+  - id: director
+    public: true
+    order: 4
+    summary:
+      en: >
+        Paridyum is operated by him until incorporation completes, which is why
+        he is the counterparty on every officer document rather than a signatory
+        to it. He countersigns the other three officers; the CEO countersigns
+        his.
+      ar: >
+        تُشغَّل باريديوم من خلاله حتى تكتمل إجراءات التأسيس، ولهذا فهو الطرف
+        المقابل في كل وثيقة خاصة بالمسؤولين لا موقّعًا عليها. يوقّع مقابل
+        المسؤولين الثلاثة الآخرين، ويوقّع الرئيس التنفيذي مقابله.

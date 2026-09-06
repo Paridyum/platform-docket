@@ -153,8 +153,13 @@ fn workflow_steps(
     let current = registry.lifecycle.stage(person.stage());
     let gated = current.is_some_and(|s| !s.requires_signed.is_empty());
     if gated {
-        let unmet =
-            crate::application::personnel::unmet_gates(paths, registry, who, person.stage())?;
+        let unmet = crate::application::personnel::unmet_gates(
+            paths,
+            registry,
+            who,
+            person.stage(),
+            person.class(),
+        )?;
         if unmet.is_empty() && registry.lifecycle.next_after(person.stage())?.is_some() {
             out.push(Step {
                 what: "Move to the next stage".to_owned(),

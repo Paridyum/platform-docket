@@ -17,6 +17,7 @@ version: 1
 documents:
   - code: OFR
     id: internship-offer
+    classes: [intern]
     title: Internship Offer
     template: templates/letter/internship-offer.tex
     kind: issued
@@ -26,6 +27,7 @@ documents:
 
   - code: PCK
     id: pack-cover-sheet
+    classes: [intern, employee, contractor, officer]
     title: Read Me First
     template: templates/letter/pack-cover-sheet.tex
     kind: issued
@@ -39,6 +41,7 @@ documents:
 
   - code: LTR
     id: business-communication
+    classes: [intern, employee, contractor, officer]
     title: Official Business Communication
     template: templates/letter/business-communication.tex
     kind: issued
@@ -55,6 +58,7 @@ documents:
 
   - code: AGR
     id: internship-agreement
+    classes: [intern]
     title: Internship Agreement
     template: templates/agreement/internship-agreement.tex
     kind: signed
@@ -64,6 +68,7 @@ documents:
 
   - code: NDA
     id: nda
+    classes: [intern]
     title: Non-Disclosure Agreement
     template: templates/agreement/nda.tex
     kind: signed
@@ -73,6 +78,7 @@ documents:
 
   - code: IPA
     id: ip-assignment
+    classes: [intern]
     title: Intellectual Property Assignment Agreement
     template: templates/agreement/ip-assignment.tex
     kind: signed
@@ -84,8 +90,38 @@ documents:
       Paridyum owns what the intern built; it must be producible for as
       long as that code is in use.
 
+  - code: NDO
+    id: nda-officer
+    classes: [officer]
+    title: Non-Disclosure Agreement (Officer)
+    template: templates/agreement/nda-officer.tex
+    kind: signed
+    signed_by: [director]
+    signed_by_class:
+      officer: [director]
+    retention: contract
+    retention_note: >
+      Confidentiality survives the office. The register entry outlives the
+      appointment for the same reason the obligation does.
+
+  - code: IPO
+    id: ip-assignment-officer
+    classes: [officer]
+    signed_by_class:
+      officer: [director]
+    title: Intellectual Property Assignment Agreement (Officer)
+    template: templates/agreement/ip-assignment-officer.tex
+    kind: signed
+    signed_by: [director]
+    retention: permanent
+    retention_note: >
+      An assignment of intellectual property has no end. Its register entry
+      never expires, because the question it answers -- who owns this work --
+      can be asked at any point in the life of the work.
+
   - code: ISP
     id: infosec-acceptable-use
+    classes: [intern]
     title: Information Security & Acceptable Use Policy
     template: templates/policy/infosec-acceptable-use.tex
     kind: signed
@@ -95,6 +131,7 @@ documents:
 
   - code: PSH
     id: posh-policy
+    classes: [intern]
     title: Policy on Prevention of Sexual Harassment
     template: templates/policy/posh-policy.tex
     kind: signed
@@ -107,6 +144,7 @@ documents:
 
   - code: DPN
     id: data-protection-notice
+    classes: [intern]
     title: Data Protection Notice
     template: templates/policy/data-protection-notice.tex
     kind: signed
@@ -116,6 +154,7 @@ documents:
 
   - code: GRD
     id: guardian-consent
+    classes: [intern]
     title: Parent / Guardian Consent
     template: templates/form/guardian-consent.tex
     kind: collected
@@ -131,6 +170,7 @@ documents:
 
   - code: COC
     id: code-of-conduct
+    classes: [intern]
     title: Code of Conduct
     template: templates/policy/code-of-conduct.tex
     kind: signed
@@ -140,6 +180,7 @@ documents:
 
   - code: GRV
     id: grievance-policy
+    classes: [intern]
     title: Grievance Policy
     template: templates/policy/grievance-policy.tex
     kind: signed
@@ -153,6 +194,7 @@ documents:
 
   - code: INS
     id: institution-confirmation
+    classes: [intern]
     title: Internship Confirmation for the Institution
     template: templates/letter/institution-confirmation.tex
     kind: issued
@@ -165,6 +207,7 @@ documents:
 
   - code: PUB
     id: publicity-consent
+    classes: [intern]
     title: Consent to Use Name, Photograph or Likeness
     template: templates/form/publicity-consent.tex
     kind: collected
@@ -184,6 +227,7 @@ documents:
 
   - code: EXF
     id: exit-feedback
+    classes: [intern]
     title: Exit Feedback
     template: templates/form/exit-feedback.tex
     kind: collected
@@ -195,6 +239,7 @@ documents:
 
   - code: ONB
     id: intern-onboarding
+    classes: [intern]
     title: Intern Onboarding Form
     template: templates/form/intern-onboarding.tex
     kind: collected
@@ -202,6 +247,7 @@ documents:
 
   - code: EMC
     id: emergency-contact
+    classes: [intern]
     title: Emergency Contact Form
     template: templates/form/emergency-contact.tex
     kind: collected
@@ -209,6 +255,7 @@ documents:
 
   - code: EQP
     id: equipment-acknowledgement
+    classes: [intern]
     title: Equipment Acknowledgement Form
     template: templates/form/equipment-acknowledgement.tex
     kind: collected
@@ -217,6 +264,7 @@ documents:
 
   - code: OFB
     id: offboarding-checklist
+    classes: [intern]
     title: Intern Offboarding Checklist
     template: templates/form/offboarding-checklist.tex
     kind: collected
@@ -224,6 +272,7 @@ documents:
 
   - code: CRT
     id: certificate-of-internship
+    classes: [intern]
     title: Certificate of Internship
     template: templates/certificate/certificate-of-internship.tex
     kind: issued
@@ -235,6 +284,7 @@ documents:
 
   - code: REF
     id: reference-letter
+    classes: [intern]
     title: Letter of Reference
     template: templates/certificate/reference-letter.tex
     kind: issued
@@ -251,12 +301,12 @@ stages:
     description: >
       Offer accepted, before the first working day. Every agreement and
       policy is signed here, and access is NOT granted until they are.
-    owes: [GRD, INS, AGR, NDA, IPA, ISP, PSH, COC, GRV, DPN, ONB, EMC]
+    owes: [GRD, INS, AGR, NDA, NDO, IPA, IPO, ISP, PSH, COC, GRV, DPN, ONB, EMC]
     # ENFORCED, not merely stated. `docket advance` refuses to move a person
     # out of preboarding until every document listed here is recorded as
     # executed. This was prose for a while and nothing checked it, which is
     # how "access granted before the NDA came back" happens.
-    requires_signed: [NDA, ISP, IPA, AGR, COC, GRV]
+    requires_signed: [NDA, NDO, ISP, IPA, IPO, AGR, COC, GRV]
     gate: >
       Access to any Paridyum system requires the agreements and the security
       policy signed, not merely issued. This is the one ordering constraint in

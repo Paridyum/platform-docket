@@ -1,0 +1,72 @@
+# One officer. Create with `docket new <slug> officer`, then fill this in.
+#
+# SEPARATE FROM _TEMPLATE.yaml, AND MUCH SHORTER. The officer class permits
+# far less: no education, no guardian, no compensation, no statutory
+# identifiers. Those are not merely omitted here -- `docket check` REFUSES a
+# record that carries them, because collecting personal data with no purpose
+# is what the DPDP Act's purpose limitation forbids, and nothing about
+# holding office requires knowing where somebody went to university.
+#
+# AN OFFICER IS APPOINTED, NOT ENGAGED BY OFFER. There is no offer, no
+# internship agreement, no institution to confirm and no certificate at the
+# end. The documents owed here are the Non-Disclosure Agreement (NDO) and the
+# Intellectual Property Assignment (IPO), both executed by the Director --
+# except the Director's own, which the CEO signs, because `docket issue`
+# refuses a document whose subject and signatory are the same person.
+#
+# EVERY `FILL-ME` MUST BE REPLACED. `docket check` reports each one and
+# `docket issue` refuses outright.
+#
+# people/ is GITIGNORED. Personal data must not enter git: history cannot be
+# erased, which would make DPDP erasure rights unhonourable.
+version: 1
+
+engagement:
+  class: officer
+  stage: preboarding                     # documents are owed here
+  role: FILL-ME                          # the office held, e.g. Chief Operations Officer
+  department: Office of the Directors
+  work_arrangement: Remote               # Remote | Hybrid | On-site
+  start_date: FILL-ME                    # the date the appointment took effect
+  # No end_date. An office is held until it is vacated, and the officer class
+  # does not require one -- demanding a date at appointment invites a fiction.
+
+identity:
+  legal_name: FILL-ME
+  preferred_name: FILL-ME
+  # Never inferred from a name. Defaults to they/them when omitted.
+  pronouns:
+    subject: they
+    object: them
+    possessive: their
+  date_of_birth: FILL-ME
+
+contact:
+  email: FILL-ME
+  phone: FILL-ME
+  address: FILL-ME
+
+professional:
+  linkedin: FILL-ME
+  github: FILL-ME
+  skills: FILL-ME
+
+device:
+  type: Personal Laptop                  # Personal Laptop | Paridyum-Provided
+  os: Linux
+
+access:
+  company_email: null
+  systems: null                          # recorded as events, not edited here
+
+equipment:
+  issued: false
+  device: null
+  serial: null
+
+# NOT COLLECTED FOR AN OFFICER, and `docket check` will refuse them:
+#   education:      an office is not held on the basis of a qualification
+#   guardian:       an officer is not a minor
+#   statutory:      PAN, Aadhaar, UAN, ESIC, bank account
+#   compensation:   no officer is paid; declared forbidden until one is
+pre_existing_ip: None
