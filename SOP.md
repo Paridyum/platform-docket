@@ -172,7 +172,7 @@ usual steps do not exist.
     docket new aditya-shrivastava officer      # copies people/_TEMPLATE-officer.yaml
     $EDITOR people/aditya-shrivastava.yaml     # replace every FILL-ME
     docket check                               # catches over-collection and placeholders
-    docket next aditya-shrivastava             # says what is owed: NDO, IPO
+    docket next aditya-shrivastava             # says what is owed: NDO IPO COO ISO DPO
     docket onboard aditya-shrivastava
     docket pack aditya-shrivastava
 
@@ -181,7 +181,7 @@ usual steps do not exist.
 | | Intern | Officer |
 | --- | --- | --- |
 | Template | `_TEMPLATE.yaml` | `_TEMPLATE-officer.yaml` — no education, no guardian |
-| Documents | 12 at preboarding | `NDO`, `IPO` |
+| Documents | 12 at preboarding | `NDO`, `IPO`, `COO`, `ISO`, `DPO` |
 | Signed for Paridyum by | CEO **and** CTO | the **Director** alone |
 | Offer, institution letter, certificate | yes | **never issued** |
 | `end_date` | required | not required — an office is held until vacated |

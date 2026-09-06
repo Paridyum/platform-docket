@@ -1,0 +1,220 @@
+% Information Security & Acceptable Use Policy, officer variant.
+%
+% THE MOST IMPORTANT OF THE THREE OFFICER POLICIES, because an officer holds strictly more
+% access than any intern will and previously had agreed to none of this.
+%
+% FOUR SECTIONS ARE SUBSTANTIVELY DIFFERENT. A word-swap would have produced a policy that
+% is wrong about the one person it most needs to be right about:
+%
+%   5   Access          an intern may access only what an assignment requires. An officer
+%                       legitimately holds broad and administrative access. Least privilege
+%                       still applies, but as a discipline they impose on themselves rather
+%                       than a boundary somebody else drew for them.
+%   10  Security testing an intern may not authorise it. An officer can, and the rule that
+%                       matters is that authorisation is recorded and scoped.
+%   12  Incidents       org.yaml routes incidents to the CTO. An incident involving the CTO
+%                       cannot be reported to the CTO.
+%   15  Violations      an office is vacated or removed by the directors, not terminated.
+%
+% WORDING IS A DRAFT FOR REVIEW BY QUALIFIED COUNSEL.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumtitle{Information Security \& Acceptable Use Policy (Officer)}
+
+\textit{This policy applies to officers of Paridyum, who are given access to its accounts,
+source code, documents, systems, devices, infrastructure, or other digital resources.}
+
+\section*{1. Purpose}
+The purpose of this policy is to protect Paridyum's systems, source code, confidential
+information, credentials, and other digital assets. An officer holds more access than
+anyone else here, which is the reason this copy exists rather than the intern one.
+
+\section*{2. Accounts and Passwords}
+The Officer must:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item keep passwords and credentials private;
+    \item use strong and unique passwords;
+    \item enable multi-factor authentication where required;
+    \item never share Company accounts with another person;
+    \item never use another person's account without authorization; and
+    \item immediately report lost, stolen, or compromised credentials.
+\end{itemize}
+
+\section*{3. Source Code and Repositories}
+Paridyum's private source code must remain within authorized repositories and systems.
+The Officer must not:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item publish private repositories;
+    \item upload Company code to personal public repositories;
+    \item share source code with unauthorized persons;
+    \item copy Company code for unrelated personal projects; or
+    \item intentionally remove or bypass repository security controls.
+\end{itemize}
+
+\section*{4. API Keys and Secrets}
+Passwords, API keys, access tokens, private keys, database credentials, and other
+secrets must never be:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item committed directly into source code;
+    \item uploaded to public repositories;
+    \item shared through unauthorized services;
+    \item posted in public communication channels; or
+    \item shared with another person without authorization.
+\end{itemize}
+If a secret is accidentally exposed, the Officer must report it immediately.
+
+\section*{5. Access to Systems}
+An officer's access is broad by necessity, and may be administrative. \textbf{The
+discipline of least privilege therefore has to be self-imposed: being able to reach
+something is not a reason to.} An officer accesses systems, repositories, databases,
+files and information where the office requires it, and not otherwise --- and in
+particular does not read another person's records because the permission happens to
+exist.
+
+The Officer must not:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item bypass or disable a security control rather than changing it openly;
+    \item grant themselves access outside the process by which access is granted;
+    \item use another person's account, or their credentials, in place of their own;
+    \item view unrelated confidential information; or
+    \item perform unauthorized security testing.
+\end{itemize}
+
+\section*{6. Personal Devices}
+If a personal laptop or device is used for office work, the Officer should:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item use a password, PIN, or biometric device lock;
+    \item keep the operating system reasonably updated;
+    \item take reasonable precautions against malware;
+    \item prevent unauthorized persons from accessing Company information; and
+    \item securely remove Paridyum information when requested at the end of the
+          office.
+\end{itemize}
+
+\section*{7. AI Tools}
+The Officer must not provide confidential Paridyum information to external AI tools
+unless their use has been approved. Do not submit the following to unauthorized AI
+services:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item private source code;
+    \item passwords or credentials;
+    \item API keys;
+    \item customer or user information;
+    \item confidential documents;
+    \item unreleased product information;
+    \item internal business information; or
+    \item sensitive technical architecture.
+\end{itemize}
+AI-generated code or content must be reviewed before being added to Paridyum projects.
+
+\section*{8. Third-Party Services}
+The Officer must not upload Paridyum information or source code to unauthorized:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item cloud-storage services;
+    \item code-sharing websites;
+    \item file-sharing services;
+    \item online development environments;
+    \item collaboration platforms; or
+    \item other third-party services.
+\end{itemize}
+If a new service is required for the office, approval should be obtained before
+using it with Paridyum information.
+
+\section*{9. Software Installation}
+Software used for Paridyum work should come from legitimate and reasonably trusted
+sources. The Officer must not knowingly install or use:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item pirated software;
+    \item malware;
+    \item credential-stealing tools;
+    \item unauthorized remote-access software; or
+    \item software intended to bypass Paridyum's security controls.
+\end{itemize}
+
+\section*{10. Security Testing}
+An officer may authorise security testing --- penetration testing, vulnerability
+scanning, exploitation or load testing --- against Paridyum systems, and may carry it
+out. Authorisation must be \textbf{recorded and scoped before the testing starts}, and
+the testing must stay inside that scope. An officer does not authorise their own testing
+of a system they alone administer without telling another officer it is happening.
+
+\section*{11. Confidential Information}
+Confidential information must be handled according to the \textbf{Paridyum
+Non-Disclosure Agreement}. The Officer must take reasonable precautions to prevent
+confidential information from being accidentally viewed, copied, published, or shared.
+
+\section*{12. Security Incidents}
+The Officer must immediately report suspected security incidents, including:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item leaked passwords or API keys;
+    \item accidental public repositories;
+    \item suspicious account activity;
+    \item unauthorized access;
+    \item malware;
+    \item lost or stolen devices containing Paridyum information;
+    \item accidental disclosure of confidential information; or
+    \item discovered security vulnerabilities.
+\end{itemize}
+
+\vspace{0.3em}
+\begin{infobox}
+\textbf{Report security issues to}\\[0.4em]
+\begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.2cm}X@{}}
+Contact: & \dkOrgSecurityContact{} --- \dkOrgSecurityContactRole \\
+Email:   & \dkOrgSecurityEmail
+\end{tabularx}
+\end{infobox}
+
+\vspace{0.3em}
+\textbf{Where the incident involves the security contact named above, it is reported to
+another officer instead.} A report routed to the person it concerns is not a report, and
+this is the one route in the policy that can point at its own subject.
+
+\vspace{0.3em}
+The Officer should report accidental incidents promptly rather than attempting to hide
+or independently resolve a serious security issue.
+
+\section*{13. Company Equipment}
+Any equipment provided by Paridyum remains the property of Paridyum unless otherwise
+agreed in writing. Company equipment must:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item be used responsibly;
+    \item be reasonably protected from loss or damage;
+    \item not be given to another person without permission; and
+    \item be returned when requested or when the office ends.
+\end{itemize}
+
+\section*{14. Vacating the Office}
+When the Officer ceases to hold office, they must:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item stop accessing Paridyum systems;
+    \item return Company equipment;
+    \item remove Company credentials from personal devices;
+    \item return or delete confidential files when requested; and
+    \item cooperate with account and access removal.
+\end{itemize}
+The Officer must not retain Paridyum's private source code, credentials, confidential
+documents, or other protected information after the office.
+
+\section*{15. Violations}
+Serious or repeated violations of this policy may result in removal of system access, and
+in the Officer being asked to vacate the office or removed from it by the directors. An
+office is not terminated in the way an engagement is. Obligations under the
+Non-Disclosure Agreement continue regardless, and where appropriate Paridyum may also
+take other action available under applicable law.
+
+\section*{16. Acknowledgement}
+By signing below, the Officer confirms that they have read and understood this
+Information Security \& Acceptable Use Policy and agree to follow it during their
+office.
+
+\vspace{1.5em}
+\paridyumsignblock
+
+\vspace{1.5em}
+\paridyumcountersign{Officer}{\dkPIdentityLegalName}
+
+\end{document}

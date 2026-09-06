@@ -2,8 +2,9 @@
 
 What to send each officer to collect the data their record needs, and nothing else.
 
-Four people, two documents each: the officer Non-Disclosure Agreement (`NDO`) and the
-officer Intellectual Property Assignment (`IPO`).
+Four people, five documents each: the officer Non-Disclosure Agreement (`NDO`), the
+Intellectual Property Assignment (`IPO`), the Code of Conduct (`COO`), the Information
+Security & Acceptable Use Policy (`ISO`) and the Data Protection Notice (`DPO`).
 
 ---
 
@@ -15,7 +16,7 @@ DPDP Act personal data may be processed for a stated purpose and no other, and
 template ships more `FILL-ME` placeholders than this form asks about, because it is shaped
 for interns.
 
-`nda-officer.tex` and `ip-assignment-officer.tex` read exactly two things from the record:
+Between them the five templates read exactly two things from the record:
 `identity.legal_name` and `pre_existing_ip`. Everything else below is needed by a rule
 rather than by a document, and anything needed by neither is not asked for:
 
@@ -85,8 +86,9 @@ Copy everything between the rules into an email. One per person.
 Before you sign your officer documents, Paridyum needs a few details for your record. There
 are five questions and two optional ones. Please reply to this email with your answers.
 
-Two documents are prepared from this: a Non-Disclosure Agreement and an Intellectual
-Property Assignment. Both are signed on Paridyum's behalf by another officer — nobody signs
+Five documents are prepared from this: a Non-Disclosure Agreement, an Intellectual Property
+Assignment, a Code of Conduct, an Information Security & Acceptable Use Policy, and a Data
+Protection Notice. All are signed on Paridyum's behalf by another officer — nobody signs
 their own.
 
 **1. Your full legal name, exactly as it appears on your government ID.**
@@ -133,8 +135,9 @@ is held on Paridyum's systems and deliberately kept out of version control, so t
 actually be corrected or erased if you ask. To see, correct or erase what is held about you,
 reply to this address.
 
-*(A fuller data protection notice for officers is not yet written — recorded as D-46. This
-paragraph is what is owed at the point of collection, not a substitute for it.)*
+*(The full Data Protection Notice for officers is one of the five documents you will
+receive. This paragraph is what is owed at the point of collection, before that notice is
+issued.)*
 
 ---
 
@@ -143,7 +146,7 @@ paragraph is what is owed at the point of collection, not a substitute for it.)*
     export DOCKET_OPERATOR=rohan
     scripts/bootstrap-officers.sh          # opens four records
     $EDITOR people/*.yaml                  # fill from the replies, delete what you did not ask
-    scripts/bootstrap-officers.sh --issue  # checks, then issues NDO and IPO for each
+    scripts/bootstrap-officers.sh --issue  # checks, then issues all five for each
 
 Then get them signed and record each one:
 

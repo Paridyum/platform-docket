@@ -7,6 +7,38 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`COO`, `ISO` and `DPO` — the Code of Conduct, Acceptable Use Policy and Data Protection
+  Notice, as officer documents.** Closes the half of D-46 that mattered most: an officer holds
+  strictly more access than any intern will and had agreed to none of it.
+
+  **Not word-swaps of the intern policies.** Several sections are substantively different and
+  two are inverted, so a find-and-replace would have produced documents that are wrong about
+  the one person they most need to be right about:
+
+  - *Speaking publicly* — an intern may not speak on Paridyum's behalf. An officer may, and the
+    useful rule is about care: claims must be true when made, not merely intended.
+  - *Access* — an intern may access only what an assignment requires. An officer's access is
+    administrative, so least privilege becomes a discipline they impose on themselves rather
+    than a boundary somebody else drew. Being able to reach something is not a reason to.
+  - *Security testing* — an officer may authorise it, so the rule is that authorisation is
+    recorded and scoped beforehand, and that nobody authorises their own testing of a system
+    they alone administer without telling another officer.
+  - *Incident reporting* — `org.yaml` routes incidents to the CTO. An incident involving the CTO
+    cannot be reported to the CTO, so the officer policy names another officer as the route.
+    This is the one route in the policy that could otherwise point at its own subject.
+  - *Breach* — an office is vacated or removed by the directors, not terminated. There is no
+    Internship Agreement to point at, and the Grievance Policy is an intern document, so the
+    route for a concern about an officer is another officer.
+
+  **The Data Protection Notice differs in substance, not only wording.** It lists what the
+  officer class actually permits — no education, no statutory identifiers, no emergency
+  contact — because a notice that overstates what is held is a defect in the notice. It also
+  states the two facts that are *published* rather than merely held: name and office, on the
+  public site.
+
+  Wording is a draft for review by qualified counsel, as the intern policies already say, and
+  more so here: the duties an officer owes are not written down anywhere in this estate yet.
+
 - **`docket team`, and `registry/team.yaml`** — what Paridyum publishes about its officers.
 
   Three files, three purposes: `signatories.yaml` is authority, `operators.yaml` is access,

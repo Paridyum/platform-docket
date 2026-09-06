@@ -104,6 +104,42 @@ documents:
       Confidentiality survives the office. The register entry outlives the
       appointment for the same reason the obligation does.
 
+  - code: COO
+    id: code-of-conduct-officer
+    classes: [officer]
+    title: Code of Conduct (Officer)
+    template: templates/policy/code-of-conduct-officer.tex
+    kind: signed
+    signed_by: [director]
+    signed_by_class:
+      officer: [director]
+    retention: personnel
+
+  - code: ISO
+    id: infosec-acceptable-use-officer
+    classes: [officer]
+    title: Information Security & Acceptable Use Policy (Officer)
+    template: templates/policy/infosec-acceptable-use-officer.tex
+    kind: signed
+    signed_by: [director]
+    signed_by_class:
+      officer: [director]
+    retention: personnel
+    retention_note: >
+      An officer holds more access than anyone else here. What they agreed to
+      about that access is worth being able to produce afterwards.
+
+  - code: DPO
+    id: data-protection-notice-officer
+    classes: [officer]
+    title: Data Protection Notice (Officer)
+    template: templates/policy/data-protection-notice-officer.tex
+    kind: signed
+    signed_by: [director]
+    signed_by_class:
+      officer: [director]
+    retention: personnel
+
   - code: IPO
     id: ip-assignment-officer
     classes: [officer]
@@ -301,12 +337,12 @@ stages:
     description: >
       Offer accepted, before the first working day. Every agreement and
       policy is signed here, and access is NOT granted until they are.
-    owes: [GRD, INS, AGR, NDA, NDO, IPA, IPO, ISP, PSH, COC, GRV, DPN, ONB, EMC]
+    owes: [GRD, INS, AGR, NDA, NDO, IPA, IPO, ISP, ISO, PSH, COC, COO, GRV, DPN, DPO, ONB, EMC]
     # ENFORCED, not merely stated. `docket advance` refuses to move a person
     # out of preboarding until every document listed here is recorded as
     # executed. This was prose for a while and nothing checked it, which is
     # how "access granted before the NDA came back" happens.
-    requires_signed: [NDA, NDO, ISP, IPA, IPO, AGR, COC, GRV]
+    requires_signed: [NDA, NDO, ISP, ISO, IPA, IPO, AGR, COC, COO, GRV]
     gate: >
       Access to any Paridyum system requires the agreements and the security
       policy signed, not merely issued. This is the one ordering constraint in

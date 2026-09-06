@@ -121,3 +121,53 @@ Verified: all eight documents issued in the sandbox, the register recording `sig
 for three officers and `['ceo']` for the Director, and `pdftotext` confirming **RUHANI KHURANA,
 Chief Executive Officer (CEO)** in the Paridyum block of the Director's own NDA with PRIYANSHU
 SHARMA countersigning as Officer. Sandbox removed; nothing was written to the real store.
+
+## 2026-09-06 — the three officer policies, and the two that were inverted
+
+D-46's open half: `COC`, `ISP` and `DPN` did not exist for officers, so the four people with
+the most access in the estate had agreed to no acceptable-use policy. Written as `COO`, `ISO`
+and `DPO`.
+
+**The interesting part is that a word-swap would have been wrong in both directions.** Going
+through the intern text section by section, four differ in substance and two are inverted:
+
+*Speaking publicly* — the intern code says they may not speak on Paridyum's behalf. An officer
+may; that is part of the office. Copying the intern clause would have forbidden a director from
+doing their job, so the officer version is about care instead: a claim must be true when made,
+not merely intended, and the officers' names are on the public site, which is what makes it
+matter more for them than for anyone else.
+
+*Access* — the intern policy grants access to what an assignment requires. An officer's access
+is administrative and broad by necessity, so the boundary cannot be drawn by somebody else. The
+officer version makes least privilege a discipline they impose on themselves: **being able to
+reach something is not a reason to.** Copying the intern clause would have described a
+permission model the estate does not have.
+
+Two routes could point at their own subject, which is the same defect the signature
+substitution exists to prevent, in a different place. `org.yaml` routes security incidents to
+the CTO — so an incident involving the CTO had nowhere to go. And the Grievance Policy is
+`classes: [intern]`, so it cannot be the route for a concern about an officer. Both now name
+another officer, and the ISO says why in one line.
+
+*Breach* — an office is vacated or removed by the directors. It is not terminated, and there is
+no Internship Agreement to point at, so the intern clause was simply describing a thing that
+cannot happen.
+
+**`DPO` differs in what it says is collected, not only in wording.** The intern notice lists
+education details, emergency contact and a supervisor; the officer class forbids `education` and
+`statutory` and does not permit `emergency_contact`. A data protection notice that overstates
+what is held is a defect in the notice — its entire purpose is to be an accurate account of the
+processing. So section 1 is derived from what the class actually permits, and it adds the one
+thing an officer has that an intern does not: two facts about them are *published*, not merely
+held.
+
+Verified by rendering all five officer documents and reading the PDF text, not the source. The
+remaining "intern" strings in the output are deliberate cross-references — "differs from the
+copy given to an intern", "the Grievance Policy is an intern document" — plus one false positive
+on "internal business information".
+
+Left open and narrowed rather than closed: D-46 is no longer a coverage gap, it is a
+duplication. Five officer documents now carry text adapted from five intern ones, and nothing
+compares them. Diffing fails immediately because they are supposed to differ.
+
+Gates green: fmt, clippy, tests, `docket check` — 26 documents, 0 errors.

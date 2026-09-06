@@ -1,6 +1,6 @@
 # tool-docket
 
-Paridyum's people-document system. Twenty-three documents, one typesetting
+Paridyum's people-document system. Twenty-six documents, one typesetting
 authority, one home for every fact, and a register that makes an issued
 document verifiable years later.
 
@@ -142,10 +142,10 @@ template hard-codes the address, the email or an officer's name.
 | `person-classes.yaml` | intern / employee / contractor: what each may hold, must hold, and must not |
 | `fields.yaml` | every field, its purpose, its store. 54 of them |
 | `signatories.yaml` | who may sign, and under what designation |
-| `lifecycle.yaml` | the 23 documents, which classes each applies to, and what each stage owes |
+| `lifecycle.yaml` | the 26 documents, which classes each applies to, and what each stage owes |
 | `retention.yaml` | how long each class is kept, **and why** |
 
-Change the office address in `org.yaml` and every one of the twenty-three
+Change the office address in `org.yaml` and every one of the twenty-six
 documents picks it up on the next build. That was the point: the address
 used to appear verbatim in eleven files.
 
@@ -161,15 +161,26 @@ than something the production system does. Four are additions.
 **Policies** — Information Security & Acceptable Use, POSH *(new)*, Data Protection Notice *(new)*
 **Forms** — Intern Onboarding, Emergency Contact, Equipment Acknowledgement, Offboarding Checklist
 **Certificates** — Certificate of Internship, Letter of Reference
-**Officer documents** — Non-Disclosure Agreement *(new)*, IP Assignment *(new)*
+**Officer documents** *(all new)* — Non-Disclosure Agreement, IP Assignment,
+Code of Conduct, Information Security & Acceptable Use, Data Protection Notice
 
-The last two are separate files rather than the intern ones generalised. The
+These five are separate files rather than the intern ones generalised. The
 intern NDA says "Intern" sixteen times and "internship" six, and "the
 internship" is the arrangement rather than the party — one template serving
-both would have meant editing the operative text of a document interns have
-already signed. RFC-0042 records the trade and `DECISION-DEBT.md` D-46 records
-what it costs: the confidentiality terms now exist twice and nothing checks
-that they agree.
+both would have meant editing the operative text of documents interns have
+already signed.
+
+They are also not word-swaps. Several sections are substantively different and
+two are **inverted**: an intern may not speak on Paridyum's behalf and an
+officer may; an intern may access only what an assignment requires while an
+officer's access is administrative, so least privilege becomes a discipline
+they impose on themselves. The officer Data Protection Notice lists a genuinely
+smaller set of collected data, because the officer class forbids `education`
+and `statutory` and does not permit `emergency_contact` — a notice that
+overstates what is held is a defect in the notice.
+
+RFC-0042 records the trade and `DECISION-DEBT.md` D-46 records what it costs:
+this text now exists twice and nothing checks that the two agree.
 
 Forms are dual-purpose: fields the person record knows are pre-filled,
 fields it does not are ruled lines to complete by hand. Nobody retypes what

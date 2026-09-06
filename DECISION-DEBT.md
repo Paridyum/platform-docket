@@ -738,9 +738,17 @@ because they are supposed to differ. A real fix probably factors the clause bodi
 shared includes with the party term as a macro, which is a bigger change to live legal text
 than this work warranted.
 
-**Also open: `COC`, `ISP` and `DPN` do not exist as officer documents.** An officer holds
-the most access in the estate and has agreed to no acceptable-use policy. They want drafting
-as officer documents in their own right, not as edits to the intern set.
+**Closed 2026-09-06:** `COO`, `ISO` and `DPO` now exist as officer documents, drafted in
+their own right rather than as edits to the intern set — with four sections substantively
+different and two inverted. The officers' coverage gap is closed; what remains open is the
+duplication below.
+
+**What stays open is the drift.** There are now five officer documents adapted from five
+intern ones, and the confidentiality, conduct and security text exists twice with nothing
+comparing them. Diffing the pairs fails immediately, because they are supposed to differ. A
+real fix factors the clause bodies into shared includes with the party term as a macro, which
+is a larger change to live legal text than this work warranted — and which would have to be
+made without breaking documents already signed.
 
 ## D-47 — Nothing validates `engagement.job_id` against a posting that exists
 

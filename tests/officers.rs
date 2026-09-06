@@ -74,7 +74,9 @@ fn an_officer_owes_the_officer_set_and_not_the_internship_set() {
 
     // The failure this catches is a document that SAYS "Intern" being issued to a
     // director. A false document with a serial and a register entry is worse than none.
-    for internship_only in ["OFR", "AGR", "IPA", "NDA", "GRD", "INS", "ONB", "EMC"] {
+    for internship_only in [
+        "OFR", "AGR", "IPA", "NDA", "GRD", "INS", "ONB", "EMC", "ISP", "COC", "DPN", "GRV",
+    ] {
         assert!(
             !owed.contains(&internship_only.to_owned()),
             "{internship_only} is an internship document and must not be owed to an officer"
@@ -223,9 +225,10 @@ fn the_officer_gate_waits_only_on_officer_documents() {
         .expect("gates computed");
     let codes: Vec<&str> = gates.iter().map(|g| g.code.as_str()).collect();
 
-    assert!(codes.contains(&"NDO"), "the officer NDA gates: {codes:?}");
-    assert!(codes.contains(&"IPO"), "the officer IPA gates: {codes:?}");
-    for internship_only in ["AGR", "IPA", "NDA", "COC", "GRV", "ISP"] {
+    for code in ["NDO", "IPO", "COO", "ISO"] {
+        assert!(codes.contains(&code), "{code} gates an officer: {codes:?}");
+    }
+    for internship_only in ["AGR", "IPA", "NDA", "COC", "GRV", "ISP", "DPN"] {
         assert!(
             !codes.contains(&internship_only),
             "{internship_only} must not gate an officer: {codes:?}"
@@ -257,7 +260,7 @@ fn the_officer_documents_typeset_and_name_the_director() {
     let reg = registry();
     let by_code = reg.lifecycle.by_code().expect("codes");
 
-    for code in ["NDO", "IPO"] {
+    for code in ["NDO", "IPO", "COO", "ISO", "DPO"] {
         let doc = by_code.get(code).expect("declared");
         let issued = issue::one(&sb.paths, &reg, &person, doc, d("2026-09-06"), "rohan");
         assert!(issued.is_ok(), "{code} renders: {:?}", issued.err());
@@ -265,7 +268,7 @@ fn the_officer_documents_typeset_and_name_the_director() {
     }
 
     let pdfs = store::register(&sb.paths).expect("register");
-    assert_eq!(pdfs.len(), 2, "both officer documents are registered");
+    assert_eq!(pdfs.len(), 5, "every officer document is registered");
 
     // THE SIGNATURE BLOCK RESOLVES FROM `signed_by_class`, NOT FROM THE TEMPLATE, and the
     // assertion is made against the RENDERED TEXT because that is what a reader signs. If
