@@ -12,8 +12,10 @@ use tool_docket::application::{
     verify,
 };
 use tool_docket::config::Paths;
+use tool_docket::domain::address;
 use tool_docket::domain::event::Kind;
 use tool_docket::domain::identity::Standing;
+use tool_docket::domain::person;
 use tool_docket::domain::signature::Method;
 
 /// Paridyum's internship document system.
@@ -155,6 +157,15 @@ enum Command {
     Index,
     /// Print the published team as JSON, for the public web surface.
     Team,
+    /// Show the two addresses a person should be provisioned.
+    Addresses {
+        /// Person slug.
+        slug: String,
+        /// Disambiguate a collision. The NEW address takes the suffix; an
+        /// address already in use is never renamed.
+        #[arg(long)]
+        suffix: Option<u32>,
+    },
     /// Report documents past their retention period.
     Retention {
         /// Evaluate as at this date, ISO. Defaults to today.
@@ -351,6 +362,7 @@ fn dispatch(
         Command::Emails { slug, only } => cmd_emails(paths, registry, &slug, only.as_deref()),
         Command::Index => cmd_index(paths, registry),
         Command::Team => cmd_team(registry),
+        Command::Addresses { slug, suffix } => cmd_addresses(paths, &slug, suffix),
         Command::Retention { date } => cmd_retention(paths, registry, date.as_deref()),
         Command::New {
             slug,
@@ -813,6 +825,40 @@ fn cmd_emails(
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// Show the two addresses a person should be provisioned.
+///
+/// DERIVED AND PRINTED, NOT WRITTEN. It does not edit the record, because provisioning is a
+/// thing an operator does in Google's console and the record should say what was actually
+/// created rather than what was intended. Paste the two lines back once the accounts exist.
+fn cmd_addresses(paths: &Paths, slug: &str, suffix: Option<u32>) -> Result<ExitCode> {
+    let person = store::person(paths, slug)?;
+    let record = personnel::identify(paths, slug)?;
+    let Some(name) = person.string("identity.legal_name") else {
+        bail!("{slug}: identity.legal_name is unset; an address is derived from it");
+    };
+    if name.contains(person::UNFILLED) {
+        bail!(
+            "{slug}: identity.legal_name is still the template placeholder. An address may \
+             never be renamed once issued, so it is not derived from a name nobody has checked."
+        );
+    }
+
+    let a = address::derive(name, &record.person_id, suffix);
+    println!("{slug}  {}  {name}", record.person_id.as_str());
+    println!();
+    println!("  published  {}", a.published);
+    println!("             what they give out, what goes on a document, what a commit is");
+    println!("             authored from. Create as an alias delivering to the mailbox below.");
+    println!();
+    println!("  mailbox    {}", a.mailbox);
+    println!("             where mail lands. NOT given out. Create this Gmail account first.");
+    println!();
+    println!("Then record both in people/{slug}.yaml:");
+    println!("  access.company_email: {}", a.published);
+    println!("  access.mailbox_email: {}", a.mailbox);
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Print the published team as JSON.

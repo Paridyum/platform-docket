@@ -146,7 +146,11 @@ issued.)*
     export DOCKET_OPERATOR=rohan
     scripts/bootstrap-officers.sh          # opens four records
     $EDITOR people/*.yaml                  # fill from the replies, delete what you did not ask
+    docket addresses <slug>                # per person: the two accounts to create
     scripts/bootstrap-officers.sh --issue  # checks, then issues all five for each
+
+`docket addresses` needs the legal name filled in first — it refuses to derive an address from
+a placeholder, because an address may never be renamed once issued.
 
 Then get them signed and record each one:
 

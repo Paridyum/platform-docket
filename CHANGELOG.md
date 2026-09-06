@@ -7,6 +7,37 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **`docket addresses <slug>`, and `access.mailbox_email`.** ADR-0067 — nothing in this estate
+  said what a person's address looked like, and `C-0007` governs repositories, crates, API paths,
+  tables, env vars and images but not mailboxes.
+
+  Two addresses, derived from the legal name and the person identifier rather than typed, so they
+  cannot disagree and neither is invented at the keyboard:
+
+      published  firstname.lastname@paridyum.com     the identity
+      mailbox    firstname.p000147c3.paridyum@gmail.com   where mail lands
+
+  **`intern.paridyum.com` was proposed and rejected.** It is ADR-0051's locked mistake in a worse
+  place: class is mutable for a person, and the predictable case — an intern is hired — leaves an
+  address that either lies or must be renamed. A rename is not available, because most copies of
+  an address are in other people's address books, on signed documents, and in commit authorship
+  that C-0003 requires be attributable. The real argument for a subdomain is sending reputation,
+  and the standard answer to that is a subdomain for *bulk and automated* mail — about what sends,
+  not who sends it.
+
+  The mailbox carries the **person identifier** rather than a second hand-kept counter. It is
+  already unique across Paridyum forever, already refuses reissue, and carries a check character
+  against transcription error. A second sequence would be a second thing that must never be
+  reused, which ADR-0051 names as "the one failure that silently reattaches one person's
+  documents to another."
+
+  `access.company_email` now means the published address specifically, and
+  `access.mailbox_email` is separate — because **severing an alias is provable and recovering a
+  consumer mailbox is a request.** The record must not report the second as the first. That
+  distinction is a direct cost of the operator's decision to use free Gmail long-term rather than
+  Workspace, and ADR-0067 lists what else that costs: no admin console, no enforced 2FA, no audit,
+  no legal hold, no recovery.
+
 - **`COO`, `ISO` and `DPO` — the Code of Conduct, Acceptable Use Policy and Data Protection
   Notice, as officer documents.** Closes the half of D-46 that mattered most: an officer holds
   strictly more access than any intern will and had agreed to none of it.

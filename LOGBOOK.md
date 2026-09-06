@@ -171,3 +171,52 @@ duplication. Five officer documents now carry text adapted from five intern ones
 compares them. Diffing fails immediately because they are supposed to differ.
 
 Gates green: fmt, clippy, tests, `docket check` — 26 documents, 0 errors.
+
+## 2026-09-06 — addresses, and the subdomain that would have repeated a locked mistake
+
+Four officers need email, interns follow, and nothing said what an address looks like. C-0007
+governs repositories, crates, API paths, tables, environment variables and images — not
+mailboxes. Three function addresses existed by custom: `legal@`, `hello@`, `security@`.
+
+The shape proposed was `vivaswan.pdol001.paridyum@gmail.com`, with `intern.paridyum.com`
+floated for the domain half.
+
+**The subdomain is the part worth recording.** `intern.paridyum.com` is ADR-0051's locked
+mistake in a worse place. That ADR rejected `PAR-INT-2026-0001` as a person identifier because
+`INT` is a class and class is mutable for a person — "the predictable case is the one that
+breaks it: an intern is hired." An address is a far worse place to make it than a folder name,
+because most copies are not yours: they are in other people's address books, on signed
+documents, in university records, and in commit authorship that C-0003 requires be real and
+attributable. A folder can be renamed by one person. An address cannot.
+
+The honest counter is sending reputation, and it has a standard answer that does not put a
+mutable fact in someone's identity: isolate bulk and automated sending on its own subdomain.
+That is about what sends, not who sends.
+
+**`pdol001` could not be decoded and was replaced rather than guessed at.** It is not the
+person identifier and not the engagement identifier. Whatever it meant, docket already mints
+something with exactly the properties a Gmail disambiguator needs — unique across Paridyum
+forever, never reissued, and carrying a check character. Adding a second hand-kept counter
+would have been a second thing that must never be reused, which ADR-0051 singles out as the
+failure that silently reattaches one person's records to another.
+
+**The Gmail account name keeps the given name, and that is a deliberate departure from
+ADR-0051's opacity rule.** That rule is argued from a directory listing disclosing who Paridyum
+engages to anyone who can read it. A Gmail account name is not a listing anybody browses; what
+it has to be is findable in an account switcher when an operator holds twelve of them.
+
+**The operator chose free Gmail long-term rather than Workspace, and the cost lands on
+something docket was built to do.** `access.company_email`'s stated purpose is "so offboarding
+can prove it was removed", and a consumer account cannot be suspended, audited or recovered by
+Paridyum. Rather than let the record imply a proof that does not exist, the field now means the
+published alias specifically and `access.mailbox_email` is separate: **severing an alias is
+provable; recovering a consumer mailbox is a request.** Splitting them is also the mitigation —
+Paridyum can end someone's ability to act as Paridyum without needing access to their mailbox.
+
+Derivation is a domain function with six tests rather than a documented convention, including
+the two cases a convention gets wrong: a three-part name keeps every part, and a name with no
+ASCII yields a visibly wrong local part instead of an invented romanisation — permanent, under
+a rule that forbids renaming.
+
+`gates.sh` earned itself again: `cargo build` was clean and clippy was not (`-D warnings`), so
+building and eyeballing would have recorded a failing gate as green.

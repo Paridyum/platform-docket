@@ -56,7 +56,12 @@ device:
   os: Linux
 
 access:
-  company_email: null
+  # Both derived rather than typed -- run `docket addresses <slug>` after the
+  # legal name is filled in, and paste what it prints. Deriving them is what
+  # stops the two disagreeing, and an address may never be renamed once issued
+  # (ADR-0067): every copy of it is in somebody else's hands.
+  company_email: null                    # firstname.lastname@paridyum.com
+  mailbox_email: null                    # the Gmail account it delivers to
   systems: null                          # recorded as events, not edited here
 
 equipment:

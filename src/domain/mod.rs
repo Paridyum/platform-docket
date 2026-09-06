@@ -1,5 +1,6 @@
 //! Document rules that hold regardless of how documents are stored or rendered.
 
+pub mod address;
 pub mod chain;
 pub mod definitions;
 pub mod escape;

@@ -142,6 +142,38 @@ To check a copy someone sent you rather than the stored one, add
 
 ---
 
+## Task: provision someone's two addresses
+
+ADR-0067. Two accounts per person and they are not interchangeable.
+
+    docket addresses aditya-shrivastava
+
+      published  aditya.shrivastava@paridyum.com
+      mailbox    aditya.p000001cx.paridyum@gmail.com
+
+**Create the mailbox first, then the alias pointing at it.** The Gmail account is where mail
+lands and is never given out; the `paridyum.com` address is the identity — what goes on a
+document, on the officers page, and in a commit author line.
+
+Then paste both back into `people/<slug>.yaml` as `access.company_email` and
+`access.mailbox_email`. The command prints them rather than writing them, because the record
+should say what was actually created, not what was intended.
+
+**Three rules that have no escape hatch.**
+
+| Rule | Why |
+| --- | --- |
+| Never reuse an address | The new holder receives the old holder's mail, and the mail that matters is a password reset. |
+| Never rename one in use | Most copies of it are in other people's address books, on signed documents, and in commit history. |
+| Never put a class in it | `intern.paridyum.com` was rejected: class is mutable for a person and ADR-0051 is locked against it. An intern who is hired would need a rename, which the rule above forbids. |
+
+A collision takes a suffix on the **new** address only: `docket addresses <slug> --suffix 2`
+gives `rohan.batra2@`, and the first Rohan Batra is untouched.
+
+**At offboarding, two facts and they are not the same.** Severing the alias is an act Paridyum
+controls and can prove. Recovering a consumer mailbox is a request to the person leaving, who
+holds the recovery phone. Record them separately; do not report the second as the first.
+
 ## Task: publish the officers page
 
 `registry/team.yaml` holds the public summary for each officer and nothing else — the name and

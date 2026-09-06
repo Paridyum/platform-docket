@@ -89,7 +89,9 @@ device:
   os: Linux
 
 access:
-  company_email: null
+  # Both derived rather than typed -- see `docket addresses <slug>` (ADR-0067).
+  company_email: null                    # firstname.lastname@paridyum.com
+  mailbox_email: null                    # the Gmail account it delivers to
   systems: null                          # recorded as events, not edited here
 
 equipment:

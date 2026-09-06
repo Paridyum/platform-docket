@@ -240,7 +240,19 @@ fields:
     group: access
     store: personnel
     purpose: >
-      The account issued. Recorded so offboarding can prove it was removed.
+      The PUBLISHED address, firstname.lastname@paridyum.com (ADR-0067). What
+      the person gives out, what appears on a document, and what a commit is
+      authored from. Recorded so offboarding can prove the alias was severed --
+      which, unlike the mailbox, is an act Paridyum controls outright.
+    optional: true
+  - path: access.mailbox_email
+    group: access
+    store: personnel
+    purpose: >
+      The consumer mailbox the published address delivers to. Recorded because
+      it is a second account that must be dealt with at offboarding -- and kept
+      separate because severing the alias is PROVABLE and recovering a consumer
+      mailbox is a request. The record must not report the second as the first.
     optional: true
   - path: access.cloud_folder
     group: access
