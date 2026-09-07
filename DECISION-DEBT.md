@@ -877,17 +877,32 @@ already the natural place to put the node name.
 authoritative is estate inventory, and RFC-0021 (which governs hostnames) is still `proposed`.
 Building a registry against a proposed naming scheme would bind docket to a name that may change.
 
-## D-53 — The restore has been rehearsed locally, never against Sync
+## D-53 — The restore is rehearsed across machines, and not against Sync itself
 
 ADR-0072 D6 adopts ADR-0071 §3 — *"a backup that has never been restored is a belief, not a
-control"* — and `tests/node.rs` now rehearses the whole path on a second store from the bundle
-and the key alone, including that a stranger's key cannot open it. Eleven tests, and two
-mutations were checked to confirm they fail when the guards are removed.
+control."*
 
-**What is proven is the cryptography and the code. What is not proven is the transport.** Nobody
-has pushed a bundle to Sync.com, pulled it down on a machine that has never held the store, and
-restored from that copy. This is the same residual D-50 records, narrowed: the local leg is now
-tested rather than assumed, so what is left is exactly one manual rehearsal.
+**What is now proven.** `rehearsal/rehearse.sh` runs four containers on a private network with no
+shared filesystem between the nodes. Node A creates people, backs up, pushes the bundle to an
+off-host container, and is then **deleted along with its volume**. Node B — which has never held
+the store — pulls the bundle over HTTP, restores, verifies every chain, and continues the
+identifier sequence at `PAR-P-000004-4`. Thirteen assertions, including four negatives: a
+stranger's estate key cannot open the bundle, a second node on a shared store is refused by name,
+no identifier is allocated twice, and the API answers on its own loopback while being unreachable
+from another container.
 
-It cannot be automated from here: RFC-0038 records that the vendor's client is Windows and Mac
-only and docket does not talk to Sync. It is a runbook step, and the runbook is D-51's.
+This is the leg `tests/node.rs` structurally cannot reach: those tests share a kernel and a disk,
+so they prove the cryptography and not that the spare needs nothing from the lost machine.
+
+**What is still not proven, and cannot be from here: the Sync.com leg.** RFC-0038 records that the
+vendor's client is Windows and Mac only, so it can never run in a Linux container. The `offhost`
+container carries the same bytes over the same kind of hop, which is a stand-in and not the
+vendor. One manual rehearsal remains: push a bundle to Sync, pull it down on a machine that has
+never held the store, restore from that copy.
+
+**Two assertions in the harness were vacuous when first written**, and both are recorded because
+the failure mode is a green run that proves nothing. The plaintext check used `grep -v`, which is
+line-based and therefore flags binary ciphertext; it now inspects the first eighteen bytes, and a
+deliberately injected plaintext file makes it fail. The reachability check curled a container that
+was not serving at all, so it was measuring an absent listener rather than `require_loopback`; the
+server must now answer on its own loopback before its unreachability from elsewhere is counted.

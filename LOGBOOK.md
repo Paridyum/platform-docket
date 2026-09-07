@@ -513,3 +513,53 @@ last session's silent no-ops; two deliberate mutations (`if false &&` on the mer
 `keys` reclassified `Replicate`) to confirm the new tests fail when the guards are removed.
 
 371 tests. Gates green. `check-knowledge.sh` passes.
+
+## 2026-09-07 — Two containers, and the one thing they could not prove
+
+**The operator asked to make it production-ready by running two nodes connected over a network.
+Half of that was the missing piece and half of it was the thing the morning's work had just ruled
+out**, so it was worth separating rather than building.
+
+Two docket binaries reachable over a network is multi-writer — the ADR-0051 collision closed
+hours earlier — and `require_loopback` refuses a routable bind anyway, deliberately, because the
+server has no authentication of its own. A spare that *runs* docket is not a spare.
+
+**What was right is the isolation.** Two environments with separate filesystems, the bundle
+crossing a network as bytes, is exactly the leg `tests/node.rs` cannot reach: those tests share a
+kernel and a disk, so they prove the cryptography and not that a spare needs nothing from the
+machine it is replacing. So the network carries the *bundle*, not docket traffic.
+
+Node A creates three people, backs up, pushes the bundle to an off-host container, and is then
+deleted along with its volume. Node B pulls it, restores, verifies, and allocates
+`PAR-P-000004-4`. Thirteen assertions, four negative.
+
+**Three failures on the way, and each one was informative.**
+
+A glibc version error that read like a docket bug: `rust:1.97.1-slim` is trixie and the runtime
+was bookworm. Both stages are now pinned, with the reason in the Dockerfile, because the symptom
+names no cause.
+
+**Two assertions were vacuous when first written, which is the failure mode a harness is most
+prone to.** The plaintext check used `grep -v`, which is line-based, so it flagged every
+encrypted file — the check that was meant to prove ciphertext had left the machine was instead
+reporting a leak that did not exist. And the reachability check curled a container that was not
+serving at all: the failure it recorded proved only that nothing was listening. Both are fixed,
+and the ciphertext one was confirmed by injecting a plaintext file and watching it fail. A green
+assertion nobody has made fail is not evidence.
+
+**And one failure was the system working.** The reachability test first ran on the node sharing a
+store with a running server, so `serve` was refused by the lock and the API never came up. I had
+written a check that reported the lock as a defect. It now runs on its own store.
+
+**What the containers cannot prove, stated in D-53 rather than implied away.** The Sync.com leg.
+RFC-0038 records the vendor's client as Windows and Mac only, so it can never run in a Linux
+container; the off-host container carries the same bytes over the same kind of hop and is a
+stand-in, not the vendor. Exactly one manual rehearsal remains.
+
+**Skills and tools used.** Docker with a private bridge network and per-node volumes so no two
+nodes could see one filesystem; `age-keygen` inside the image for a real estate key and a real
+wrong key; `tar` streamed through `docker exec` so the bundle moved without either node mounting
+the other; `python3 -m http.server` as the off-host stand-in; a deliberate plaintext injection to
+prove one assertion could fail.
+
+371 tests plus 13 container assertions. Gates green.

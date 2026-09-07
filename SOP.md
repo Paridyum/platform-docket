@@ -259,6 +259,21 @@ rather than in someone's memory. Two things make it exit non-zero:
   upload list and a prohibition, so a directory added later falls outside both and is silently
   neither backed up nor forbidden. Add it to `node::declared()` and say which it is.
 
+### Proving it, before trusting it
+
+    ./rehearsal/rehearse.sh
+
+Four containers, separate volumes, no shared filesystem between the nodes. It creates people on
+node A, backs up, pushes the bundle off-host, **deletes node A and its volume**, and restores on a
+node that has never held the store. Thirteen assertions; it exits non-zero if any fails.
+
+Run it after any change to the register layout, the bundle contents, or the lock. It is the only
+check that proves a spare needs nothing from the machine it replaces.
+
+**It does not exercise Sync.com.** The vendor's client is Windows and Mac only (RFC-0038), so the
+off-host container is a stand-in. One manual rehearsal is still owed and DECISION-DEBT D-53 holds
+it: push a bundle to Sync, pull it down on a machine that has never held the store, restore.
+
 ### Making the spare useful
 
 Two things, and neither is docket:

@@ -25,6 +25,20 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   key alone, then verifies every chain before reporting success. It refuses to restore onto a
   store that already holds any of the target files.
 
+- **A cross-machine restore rehearsal, in containers.** `rehearsal/rehearse.sh`, `rehearsal/Dockerfile`.
+
+  Four containers on a private network with no shared filesystem between the nodes. Node A creates
+  people, backs up, pushes the bundle to an off-host container, and is then **deleted along with
+  its volume**. Node B, which has never held the store, pulls the bundle, restores, verifies every
+  chain, and continues the sequence at `PAR-P-000004-4`. Thirteen assertions, four of them
+  negative: a stranger's key cannot open the bundle, a second node on a shared store is refused by
+  name, no identifier is allocated twice, and the API answers on its own loopback while being
+  unreachable from another container.
+
+  **Not a deployment artifact.** docket is an operator CLI on a workstation; the image exists so
+  that a restore can be proven across a real machine boundary, which two temporary directories on
+  one host cannot do however carefully the test is written.
+
 - **An exclusive store lock, because the concurrency hazard was already live.** ADR-0072 D2.
 
   The loopback server's accept loop is serial precisely because *"this process is the only writer
