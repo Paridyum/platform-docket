@@ -396,3 +396,59 @@ fn the_published_team_joins_the_registries_rather_than_restating_them() {
         }
     }
 }
+
+#[test]
+fn a_registry_edit_makes_the_officers_page_export_stale() {
+    // D-48. The export is a file committed in another repository, so nothing over there can
+    // tell that signatories.yaml moved and nobody re-ran `docket team`. This is the half that
+    // is local, and it was the half actually going wrong.
+    use tool_docket::application::team;
+
+    let sb = Sandbox::new();
+    let reg = registry();
+
+    // NO RECEIPT IS SILENT. The receipt lives in the gitignored store, so warning here would
+    // fire on every fresh checkout and every CI run forever — the always-present warning
+    // lifecycle.yaml records as the reason a genuine one gets scrolled past. The failure this
+    // detects is "edited and not re-exported", which needs a prior export to exist at all.
+    assert_eq!(
+        team::export_staleness(&sb.paths).expect("staleness computes"),
+        None,
+        "a checkout that has never exported is not evidence the published page is wrong"
+    );
+
+    team::record_export(&sb.paths, &reg, "2026-09-07").expect("records the export");
+    assert_eq!(
+        team::export_staleness(&sb.paths).expect("staleness computes"),
+        None,
+        "current immediately after an export"
+    );
+
+    // A receipt whose digest no longer matches the sources IS reported. Written directly
+    // rather than by editing a registry: the sandbox shares the real repository root, so a
+    // test that mutated `registry/team.yaml` would be editing the live one.
+    let receipt = sb.paths.store.join("exports").join("team.json");
+    std::fs::write(
+        &receipt,
+        r#"{"source_digest":"0000000000000000000000000000000000000000000000000000000000000000","exported_on":"2026-09-01","members":4}"#,
+    )
+    .expect("receipt is writable");
+
+    let stale = team::export_staleness(&sb.paths).expect("staleness computes");
+    let stale = stale.expect("a mismatched digest is reported");
+    assert!(
+        stale.contains("2026-09-01"),
+        "it names when the export was taken: {stale}"
+    );
+    assert!(
+        stale.contains("docket team"),
+        "it says how to fix it: {stale}"
+    );
+
+    // The digest covers BOTH sources, because the export is a join: signatories.yaml supplies
+    // name and designation, team.yaml the summary and the order. A digest of one alone would
+    // miss half the ways the export goes stale.
+    let digest = team::source_digest(&sb.paths).expect("digest computes");
+    assert_eq!(digest.len(), 64, "sha256, hex");
+    assert_ne!(digest, "0".repeat(64));
+}

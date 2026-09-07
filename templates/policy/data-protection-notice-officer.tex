@@ -9,6 +9,21 @@
 % So section 1 below is derived from what the officer class actually permits, and section 2
 % from what those fields are actually for. Change person-classes.yaml and this needs
 % changing with it; nothing checks that, and DECISION-DEBT records it.
+% adapted-from: templates/policy/data-protection-notice.tex@b92d8e1ca4e13146d61f494331dca8290a4b20e979fd8e59dc83ab04f84f101a
+%
+% NOT A SHARED FILE, AND NOT A COPY THAT DRIFTS SILENTLY. Of the sections in this pair,
+% more than half differ in substance -- two of them inverted -- so there is no shared
+% clause to extract. What there is instead is a risk: the intern document is amended and
+% this one is not, and nothing notices.
+%
+% The digest above is of the file this was adapted from. `cargo test --test repository`
+% recomputes it and fails when it moves, naming this file. That is the whole mechanism:
+% it does not compare content -- the two are SUPPOSED to differ -- it makes it impossible
+% to change one half without being told to review the other.
+%
+% When the intern document legitimately changes: review this one, make the matching
+% change or decide it does not apply, then update the digest in the same commit.
+
 \documentclass{paridyum}
 \begin{document}
 

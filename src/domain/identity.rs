@@ -4,7 +4,7 @@ use crate::domain::chain::Chained;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// A person's permanent identifier, e.g. `PAR-P-000147-3`.
+/// A person's permanent identifier, e.g. `PAR-P-000147-7`.
 ///
 /// **Opaque by decision (ADR-0051).** It encodes no fact about the person —
 /// not their class, not their year, not their name — because an identifier

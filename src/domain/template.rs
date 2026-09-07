@@ -2,8 +2,10 @@
 
 use crate::domain::escape;
 use crate::domain::personnel::Field;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// The prefix a person record is flattened under by `Definitions::absorb`.
 ///
@@ -108,6 +110,119 @@ pub fn field_of(command: &str, paths: &BTreeMap<String, &str>) -> String {
         || format!("\\{command} (unmapped: not declared in fields.yaml)"),
         |path| (*path).to_owned(),
     )
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod closure_tests {
+    use super::{closure, hashable, inputs};
+    use std::fs;
+
+    fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for (name, body) in files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("parent");
+            }
+            fs::write(path, body).expect("write");
+        }
+        dir
+    }
+
+    #[test]
+    fn a_template_with_no_inputs_is_just_itself() {
+        let d = tree(&[("a.tex", "hello")]);
+        let files = closure(d.path(), &d.path().join("a.tex")).expect("closure");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0.to_string_lossy(), "a.tex");
+    }
+
+    #[test]
+    fn inputs_are_followed_depth_first_in_document_order() {
+        // The order LaTeX reads them. Sorting would also be stable, but it would stop matching
+        // the document, and the point of the hash is to be auditable against the .tex.
+        let d = tree(&[
+            ("a.tex", "\\input{c/one}\n\\input{c/two}\n"),
+            ("c/one.tex", "\\input{c/deep}\n"),
+            ("c/deep.tex", "deep"),
+            ("c/two.tex", "two"),
+        ]);
+        let files = closure(d.path(), &d.path().join("a.tex")).expect("closure");
+        let names: Vec<String> = files
+            .iter()
+            .map(|(p, _)| p.to_string_lossy().into())
+            .collect();
+        assert_eq!(names, ["a.tex", "c/one.tex", "c/deep.tex", "c/two.tex"]);
+    }
+
+    #[test]
+    fn changing_a_shared_clause_changes_the_hash() {
+        // THE WHOLE REASON THIS EXISTS. Before the closure, the hash was of the top-level file,
+        // so a document could have its terms rewritten underneath it and record the same hash
+        // -- and the verification code printed on it would say the text was unchanged.
+        let before = tree(&[("a.tex", "\\input{c}\n"), ("c.tex", "original terms")]);
+        let after = tree(&[("a.tex", "\\input{c}\n"), ("c.tex", "amended terms")]);
+        let h = |d: &tempfile::TempDir| {
+            hashable(&closure(d.path(), &d.path().join("a.tex")).expect("closure"))
+        };
+        assert_ne!(h(&before), h(&after));
+    }
+
+    #[test]
+    fn moving_a_clause_changes_the_hash_even_when_the_text_does_not() {
+        // A rename changes nothing about the rendered document and everything about which file
+        // a reader opens to audit it. A hash that could not see it would let the register lose
+        // track of where its own text lives.
+        let here = tree(&[("a.tex", "\\input{c}\n"), ("c.tex", "terms")]);
+        let there = tree(&[
+            ("a.tex", "\\input{clauses/c}\n"),
+            ("clauses/c.tex", "terms"),
+        ]);
+        let h = |d: &tempfile::TempDir, _n: &str| {
+            hashable(&closure(d.path(), &d.path().join("a.tex")).expect("closure"))
+        };
+        assert_ne!(h(&here, "c"), h(&there, "clauses/c"));
+    }
+
+    #[test]
+    fn a_cycle_is_refused_rather_than_followed() {
+        // LaTeX would spin. So would this, without the guard.
+        let d = tree(&[("a.tex", "\\input{b}"), ("b.tex", "\\input{a}")]);
+        let err = closure(d.path(), &d.path().join("a.tex")).expect_err("cycle refused");
+        assert!(err.to_string().contains("more than once"), "{err}");
+    }
+
+    #[test]
+    fn a_commented_out_input_is_not_followed() {
+        // It is not read by LaTeX, so hashing it would make the register sensitive to a change
+        // that cannot reach a document.
+        let d = tree(&[("a.tex", "% \\input{ghost}\ntext\n")]);
+        let files = closure(d.path(), &d.path().join("a.tex")).expect("closure");
+        assert_eq!(files.len(), 1, "only the top file");
+    }
+
+    #[test]
+    fn an_input_after_real_content_on_the_same_line_is_still_found() {
+        assert_eq!(
+            inputs("text \\input{one} more \\input{two}"),
+            ["one.tex", "two.tex"]
+        );
+    }
+
+    #[test]
+    fn an_explicit_tex_suffix_is_not_doubled() {
+        assert_eq!(inputs("\\input{one.tex}"), ["one.tex"]);
+    }
+
+    #[test]
+    fn a_path_cannot_be_confused_with_content() {
+        // Separated by NUL, which cannot occur in a path, so no filename-plus-content can be
+        // arranged to collide with a different one.
+        let a = vec![("x/y".into(), b"z".to_vec())];
+        let b = vec![("x".into(), b"/yz".to_vec())];
+        assert_ne!(hashable(&a), hashable(&b));
+    }
 }
 
 #[cfg(test)]
@@ -240,4 +355,110 @@ mod tests {
             "only person fields are scanned: {found:?}"
         );
     }
+}
+
+/// Every file a template is actually made of, in the order LaTeX would read them.
+///
+/// **THE HASH HAS TO COVER THIS, NOT JUST THE TOP FILE.** `template_sha256` is what
+/// `verification_code` is derived from and what gets printed on the document, so it is the
+/// estate's claim about which text was issued. The moment a template gains an `\input`, a
+/// hash of the top-level file alone stops being that claim: two documents whose shared clauses
+/// differ would record the same hash, and the code printed on them would say they were the
+/// same text when they were not.
+///
+/// **The path is hashed alongside the bytes.** Moving a clause to a different file changes
+/// nothing about the rendered document, but it does change which file a reader has to open to
+/// audit it — and a rename that leaves the hash untouched is a rename the register cannot see.
+///
+/// Order is the order LaTeX reads them: depth-first, in the order the inputs appear. Sorting
+/// would be stable too, but it would stop matching the document, and the point of this is to
+/// be auditable by someone reading the `.tex`.
+///
+/// # Errors
+/// Fails if a file cannot be read, or if the inputs form a cycle — which LaTeX would spin on
+/// forever, so refusing is strictly better than reproducing that.
+pub fn closure(root: &Path, from: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    walk(root, from, &mut out, &mut seen)?;
+    Ok(out)
+}
+
+fn walk(
+    root: &Path,
+    file: &Path,
+    out: &mut Vec<(PathBuf, Vec<u8>)>,
+    seen: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let relative = file.strip_prefix(root).unwrap_or(file).to_path_buf();
+    if !seen.insert(relative.clone()) {
+        bail!(
+            "{} is included more than once, or includes itself; LaTeX would not terminate",
+            relative.display()
+        );
+    }
+    let body = fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let text = String::from_utf8_lossy(&body).into_owned();
+    out.push((relative, body));
+
+    for name in inputs(&text) {
+        // Resolved from the repository root, matching how the templates are written and how
+        // the typesetter is invoked. A path relative to the including file would be more
+        // conventional in LaTeX and would make a clause's meaning depend on where it is
+        // included from, which is the opposite of what a shared clause is for.
+        walk(root, &root.join(&name), out, seen)?;
+    }
+    Ok(())
+}
+
+/// `\input{...}` and `\include{...}` targets, in the order they appear.
+///
+/// A commented-out include is skipped: it is not read by LaTeX, so hashing it would make the
+/// register sensitive to a change that cannot reach a document.
+fn inputs(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let live = line.split('%').next().unwrap_or("");
+        let mut rest = live;
+        while let Some(at) = rest.find("\\input{").or_else(|| rest.find("\\include{")) {
+            let after = &rest[at..];
+            let Some(open) = after.find('{') else { break };
+            let Some(close) = after[open..].find('}') else {
+                break;
+            };
+            let name = &after[open + 1..open + close];
+            if !name.is_empty() {
+                // LaTeX takes `\input{a/b}` and `\input{a/b.tex}` as the same file, so both
+                // resolve to the same path here. Matched case-insensitively because the
+                // extension is ours to normalise, not the author's to get exactly right.
+                let name = if Path::new(name)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("tex"))
+                {
+                    name.to_owned()
+                } else {
+                    format!("{name}.tex")
+                };
+                out.push(name);
+            }
+            rest = &after[open + close..];
+        }
+    }
+    out
+}
+
+/// The bytes a template hash is taken over: every file, each preceded by its path.
+///
+/// The separator is a NUL, which cannot occur in a path, so no combination of filename and
+/// content can be made to collide with a different combination.
+#[must_use]
+pub fn hashable(files: &[(PathBuf, Vec<u8>)]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    for (path, bytes) in files {
+        buf.extend_from_slice(path.to_string_lossy().as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(bytes);
+        buf.push(0);
+    }
+    buf
 }

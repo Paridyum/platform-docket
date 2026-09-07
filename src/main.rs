@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
 use tool_docket::adapters::http;
+use tool_docket::adapters::lock;
 use tool_docket::adapters::{registry::Registry, store, typeset};
 use tool_docket::application::{
-    archive, browse, check, comms, enrol, issue, next, pack, personnel, roster, sign, status,
-    verify,
+    archive, browse, check, comms, enrol, issue, next, node, pack, personnel, roster, sign, status,
+    vault, verify,
 };
 use tool_docket::config::Paths;
 use tool_docket::domain::address;
@@ -157,14 +158,20 @@ enum Command {
     Index,
     /// Print the published team as JSON, for the public web surface.
     Team,
+    /// Encrypt a person's documents into the vault, or report what is not sealed.
+    Vault {
+        #[command(subcommand)]
+        what: VaultCmd,
+    },
+    /// What this node holds, and how a cold spare is brought up (ADR-0072).
+    Store {
+        #[command(subcommand)]
+        what: StoreCmd,
+    },
     /// Show the two addresses a person should be provisioned.
     Addresses {
         /// Person slug.
         slug: String,
-        /// Disambiguate a collision. The NEW address takes the suffix; an
-        /// address already in use is never renamed.
-        #[arg(long)]
-        suffix: Option<u32>,
     },
     /// Report documents past their retention period.
     Retention {
@@ -301,6 +308,57 @@ fn run() -> Result<ExitCode> {
     dispatch(command, &paths, &registry, operator.as_deref())
 }
 
+/// Whether a command writes to the store, and so must hold the store lock.
+///
+/// ADR-0072 decision 2. Written as an exhaustive match rather than a list of
+/// names, so that adding a command does not compile until someone has said
+/// which side of this line it falls on. A default of `false` here is a silent
+/// unlocked writer, which is the exact defect this exists to prevent.
+fn writes(command: &Command) -> bool {
+    match command {
+        // Reads. None of these open a file for writing inside `store/`.
+        Command::Next { .. }
+        | Command::Status { .. }
+        | Command::Render { .. }
+        | Command::Verify { .. }
+        | Command::Check
+        | Command::Emails { .. }
+        | Command::Addresses { .. }
+        | Command::Retention { .. }
+        | Command::Record { .. }
+        | Command::Roster { .. }
+        | Command::Pack { .. } => false,
+
+        // `store status` reads; `store restore` writes, and writes into a
+        // DIFFERENT root than the one being locked. Classified by subcommand
+        // rather than wholesale, because locking the source store to restore
+        // into a spare would refuse the one operation a spare exists for.
+        Command::Store { what } => matches!(what, StoreCmd::Restore { .. }),
+
+        // Writers. `Team` and `Index` are here because both record a receipt
+        // beside their output; `Vault` because seal, shred, backup and escrow
+        // all write, and refusing `vault status` during a write costs nothing
+        // next to classifying a subcommand wrongly.
+        Command::Onboard { .. }
+        | Command::Issue { .. }
+        | Command::Sign { .. }
+        | Command::Advance { .. }
+        | Command::Index
+        | Command::Team
+        | Command::Vault { .. }
+        | Command::New { .. }
+        | Command::Reengage { .. }
+        | Command::Event { .. }
+        | Command::Separate { .. }
+        | Command::Erase { .. }
+        // `Serve` holds the lock for its whole lifetime, which is what makes a
+        // CLI write during `serve` refuse instead of tearing a chain. It shares
+        // this arm rather than getting its own: two arms with one body are one
+        // arm, and clippy is right to say so.
+        | Command::Serve { .. } => true,
+    }
+}
+
 /// Route one command. Split from `run` so the routing table can grow without
 /// the entry point becoming the longest function in the crate.
 fn dispatch(
@@ -309,6 +367,15 @@ fn dispatch(
     registry: &Registry,
     operator: Option<&str>,
 ) -> Result<ExitCode> {
+    // Held for the whole command and released on drop. Bound to a name rather
+    // than `_`: `let _ = ...` drops immediately and would unlock the store
+    // before the first write.
+    let _lock = if writes(&command) {
+        Some(lock::acquire(paths, operator)?)
+    } else {
+        None
+    };
+
     match command {
         Command::Next { slug } => cmd_next(paths, registry, &slug),
         Command::Status { slug } => cmd_status(paths, registry, &slug),
@@ -361,8 +428,10 @@ fn dispatch(
         ),
         Command::Emails { slug, only } => cmd_emails(paths, registry, &slug, only.as_deref()),
         Command::Index => cmd_index(paths, registry),
-        Command::Team => cmd_team(registry),
-        Command::Addresses { slug, suffix } => cmd_addresses(paths, &slug, suffix),
+        Command::Team => cmd_team(paths, registry),
+        Command::Addresses { slug } => cmd_addresses(paths, &slug),
+        Command::Vault { what } => cmd_vault(paths, &what),
+        Command::Store { what } => cmd_store(paths, &what),
         Command::Retention { date } => cmd_retention(paths, registry, date.as_deref()),
         Command::New {
             slug,
@@ -832,7 +901,7 @@ fn cmd_emails(
 /// DERIVED AND PRINTED, NOT WRITTEN. It does not edit the record, because provisioning is a
 /// thing an operator does in Google's console and the record should say what was actually
 /// created rather than what was intended. Paste the two lines back once the accounts exist.
-fn cmd_addresses(paths: &Paths, slug: &str, suffix: Option<u32>) -> Result<ExitCode> {
+fn cmd_addresses(paths: &Paths, slug: &str) -> Result<ExitCode> {
     let person = store::person(paths, slug)?;
     let record = personnel::identify(paths, slug)?;
     let Some(name) = person.string("identity.legal_name") else {
@@ -845,7 +914,7 @@ fn cmd_addresses(paths: &Paths, slug: &str, suffix: Option<u32>) -> Result<ExitC
         );
     }
 
-    let a = address::derive(name, &record.person_id, suffix);
+    let a = address::derive(name, &record.person_id);
     println!("{slug}  {}  {name}", record.person_id.as_str());
     println!();
     println!("  published  {}", a.published);
@@ -861,14 +930,241 @@ fn cmd_addresses(paths: &Paths, slug: &str, suffix: Option<u32>) -> Result<ExitC
     Ok(ExitCode::SUCCESS)
 }
 
+/// What to do with the node's store (ADR-0072).
+#[derive(clap::Subcommand)]
+enum StoreCmd {
+    /// Report what this node holds and what would be lost if it were lost.
+    Status,
+    /// Rebuild a store on a cold spare from a register bundle and the estate key.
+    Restore {
+        /// The `_register` bundle directory, as synced down from the off-host store.
+        from: PathBuf,
+        /// Root to restore into. Must not already hold a register.
+        into: PathBuf,
+        /// The estate age identity. Defaults to the one RUN-0004 installs.
+        #[arg(long)]
+        identity: Option<PathBuf>,
+    },
+}
+
+/// What to do with the vault.
+#[derive(clap::Subcommand)]
+enum VaultCmd {
+    /// Encrypt everything issued to a person that is not already sealed.
+    Seal {
+        /// Person slug.
+        slug: String,
+    },
+    /// Report anything issued and not yet sealed.
+    Status,
+    /// Print what to upload, and what must never be uploaded.
+    Sync,
+    /// List the shreddings on record.
+    Tombstones,
+    /// Encrypt the register and its companions into the uploaded path.
+    Backup,
+    /// Export every per-person key for offline media. Weakens shredding; see the output.
+    Escrow {
+        /// Where to write it. Must be outside the store, which is what gets uploaded.
+        to: PathBuf,
+    },
+}
+
+/// `docket store` — what this node holds, and bringing up a cold spare.
+fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
+    match what {
+        StoreCmd::Status => {
+            let items = node::classify(paths)?;
+            if items.is_empty() {
+                println!("the store is empty; nothing is at risk on this machine yet");
+                return Ok(ExitCode::SUCCESS);
+            }
+            for item in &items {
+                println!(
+                    "{:<12}  {:>9}  {}",
+                    item.disposition.as_str(),
+                    item.bytes,
+                    item.name
+                );
+            }
+
+            let unclassified: Vec<_> = items
+                .iter()
+                .filter(|i| i.disposition == node::Disposition::Unclassified)
+                .map(|i| i.name.clone())
+                .collect();
+            let lost = node::unreplicated(paths)?;
+
+            println!();
+            if !unclassified.is_empty() {
+                // Louder than the rest, because an unclassified path is the one
+                // failure mode `vault sync` structurally cannot report: it is in
+                // neither the upload list nor the prohibition.
+                println!(
+                    "UNCLASSIFIED: {}\n  Nobody has said whether these replicate. Add each to \
+                     node::declared() -- ADR-0072 decision 5 -- before the next backup.",
+                    unclassified.join(", ")
+                );
+            }
+            if lost.is_empty() {
+                println!("every path that must be replicated has a bundle behind it");
+            } else {
+                println!(
+                    "LOST IF THIS MACHINE IS LOST: {}\n  Run `docket vault backup`, then copy \
+                     {} to the off-host store (ADR-0071).",
+                    lost.join(", "),
+                    node::bundle_path(paths).display()
+                );
+                return Ok(ExitCode::from(1));
+            }
+            if !unclassified.is_empty() {
+                return Ok(ExitCode::from(1));
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        StoreCmd::Restore {
+            from,
+            into,
+            identity,
+        } => {
+            let identity = match identity {
+                Some(p) => p.clone(),
+                None => tool_docket::adapters::crypt::estate_identity()?,
+            };
+            let target = Paths::resolve(into);
+            let restored = node::restore(from, &identity, &target)?;
+            for name in &restored {
+                println!("restored  {name}");
+            }
+            // Verified rather than announced. ADR-0071 §3: a backup that has
+            // never been restored is a belief, and a restore that was never
+            // checked is the same belief one step later.
+            let faults = node::verify_restored(&target)?;
+            if faults.is_empty() {
+                println!(
+                    "\n{} file(s) restored; every chain verifies",
+                    restored.len()
+                );
+                Ok(ExitCode::SUCCESS)
+            } else {
+                for fault in &faults {
+                    println!("FAULT  {fault}");
+                }
+                println!("\nthe restore completed and does NOT verify; do not promote this node");
+                Ok(ExitCode::from(1))
+            }
+        }
+    }
+}
+
+fn cmd_vault(paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
+    match what {
+        VaultCmd::Seal { slug } => {
+            // Resolved here, at the one place that knows a key is needed, rather than deep
+            // in the vault where a test would have to fake an environment to reach it.
+            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            let out = vault::seal(paths, slug, &estate)?;
+            for name in &out.written {
+                println!("  sealed   {name}");
+            }
+            println!(
+                "{} sealed, {} already present",
+                out.written.len(),
+                out.skipped
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        VaultCmd::Status => {
+            let pending = vault::unsealed(paths)?;
+            if pending.is_empty() {
+                println!("every issued document is sealed");
+                return Ok(ExitCode::SUCCESS);
+            }
+            for serial in &pending {
+                println!("  unsealed  {serial}");
+            }
+            println!(
+                "\n{} document(s) not in the vault: run `docket vault seal <slug>`",
+                pending.len()
+            );
+            Ok(ExitCode::FAILURE)
+        }
+        VaultCmd::Sync => {
+            let (upload, never) = vault::syncable(paths);
+            println!("upload:");
+            println!("  {}", upload.display());
+            println!("\nNEVER upload — a versioned store retains what you delete from it, so a");
+            println!("key inside one cannot be destroyed, and destroying it is what erasure is:");
+            for path in never {
+                println!("  {}", path.display());
+            }
+            println!("\nThe generated index is not uploaded either: encrypting the documents and");
+            println!("syncing a roster that maps identifier to name defeats the opaque naming.");
+            Ok(ExitCode::SUCCESS)
+        }
+        VaultCmd::Backup => {
+            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            for name in vault::back_up_register(paths, &estate)? {
+                println!("  backed up  {name}");
+            }
+            println!("\nEncrypted to the estate key, not a person's: this is the half that is");
+            println!("never erased, which is also what makes it safe in a versioned store.");
+            Ok(ExitCode::SUCCESS)
+        }
+        VaultCmd::Escrow { to } => {
+            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            let count = vault::escrow(paths, &estate, to)?;
+            println!("{count} key(s) written to {}", to.display());
+            println!();
+            println!("READ THIS BEFORE FILING IT. Crypto-shredding needs key material that can");
+            println!("genuinely be destroyed, so this copy improves durability by exactly as much");
+            println!("as it weakens erasure. With it, a lost laptop no longer loses every vault.");
+            println!("Also with it, `docket erase` destroys docket's copy of a key and cannot");
+            println!("reach this one — erasure becomes ASSERTED rather than proven.");
+            println!();
+            println!("So: offline media you physically control, and after any erasure either");
+            println!("destroy this medium or re-export and destroy the old one. `docket check`");
+            println!("will remind you, because it is the one gap nothing else reports.");
+            Ok(ExitCode::SUCCESS)
+        }
+        VaultCmd::Tombstones => {
+            let stones = vault::tombstones(paths)?;
+            if stones.is_empty() {
+                println!("no shreddings on record");
+                return Ok(ExitCode::SUCCESS);
+            }
+            for t in &stones {
+                println!(
+                    "  {}  {}  by {}  {} object(s)  key {}",
+                    t.shredded_on,
+                    t.person_id,
+                    t.by,
+                    t.objects,
+                    if t.key_destroyed {
+                        "destroyed"
+                    } else {
+                        "already absent"
+                    }
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
 /// Print the published team as JSON.
 ///
 /// STDOUT, so it is redirected into the web repository and committed there. The two
 /// repositories have no shared build (ADR-0001) and `people/` is gitignored, so a public
 /// page cannot read this at build time without its content depending on which machine
 /// built it. Exporting makes the published set a reviewed diff instead.
-fn cmd_team(registry: &Registry) -> Result<ExitCode> {
+fn cmd_team(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
     print!("{}", tool_docket::application::team::export_json(registry)?);
+    // The receipt is written AFTER the export is emitted, and records what it was derived
+    // from. `docket check` compares it, so editing signatories.yaml and forgetting to
+    // re-export becomes a warning here rather than a stale public page nobody notices (D-48).
+    let today = clock::to_iso(SystemClock.today()?)?;
+    tool_docket::application::team::record_export(paths, registry, &today)?;
     Ok(ExitCode::SUCCESS)
 }
 

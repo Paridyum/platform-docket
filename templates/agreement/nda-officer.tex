@@ -9,6 +9,21 @@
 %
 % The cost is two copies of confidentiality prose that will drift. A change to the terms
 % below is a change to make in nda.tex as well, and nothing checks that.
+% adapted-from: templates/agreement/nda.tex@57d2ce5ab545ed8ab5c2fef123173ea74294ef136fd6c48079f86b62dcd9f7a7
+%
+% NOT A SHARED FILE, AND NOT A COPY THAT DRIFTS SILENTLY. Of the sections in this pair,
+% more than half differ in substance -- two of them inverted -- so there is no shared
+% clause to extract. What there is instead is a risk: the intern document is amended and
+% this one is not, and nothing notices.
+%
+% The digest above is of the file this was adapted from. `cargo test --test repository`
+% recomputes it and fails when it moves, naming this file. That is the whole mechanism:
+% it does not compare content -- the two are SUPPOSED to differ -- it makes it impossible
+% to change one half without being told to review the other.
+%
+% When the intern document legitimately changes: review this one, make the matching
+% change or decide it does not apply, then update the digest in the same commit.
+
 \documentclass{paridyum}
 \begin{document}
 
@@ -128,9 +143,7 @@ rights and protections under this Agreement may be transferred to that entity wh
 permitted by applicable law.
 
 \section*{12. Governing Law}
-This Agreement will be governed by the laws of \dkOrgJurisdictionCountry. Subject to
-applicable law, disputes relating to this Agreement will be subject to the
-appropriate courts in \textbf{\dkOrgJurisdictionForum}.
+\input{templates/clauses/governing-law}
 
 \section*{13. Acceptance}
 By signing below, the Officer confirms that they have read and understood this

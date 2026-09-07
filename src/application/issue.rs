@@ -342,9 +342,13 @@ pub fn one_with(
 
     // Read the template first: its hash feeds the verification code, which
     // must be printed ON the document and therefore known before rendering.
-    let template_bytes =
-        fs::read(&template).with_context(|| format!("reading {}", template.display()))?;
-    let template_hash = sha256(&template_bytes);
+    //
+    // THE HASH COVERS EVERY FILE THE TEMPLATE IS MADE OF, not just the top one. Shared clauses
+    // live in their own files and are pulled in with `\input`; a hash of the top-level file
+    // alone would let two documents with different terms record the same hash, and the
+    // verification code printed on them would then be a claim that is not true.
+    let files = crate::domain::template::closure(&paths.root, &template)?;
+    let template_hash = sha256(&crate::domain::template::hashable(&files));
     let issued_on = clock::to_iso(date)?;
 
     // Recorded on the entry: a durable artifact says what produced it.
@@ -581,8 +585,14 @@ pub fn unsupplied_fields(
     if !template.exists() {
         return Ok(Vec::new());
     }
-    let body =
-        fs::read_to_string(&template).with_context(|| format!("reading {}", template.display()))?;
+    // EVERY FILE, not just the top one: a command used only inside a shared clause is still a
+    // field the record has to supply, and reading the top level alone would report a document
+    // as complete when rendering it would leave a `\dkP...` undefined.
+    let body = crate::domain::template::closure(&paths.root, &template)?
+        .into_iter()
+        .map(|(_, bytes)| String::from_utf8_lossy(&bytes).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     // The date is irrelevant to which commands get defined, so any will do.
     // THE DOCUMENT IS PASSED so the signature-block commands resolve here too;

@@ -27,34 +27,39 @@ pub const MAILBOX_DOMAIN: &str = "gmail.com";
 pub struct Addresses {
     /// `firstname.lastname@paridyum.com` — the published identity.
     pub published: String,
-    /// `firstname.p000147c3.paridyum@gmail.com` — where mail lands.
+    /// `firstname.p000147c7.paridyum@gmail.com` — where mail lands.
     pub mailbox: String,
 }
 
 /// Derive both addresses from a legal name and a person identifier.
 ///
-/// DERIVED RATHER THAN TYPED, so the two cannot disagree and neither is invented at the
-/// keyboard. `suffix` disambiguates a collision — the SECOND Rohan Batra is `rohan.batra2`,
-/// and the first is never touched (ADR-0067 decision 3): renaming an address already in use
-/// strands every copy of it held by somebody else.
+/// ONE SHAPE, AND IT CANNOT COLLIDE. Every address is `firstname.<person id>`, derived rather
+/// than allocated. The identifier is unique across Paridyum forever and is never reissued
+/// (ADR-0051), so uniqueness and never-reuse are inherited rather than enforced.
 ///
-/// The mailbox carries the person identifier because it is already unique across Paridyum
-/// forever and already refuses to be reissued (ADR-0051). Minting a second sequence beside it
-/// would be a second thing that must never be reused, which is the failure that silently
-/// reattaches one person's records to another.
+/// **This is what removes the address register.** A `firstname.lastname` scheme has to know
+/// every address ever issued before it can hand out the next one — including to people who
+/// have left, and to people whose records were erased, because reuse delivers one person's
+/// password resets to another. Deriving from an identifier that already guarantees both
+/// properties means there is nothing to look up and nothing to keep.
+///
+/// It also makes an address self-validating: a mistyped `firstname.lastname` goes nowhere
+/// silently, while a mistyped identifier fails the MOD 11-2 check character ADR-0051 attached
+/// to it — the error is detectable without asking anybody.
+///
+/// The cost, and it is real: this is harder to read aloud than a surname. The check character
+/// is why that is survivable rather than free.
 #[must_use]
-pub fn derive(legal_name: &str, person_id: &PersonId, suffix: Option<u32>) -> Addresses {
-    let parts = name_parts(legal_name);
-    let local = parts.join(".");
-    let n = suffix.map_or_else(String::new, |n| n.to_string());
-    let given = parts
+pub fn derive(legal_name: &str, person_id: &PersonId) -> Addresses {
+    let given = name_parts(legal_name)
         .first()
         .cloned()
         .unwrap_or_else(|| "person".to_owned());
+    let code = squash(person_id);
 
     Addresses {
-        published: format!("{local}{n}@{DOMAIN}"),
-        mailbox: format!("{given}.{}.paridyum@{MAILBOX_DOMAIN}", squash(person_id)),
+        published: format!("{given}.{code}@{DOMAIN}"),
+        mailbox: format!("{given}.{code}.paridyum@{MAILBOX_DOMAIN}"),
     }
 }
 
@@ -80,11 +85,11 @@ fn name_parts(legal_name: &str) -> Vec<String> {
         .collect()
 }
 
-/// `PAR-P-000147-3` as `p000147c3`, for a namespace that allows no hyphens.
+/// `PAR-P-000147-7` as `p000147c7`, for a namespace that allows no hyphens.
 ///
 /// The `PAR-` prefix is dropped because the account name already ends in `paridyum`, and the
 /// check character is joined with `c` so the identifier can be read back out unambiguously —
-/// `p0001473` would not say where the sequence stops and the check begins.
+/// `p0001477` would not say where the sequence stops and the check begins.
 fn squash(person_id: &PersonId) -> String {
     let raw = person_id.as_str();
     let body = raw.strip_prefix("PAR-").unwrap_or(raw);
@@ -105,55 +110,78 @@ mod tests {
     }
 
     #[test]
-    fn derives_both_addresses_from_a_two_part_name() {
-        let a = derive("ROHAN BATRA", &id(147), None);
-        assert_eq!(a.published, "rohan.batra@paridyum.com");
+    fn both_addresses_share_one_derivation() {
+        let a = derive("ROHAN BATRA", &id(147));
+        assert_eq!(a.published, "rohan.p000147c7@paridyum.com");
+        assert_eq!(a.mailbox, "rohan.p000147c7.paridyum@gmail.com");
+    }
+
+    #[test]
+    fn two_people_with_the_same_full_name_cannot_collide() {
+        // THE WHOLE POINT. There is no cascade, no suffix and no register to consult, because
+        // the identifier already guarantees uniqueness and refuses reissue (ADR-0051).
+        let first = derive("ROHAN BATRA", &id(1));
+        let second = derive("ROHAN BATRA", &id(2));
+        assert_ne!(first.published, second.published);
+        assert_ne!(first.mailbox, second.mailbox);
+    }
+
+    #[test]
+    fn the_surname_is_not_used_at_all() {
+        // Not shortened, not initialised -- absent. Two people sharing a first and last name
+        // is the case a surname cannot disambiguate anyway.
+        let a = derive("ADITYA KUMAR SHRIVASTAVA", &id(3));
+        assert!(!a.published.contains("shrivastava"));
+        assert!(!a.published.contains("kumar"));
         assert!(
-            a.mailbox.starts_with("rohan.p000147c") && a.mailbox.ends_with(".paridyum@gmail.com"),
+            a.published.starts_with("aditya.p000003c"),
             "{}",
-            a.mailbox
+            a.published
         );
     }
 
     #[test]
-    fn a_collision_suffixes_the_new_address_and_not_the_old() {
-        // ADR-0067 decision 3. The second Rohan Batra gets the suffix; the first is never
-        // touched, because every copy of an address in use is held by somebody else.
-        let first = derive("ROHAN BATRA", &id(1), None);
-        let second = derive("ROHAN BATRA", &id(2), Some(2));
-        assert_eq!(first.published, "rohan.batra@paridyum.com");
-        assert_eq!(second.published, "rohan.batra2@paridyum.com");
-        assert_ne!(first.mailbox, second.mailbox, "mailboxes never collide");
-    }
-
-    #[test]
-    fn a_three_part_name_keeps_every_part() {
-        // Dropping a middle name would make two people with the same first and last name
-        // collide when they need not, and the person's own name is not ours to shorten.
-        let a = derive("ADITYA KUMAR SHRIVASTAVA", &id(3), None);
-        assert_eq!(a.published, "aditya.kumar.shrivastava@paridyum.com");
+    fn a_single_name_needs_no_special_case() {
+        // Common enough in India that it is not an edge case, and it costs nothing here
+        // because only the given name was ever used.
+        let a = derive("RAVI", &id(4));
+        assert!(a.published.starts_with("ravi.p000004c"), "{}", a.published);
     }
 
     #[test]
     fn punctuation_and_case_are_dropped_rather_than_transliterated() {
-        let a = derive("D'SOUZA  Maria-Luisa", &id(4), None);
-        assert_eq!(a.published, "dsouza.marialuisa@paridyum.com");
+        let a = derive("D'SOUZA  Maria-Luisa", &id(6));
+        assert!(
+            a.published.starts_with("dsouza.p000006c"),
+            "{}",
+            a.published
+        );
     }
 
     #[test]
     fn a_name_with_no_ascii_yields_a_visibly_wrong_local_part() {
-        // Not an address that looks plausible and is wrong. An operator seeing `person@`
-        // knows to intervene; an invented romanisation is permanent (decision 3).
-        let a = derive("роман", &id(5), None);
-        assert_eq!(a.published, "@paridyum.com");
-        assert!(a.mailbox.starts_with("person."), "{}", a.mailbox);
+        // Not an address that looks plausible and is wrong. An operator seeing `person.` knows
+        // to intervene; an invented romanisation would be permanent, because ADR-0067 forbids
+        // renaming an address once issued.
+        let a = derive("\u{440}\u{43e}\u{43c}\u{430}\u{43d}", &id(7));
+        assert!(
+            a.published.starts_with("person.p000007c"),
+            "{}",
+            a.published
+        );
     }
 
     #[test]
-    fn the_mailbox_carries_the_check_character_readably() {
-        // `p0001473` cannot be read back: the check character and the sequence run together.
-        let Addresses { mailbox, .. } = derive("ASHA VERMA", &id(147), None);
-        let code = mailbox.split('.').nth(1).expect("has a code segment");
+    fn the_identifier_carries_its_check_character_readably() {
+        // `p0001477` cannot be read back: the check character and the sequence run together.
+        // ADR-0051 added that character because this string gets typed and read aloud -- which
+        // is now true of every address, not only a folder name.
+        let Addresses { published, .. } = derive("ASHA VERMA", &id(147));
+        let code = published
+            .split('@')
+            .next()
+            .and_then(|l| l.split('.').nth(1));
+        let code = code.expect("has a code segment");
         assert!(code.starts_with("p000147c"), "{code}");
         assert_eq!(code.len(), "p000147c".len() + 1, "one check character");
     }

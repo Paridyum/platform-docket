@@ -3,6 +3,7 @@
 use crate::adapters::{registry::Registry, store};
 use crate::config::Paths;
 use crate::domain::chain;
+use crate::domain::identity::Record as IdentityRecord;
 use crate::domain::lifecycle::Document;
 use crate::domain::personnel::validate;
 use crate::domain::register::{sha256, verify_chain};
@@ -87,6 +88,53 @@ fn warn(items: &mut Vec<Finding>, message: String) {
     });
 }
 
+/// Whether the officers page still matches the registries it was exported from.
+///
+/// A WARNING, NOT AN ERROR. A stale export is something to go and fix, not a reason to refuse
+/// every other operation — and the state it most often reports is "never exported", which is
+/// legitimate for a checkout that has not published a public site.
+///
+/// It cannot see `web-paridyum`; there is no shared build (ADR-0001). What it detects is the
+/// half that is local and was actually going wrong: registries edited after the last export.
+fn team_export(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
+    if let Some(reason) = crate::application::team::export_staleness(paths)? {
+        warn(items, reason);
+    }
+    Ok(())
+}
+
+/// Whether anything issued is sitting outside the vault.
+///
+/// A WARNING. An unsealed document is not wrong — it is a document that exists only on one
+/// laptop, which is a thing to fix rather than a reason to refuse the next operation. A store
+/// with nothing issued says nothing at all, so this stays quiet until there is something to be
+/// quiet about.
+fn vault(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
+    if let Some(reason) = crate::application::vault::register_backup_stale(paths) {
+        warn(items, reason);
+    }
+    // The escrow gap: an escrow taken before a shredding still holds the destroyed key, so the
+    // erasure is incomplete in a way nothing else reports. Passed `None` because the medium is
+    // offline by design and usually not mounted — the warning is about the operator's shelf,
+    // which no check can see.
+    if let Some(reason) = crate::application::vault::escrow_outstanding(paths, None) {
+        warn(items, reason);
+    }
+    let pending = crate::application::vault::unsealed(paths)?;
+    if !pending.is_empty() {
+        warn(
+            items,
+            format!(
+                "{} document(s) are issued but not in the vault, so they exist only here: {}. \
+                 Run `docket vault seal <slug>`.",
+                pending.len(),
+                pending.join(" ")
+            ),
+        );
+    }
+    Ok(())
+}
+
 /// Run every check.
 ///
 /// # Errors
@@ -107,6 +155,8 @@ pub fn run(paths: &Paths, registry: &Registry) -> Result<Findings> {
     people(&mut items, paths, registry)?;
     let entries = register(&mut items, paths)?;
     archive_index(&mut items, paths, registry)?;
+    team_export(&mut items, paths)?;
+    vault(&mut items, paths)?;
 
     items.sort();
     items.reverse();
@@ -542,11 +592,79 @@ fn communications(items: &mut Vec<Finding>, registry: &Registry) -> Result<()> {
 
 /// Every person record matches what its class declares, and every record on
 /// disk has an identifier.
+/// Every allocated identifier appears exactly once.
+///
+/// `docket.identifiers_are_never_reused` was declared against ADR-0051 on
+/// 2026-08-19 and never implemented. Nothing asserted it: a reissued identifier
+/// was found only when it happened to arrive with a torn chain, and two
+/// concurrent writers that appended cleanly produced **the same person
+/// identifier twice with correct links, which this check passed in silence**.
+///
+/// ADR-0072 decision 3 keeps this beside the lock deliberately. The lock is what
+/// prevents the duplicate; this is what finds one that arrived anyway -- from a
+/// stale lock cleared wrongly, two stores merged by hand, or an edited ledger.
+/// A property this load-bearing is asserted, not inferred from the failure mode
+/// that usually accompanies it.
+///
+/// **Reuse is one identifier across two SLUGS, not one identifier on two rows.**
+/// The ledger is append-only and a standing change appends: an erasure adds a
+/// second row for the same person, and the first version of this check called
+/// that a duplicate and failed `every_chain_still_verifies_after_an_erasure`.
+/// A slug is uniquely allocated and never released, so distinct slugs under one
+/// identifier means two people -- which is the defect.
+///
+/// The limit, stated rather than hidden: two writers that raced on the *same*
+/// slug would land one identifier on one slug and pass here. That case is what
+/// the lock is for, and `personnel` refuses an already-allocated slug besides.
+fn unique_identifiers(items: &mut Vec<Finding>, ledger: &[IdentityRecord]) {
+    let mut people: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut engagements: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for record in ledger {
+        people
+            .entry(record.person_id.as_str())
+            .or_default()
+            .insert(&record.slug);
+        engagements
+            .entry(record.engagement_id.as_str())
+            .or_default()
+            .insert(&record.slug);
+    }
+
+    for (id, slugs) in &people {
+        if slugs.len() > 1 {
+            err(
+                items,
+                format!(
+                    "identity ledger: person identifier {id} is allocated to {} different \
+                     people -- {}. ADR-0051 forbids reuse: a document issued to this identifier \
+                     can no longer say which person it names",
+                    slugs.len(),
+                    slugs.iter().copied().collect::<Vec<_>>().join(", "),
+                ),
+            );
+        }
+    }
+    for (id, slugs) in &engagements {
+        if slugs.len() > 1 {
+            err(
+                items,
+                format!(
+                    "identity ledger: engagement identifier {id} is allocated to {} different \
+                     people -- {}",
+                    slugs.len(),
+                    slugs.iter().copied().collect::<Vec<_>>().join(", "),
+                ),
+            );
+        }
+    }
+}
+
 fn people(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Result<()> {
     let ledger = store::ledger(paths)?;
     for fault in chain::verify(&ledger)? {
         err(items, format!("identity ledger {fault}"));
     }
+    unique_identifiers(items, &ledger);
     let log = store::events(paths)?;
     for fault in chain::verify(&log)? {
         err(items, format!("event log {fault}"));
@@ -750,6 +868,75 @@ mod tests {
         let mut items = Vec::new();
         choice_findings(&fields(yaml), &stages(declared), &mut items);
         items.into_iter().map(|f| f.message).collect()
+    }
+
+    fn ledger_row(seq: u32, eng_seq: u32, slug: &str) -> super::IdentityRecord {
+        super::IdentityRecord {
+            person_id: crate::domain::identity::PersonId::new(seq).expect("person id"),
+            engagement_id: crate::domain::identity::EngagementId::new("OFC", 2026, eng_seq)
+                .expect("engagement id"),
+            slug: slug.to_owned(),
+            class: "officer".to_owned(),
+            created_on: "2026-09-07".to_owned(),
+            standing: crate::domain::identity::Standing::Active,
+            standing_changed_on: "2026-09-07".to_owned(),
+            // Deliberately blank. These rows form NO valid chain, which is the
+            // whole point: the check must find a duplicate without help from
+            // the links, because the case it exists for is a duplicate that
+            // arrived with the links intact.
+            prev_sha256: String::new(),
+            entry_sha256: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_person_identifier_allocated_twice_is_blocking() {
+        let ledger = vec![ledger_row(5, 4, "race-a4"), ledger_row(5, 5, "race-b4")];
+        let mut items = Vec::new();
+        super::unique_identifiers(&mut items, &ledger);
+        let text = items
+            .iter()
+            .map(|f| f.message.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(items.len(), 1, "{text}");
+        assert!(
+            text.contains("PAR-P-000005-2 is allocated to 2 different"),
+            "{text}"
+        );
+        assert!(text.contains("race-a4, race-b4"), "{text}");
+        assert!(text.contains("ADR-0051"), "{text}");
+    }
+
+    #[test]
+    fn an_engagement_identifier_allocated_twice_is_blocking() {
+        let ledger = vec![ledger_row(5, 4, "race-a4"), ledger_row(6, 4, "race-b4")];
+        let mut items = Vec::new();
+        super::unique_identifiers(&mut items, &ledger);
+        assert_eq!(items.len(), 1);
+        assert!(
+            items[0]
+                .message
+                .contains("PAR-OFC-2026-0004 is allocated to 2 different")
+        );
+    }
+
+    #[test]
+    fn a_second_row_for_the_same_person_is_not_reuse() {
+        // What an erasure or a standing change leaves behind. Caught the first
+        // version of this check, which counted rows instead of people.
+        let ledger = vec![ledger_row(5, 4, "a"), ledger_row(5, 4, "a")];
+        let mut items = Vec::new();
+        super::unique_identifiers(&mut items, &ledger);
+        assert!(items.is_empty(), "a standing change is not a duplicate");
+    }
+
+    #[test]
+    fn distinct_identifiers_are_clean() {
+        let ledger = vec![ledger_row(5, 4, "a"), ledger_row(6, 5, "b")];
+        let mut items = Vec::new();
+        super::unique_identifiers(&mut items, &ledger);
+        assert!(items.is_empty());
     }
 
     #[test]

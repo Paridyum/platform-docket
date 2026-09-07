@@ -10,6 +10,21 @@
 % Agreement already relies on. Copyright needs no filing to subsist, so nothing is lost
 % by not registering early. It is an operator decision, not a legal opinion, and it is
 % worth confirming with counsel at incorporation.
+% adapted-from: templates/agreement/ip-assignment.tex@cfe36a6dc7960620e88b2d72be8e6af998260d40f7ec99ee5bda0627586cd9a2
+%
+% NOT A SHARED FILE, AND NOT A COPY THAT DRIFTS SILENTLY. Of the sections in this pair,
+% more than half differ in substance -- two of them inverted -- so there is no shared
+% clause to extract. What there is instead is a risk: the intern document is amended and
+% this one is not, and nothing notices.
+%
+% The digest above is of the file this was adapted from. `cargo test --test repository`
+% recomputes it and fails when it moves, naming this file. That is the whole mechanism:
+% it does not compare content -- the two are SUPPOSED to differ -- it makes it impossible
+% to change one half without being told to review the other.
+%
+% When the intern document legitimately changes: review this one, make the matching
+% change or decide it does not apply, then update the digest in the same commit.
+
 \documentclass{paridyum}
 \begin{document}
 
@@ -120,9 +135,7 @@ The Officer confirms that, to the best of their knowledge:
 \end{itemize}
 
 \section*{12. Governing Law}
-This Agreement will be governed by the laws of \dkOrgJurisdictionCountry. Subject to
-applicable law, disputes relating to this Agreement will be subject to the appropriate
-courts in \textbf{\dkOrgJurisdictionForum}.
+\input{templates/clauses/governing-law}
 
 \section*{13. Acceptance}
 By signing below, the parties confirm that they have read, understood, and agreed to

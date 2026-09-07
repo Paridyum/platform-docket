@@ -1,4 +1,4 @@
-//! The listener: binding loopback only, and one thread per connection.
+//! The listener: binding loopback only, and one connection at a time.
 
 use crate::adapters::http::request;
 use crate::adapters::http::response::Response;

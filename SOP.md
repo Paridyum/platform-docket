@@ -142,13 +142,192 @@ To check a copy someone sent you rather than the stored one, add
 
 ---
 
+## Task: archive documents, and erase somebody
+
+ADR-0069. Two classes of thing, and the split is what makes erasure honest.
+
+    docket vault seal <slug>     # encrypt their documents AND their signed scans
+    docket vault backup          # encrypt the register and its companions
+    docket vault status          # anything issued and not yet sealed
+    docket vault sync            # what to upload, and what must never be
+    docket vault tombstones      # the shreddings on record
+
+**Run `backup` after anything is issued or signed.** `seal` covers a person's documents;
+`backup` covers the register, the ledger, the event log, the signatures and the tombstones —
+the half that is never erased and that makes every document verifiable years later. It is
+encrypted to the estate key rather than a person's, which is also what makes it safe in a
+versioned store: there is no erasure promise here for a retained old version to break.
+`docket check` warns when it is missing or older than the register.
+
+**Sealing is idempotent** — an object already sealed is left alone. `age` output carries a fresh
+ephemeral key each run, so re-encrypting would rewrite every file and make a sync diff
+meaningless.
+
+### What goes to Sync.com
+
+Only `store/vault/`. `docket vault sync` prints the rest as *never upload*, and the reason is
+the same for all of them: **a versioned store retains what you delete from it, so a key inside
+one cannot be destroyed** — and destroying it is the entire erasure mechanism.
+
+| | |
+| --- | --- |
+| `store/vault/` | **upload.** Ciphertext, in folders named by the opaque person identifier. |
+| `store/keys/` | never. One key per person; this is the thing erasure destroys. |
+| `store/issued/` | never. The plaintext. |
+| `store/index/` | never. It maps identifier to name, which defeats the opaque folder naming. |
+| `people/` | never. |
+
+### Erasing somebody
+
+    docket erase <slug> --confirm
+
+**This destroys their key, their vault, their plaintext documents and their record**, and writes
+a tombstone: identifier, date, operator, counts. No name — a tombstone is not personal data.
+
+**What survives, deliberately:** the register. So what was issued stays provable, and **a
+document the person still holds still verifies** —
+
+    docket verify PAR/CRT/2026/0001 --file their-copy.pdf
+
+That is the property the whole design rests on. Erasure removes Paridyum's copy; it does not
+remove their ability to prove what they were issued.
+
+**What it cannot do**, and the command says so before it acts: reach a backup taken earlier, a
+mail attachment, or a printed copy.
+
+### Recovering from the backup
+
+With nothing but the escrowed estate key:
+
+    age --decrypt -i keys.txt register-issued.jsonl.age
+
+That returns every serial and every `pdf_sha256`, which is exactly what `docket verify` compares
+a presented file against. **So the estate key alone restores the ability to verify every document
+Paridyum has ever issued** — even where the vault has been shredded and the person is holding the
+only copy.
+
+### Key durability, and the trade it forces
+
+**Crypto-shredding needs key material that can genuinely be destroyed, so any backup of it
+weakens erasure by exactly as much as it improves durability.** There is no way to have both.
+
+    docket vault escrow /Volumes/<offline-media>/paridyum-keys.age
+
+| | Erasure | A lost laptop |
+| --- | --- | --- |
+| No escrow | **provable** | loses every vault |
+| Escrow | **asserted** | recoverable |
+
+It refuses to write inside the store — the store is what gets uploaded, and every key in a
+versioned cloud folder means no erasure here is real.
+
+**After any erasure, an escrow taken earlier still holds the destroyed key.** Destroy that medium
+or re-export and destroy the old one. `docket check` warns, and it is the only warning about a
+thing docket cannot see.
+
+**What is irreplaceable is the signed scan, not the issued document.** The person was handed
+their documents in a pack, so Paridyum's copy is recoverable from them. A returned scan exists
+nowhere else — `sign.rs`: *"wet ink leaves no trail of its own, so the scan IS the evidence."*
+
+### Before the first upload
+
+The estate `age` identity (RUN-0004) is what protects every per-person key at rest. **Losing it
+loses every vault** — that is the same mechanism as erasure, invoked by accident. Its backup is
+offline, outside Sync's versioning, and manual. Rehearse a restore before trusting the archive.
+
+## Task: survive losing this laptop
+
+ADR-0072. One machine writes; every other machine is a **cold spare** — it holds a restorable
+copy and does not run docket against it.
+
+### Every day: know what would be lost
+
+    docket store status
+
+    never               137  exports
+    via-bundle         1868  register
+    replicate          2268  vault
+
+    every path that must be replicated has a bundle behind it
+
+It exits non-zero when something is at risk, so it belongs in a shell prompt or a login script
+rather than in someone's memory. Two things make it exit non-zero:
+
+- **`LOST IF THIS MACHINE IS LOST`** — a path that must be replicated has no bundle behind it.
+  The remedy is in the message: `docket vault backup`, then copy the bundle to Sync.
+- **`UNCLASSIFIED`** — a path nobody has ruled on. `vault sync` cannot report this: it names an
+  upload list and a prohibition, so a directory added later falls outside both and is silently
+  neither backed up nor forbidden. Add it to `node::declared()` and say which it is.
+
+### Making the spare useful
+
+Two things, and neither is docket:
+
+1. **The estate age key from the password manager**, installed per RUN-0004 (including the macOS
+   symlink, without which every decrypt fails with an error that names no path).
+2. **The Sync folder**, synced down. It holds only ciphertext, which is why it may be anywhere.
+
+Nothing else. Do not copy the store across by hand — a copied store is a second writer waiting
+for someone to forget which laptop they are on.
+
+### Promotion, when the laptop is actually gone
+
+    docket store restore /path/to/synced/_register /path/to/repo
+
+    restored  register/events.jsonl
+    restored  register/people.jsonl
+
+    2 file(s) restored; every chain verifies
+
+**It verifies before it reports success**, because a restore that was never checked is the same
+belief as a backup that was never restored (ADR-0071 §3). If any chain faults it says
+`do not promote this node` and exits non-zero.
+
+Then **repoint the operators' SSH forwards** at the new host. That is the whole user-facing part
+of a promotion: because everyone reaches docket through `ssh -L`, the spare needs no accounts,
+no installs and no provisioning.
+
+**A restore will not merge.** If the destination already holds any of the files being restored,
+it refuses and names them. Move the old store aside first. This is not fussiness — overwriting
+discards every record made since the backup, and a store two people have written to is how one
+identifier comes to name two people.
+
+**There is no automatic failover, deliberately.** Under C-0004 promotion is a protected
+operation, and there is nothing to elect with: a split brain here mints duplicate human
+identities rather than serving stale reads.
+
+### What a spare does NOT get
+
+**The per-person vault keys.** `store/keys/` is classified `never` and stays that way: a key you
+can restore is a key you cannot prove you destroyed, which is the whole of ADR-0069. A spare can
+therefore verify every document ever issued (the register bundle carries the hashes) and cannot
+open a sealed vault. Closing that gap is the escrow decision above, and it is a trade rather
+than a fix.
+
+## Task: two people want to use docket at once
+
+They already can, and it needs no configuration: `docket serve` binds loopback and everyone
+reaches it over `ssh -L 8080:127.0.0.1:8080 <host>`. SSH keys are the authentication.
+
+**What they must not do is run the CLI while the server is up.** They will not get far — the
+second writer is refused by name:
+
+    another docket holds the store, so this write is refused.
+      host  tabla-01
+      pid   4192
+      by    rohan
+
+If that process is gone, the lock is stale and the message says how to clear it. Do not delete
+the lock file to get past a *live* holder: ten concurrent `docket new` runs against one store
+duplicated the person identifier in five of five pairs, which locked ADR-0051 forbids.
+
 ## Task: provision someone's two addresses
 
 ADR-0067. Two accounts per person and they are not interchangeable.
 
     docket addresses aditya-shrivastava
 
-      published  aditya.shrivastava@paridyum.com
+      published  aditya.p000001cx@paridyum.com
       mailbox    aditya.p000001cx.paridyum@gmail.com
 
 **Create the mailbox first, then the alias pointing at it.** The Gmail account is where mail
@@ -167,8 +346,16 @@ should say what was actually created, not what was intended.
 | Never rename one in use | Most copies of it are in other people's address books, on signed documents, and in commit history. |
 | Never put a class in it | `intern.paridyum.com` was rejected: class is mutable for a person and ADR-0051 is locked against it. An intern who is hired would need a rename, which the rule above forbids. |
 
-A collision takes a suffix on the **new** address only: `docket addresses <slug> --suffix 2`
-gives `rohan.batra2@`, and the first Rohan Batra is untouched.
+The first two hold by construction rather than by discipline — there is no way to express a
+reused or renamed address in a scheme that derives it from a permanent identifier.
+
+**There is no collision case.** The address is derived from the person identifier, which is
+already unique across Paridyum forever and never reissued, so two people with the same name get
+different addresses without anybody deciding anything. Nothing has to be looked up before
+issuing one, and no register of issued addresses exists — there is nothing for it to prevent.
+
+A wrong address is also detectable from the string alone: the identifier carries a MOD 11-2
+check character, so a transposed digit fails rather than bouncing silently.
 
 **At offboarding, two facts and they are not the same.** Severing the alias is an act Paridyum
 controls and can prove. Recovering a consumer mailbox is a request to the person leaving, who

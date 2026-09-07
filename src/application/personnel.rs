@@ -572,11 +572,36 @@ pub fn erase(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Re
     }
     let person_id = current.person_id.clone();
 
+    // THE VAULT GOES FIRST, because it is the part that cannot be undone and the part that
+    // makes this erasure rather than tidying. Deleting a record while leaving the person's
+    // documents encrypted-but-openable would be the shape ADR-0069 exists to refuse.
+    //
+    // Best-effort: a store with no vault yet is the common case today, and an erasure must not
+    // fail because there was nothing to destroy.
+    let shredded = crate::application::vault::shred(paths, &person_id, date, by).ok();
+
     let record_file = paths.person(slug);
     if record_file.exists() {
         fs::remove_file(&record_file)
             .with_context(|| format!("deleting {}", record_file.display()))?;
     }
+
+    // The plaintext copies too. They are the same personal data as the vault held, and leaving
+    // them would make the shredding decorative.
+    //
+    // BOTH DIRECTORIES, and the scans are the ones that matter. `sign.rs`: "wet ink leaves no
+    // trail of its own, so the scan IS the evidence." Deleting the issued PDFs and leaving the
+    // signed scans would erase the copies the person already holds and keep the one they do
+    // not — the exact inverse of what erasure is for.
+    for dir in [
+        paths.store.join("issued").join(person_id.as_str()),
+        paths.scans_dir(person_id.as_str()),
+    ] {
+        if dir.exists() {
+            fs::remove_dir_all(&dir).with_context(|| format!("deleting {}", dir.display()))?;
+        }
+    }
+    let _ = &shredded;
 
     let kept: Vec<Event> = store::events(paths)?
         .into_iter()

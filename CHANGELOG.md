@@ -7,6 +7,145 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **A cold spare, so losing a laptop stops losing the estate.** ADR-0072.
+  `docket store status | restore`.
+
+  The question asked was how to run on more than one machine. Measuring first moved it: RUN-0004
+  already keeps the one age key in a password manager, so a lost laptop loses no key — what lived
+  on exactly one machine was the **store**. And multi-*writer* turned out to be wrong rather than
+  hard, because a person identifier is allocated from the local ledger, so two machines allocate
+  the same identifier to two different people and locked ADR-0051 forbids exactly that.
+
+  `store status` classifies every top-level path in the store as replicate, via-bundle, never, or
+  **UNCLASSIFIED**, and exits non-zero when anything is unaccounted for or unreplicated. This is
+  `vault sync` inverted: naming an upload list and a prohibition answers "may I upload this?" and
+  cannot answer "is anything missing?", so a directory added next year fell outside both.
+
+  `store restore` rebuilds a store on a second machine from the register bundle and the estate
+  key alone, then verifies every chain before reporting success. It refuses to restore onto a
+  store that already holds any of the target files.
+
+- **An exclusive store lock, because the concurrency hazard was already live.** ADR-0072 D2.
+
+  The loopback server's accept loop is serial precisely because *"this process is the only writer
+  to four append-only hash chains"*. That covered the server and not the CLI, and `append_chain`
+  is read, seal-onto-last, append with nothing in between. Ten concurrent `docket new` runs
+  against one store **duplicated the person identifier in five of five pairs** and forked the
+  chain in four; with the lock, five refusals and five clean entries. Taken by every writing
+  command, `create_new` rather than `flock` because `unsafe_code` is forbidden and this needs no
+  libc. The refusal names the holder's host, pid and operator, so a stale lock is a decision
+  rather than a guess.
+
+### Fixed
+
+- **A duplicated person identifier could pass `docket check` in silence.**
+  `docket.identifiers_are_never_reused` was declared against ADR-0051 on 2026-08-19 and never
+  implemented. Detection was an accident of the torn chain that usually accompanies a race: one
+  of the five racing pairs appended *cleanly*, producing the same identifier twice with correct
+  links, and check passed it. Now asserted directly.
+
+  Reuse is one identifier across two **slugs**, not one identifier on two rows — the first
+  version counted rows, called an erasure's appended row a duplicate, and failed
+  `every_chain_still_verifies_after_an_erasure`.
+
+- **`server.rs` documented itself as "one thread per connection"** while its body is deliberately
+  one connection at a time. A stale line inviting someone to restore the threading the comment
+  below it argues against.
+
+- **The vault: one `age` key per person, so erasure has a mechanism.** ADR-0069.
+  `docket vault seal | status | sync | tombstones`.
+
+  **Permanence and erasure cannot both hold for the same bytes.** A key that always opens a
+  document makes it uneraseable; no such key makes loss permanent. Sync.com keeps file versions,
+  so deleting a file there is not erasure — and this estate already gitignores `people/` rather
+  than accept an unerasable record. So the split is by whether erasure applies: the **register**
+  is encrypted to the estate key and never erasable, the **vault** to a per-person key and
+  erasable by destroying it.
+
+  **What makes the split work is that `verify` compares a PRESENTED file.** An erased person can
+  still hand over their own certificate in 2036 and have it verified against a surviving register
+  entry. Erasure removes Paridyum's copy, not their ability to prove what they were issued —
+  covered by a test that erases somebody and then verifies their kept copy.
+
+  Encrypting to a person's key **and** an estate key was rejected as escrow in disguise:
+  destroying the personal key would shred nothing. `crypt::encrypt` therefore takes one
+  recipient, so adding a second is a change to the function where the argument against it is
+  written down.
+
+- **`docket erase` now destroys the vault, the plaintext and the key**, and writes a tombstone —
+  identifier, date, operator, counts, and no name. Previously it deleted the record and **left
+  every issued PDF in place**, which made the erasure decorative.
+
+  The tombstone is written *before* the key is destroyed, so a crash between them leaves a
+  tombstone with a surviving key — visible and recoverable — rather than a destroyed key nothing
+  recorded.
+
+- **`docket vault backup`** — the register, ledger, event log, signatures and tombstones,
+  encrypted to the estate key into the uploaded path.
+
+  **`seal` covered issued PDFs and left the more important half unprotected.** The register is
+  what makes a document verifiable decades later, and none of it was in any uploaded path.
+  Encrypted to the estate key rather than a person's because it is the non-erasable half — which
+  is also what makes it safe in a versioned store, where there is no erasure promise for a
+  retained version to break.
+
+  The bundle names its five files individually rather than sweeping `store/`. A glob would have
+  taken `keys/`, and a key inside a versioned store cannot be destroyed — after which no erasure
+  this system performs is real. A test asserts nothing under `keys/` reaches the uploaded path.
+
+  Recovery is rehearsed by a test rather than asserted: decrypt with nothing but the estate key
+  and confirm the serial and hash come back, which is exactly what `verify` needs.
+
+- **Signed scans are sealed and erased with everything else.** They were in neither the vault
+  nor the register bundle, so they were in nothing that ever left the laptop — and `erase`
+  deleted the issued PDFs while leaving them, which erased the copies the person already holds
+  and kept the one they do not.
+
+  **They are the irreplaceable half.** An issued document was handed over in a pack, so losing
+  Paridyum's copy is recoverable from the counterparty. `sign.rs` says why a scan is not:
+  *"wet ink leaves no trail of its own, so the scan IS the evidence."*
+
+- **`docket vault escrow <path>`** — every per-person key, encrypted to the estate key, for
+  offline media.
+
+  **Crypto-shredding needs destroyable key material, so a backup of it weakens erasure by exactly
+  as much as it improves durability.** No scheme gets both. Without an escrow, erasure is
+  provable and a lost laptop loses every vault; with one, the laptop is survivable and erasure
+  becomes *asserted* — docket destroys its copy and cannot reach the shelf. The command prints
+  that trade before the operator files the medium.
+
+  It refuses to write inside the store, which is what gets uploaded. And `docket check` warns
+  after any shredding that an earlier escrow still holds the destroyed key — the only warning in
+  the system about something docket cannot observe.
+
+- **`docket check` warns about anything issued and not sealed**, and about a register backup that
+  is missing or older than the register it covers.
+
+- **`template_sha256` now covers every file a template includes, not just the top one.** It
+  feeds `verification_code`, which is printed on the document, so it is the estate's claim about
+  which text was issued. The moment a template gains an `\input`, a hash of the top-level file
+  stops being that claim: two documents whose shared clauses differ would record the same hash.
+
+  Done **before** any clause was extracted, and while the register held **zero entries** — after
+  the first issuance there would have been two eras of hash in one register with no way to tell
+  them apart. Nine unit tests, including that a changed clause moves the hash, that *moving* a
+  clause moves it too, and that a cycle is refused rather than followed.
+
+- **`templates/clauses/governing-law.tex`** — one home for a clause that existed five times, two
+  copies differing only in where the line wrapped.
+
+- **`tests/repository.rs`** — facts about the checkout that every other suite passes through,
+  because a test running here has the working tree in front of it: that every class template
+  reaches a fresh clone (D-49), that no real person record is tracked, that every declared
+  template resolves its includes, and that an adapted template is reviewed when its source
+  changes (D-46).
+
+- **Export receipts.** `docket team` records the digest of what it exported from;
+  `docket check` warns when the registries have moved since (D-48). A missing receipt is
+  **silent** rather than a warning — it lives in the gitignored store, so warning would fire on
+  every fresh checkout forever, which `lifecycle.yaml` already records as how a genuine warning
+  gets scrolled past.
+
 - **`docket addresses <slug>`, and `access.mailbox_email`.** ADR-0067 — nothing in this estate
   said what a person's address looked like, and `C-0007` governs repositories, crates, API paths,
   tables, env vars and images but not mailboxes.
@@ -14,8 +153,23 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   Two addresses, derived from the legal name and the person identifier rather than typed, so they
   cannot disagree and neither is invented at the keyboard:
 
-      published  firstname.lastname@paridyum.com     the identity
-      mailbox    firstname.p000147c3.paridyum@gmail.com   where mail lands
+      published  firstname.p000147c7@paridyum.com          the identity
+      mailbox    firstname.p000147c7.paridyum@gmail.com    where mail lands
+
+  **Anti-collision by default: the address is derived from the person identifier, so it cannot
+  clash.** ADR-0051 already guarantees that identifier is unique across Paridyum forever and is
+  never reissued, so an address inherits both properties instead of enforcing them.
+
+  That deletes a subsystem rather than adding one. A `firstname.lastname` scheme cannot issue the
+  next address without a register of every address ever issued — including for people who left,
+  and for people whose records were erased, since reuse delivers one person's password resets to
+  another. There is nothing to register here, and nobody's address is worse because they joined
+  second.
+
+  It also makes an address self-validating: a mistyped identifier fails its MOD 11-2 check
+  character rather than bouncing silently. The cost, stated in the ADR rather than hidden, is
+  that the address is not guessable and is harder to read aloud — which is survivable because
+  `hello@`, `legal@` and `security@` are what inbound strangers actually use.
 
   **`intern.paridyum.com` was proposed and rejected.** It is ADR-0051's locked mistake in a worse
   place: class is mutable for a person, and the predictable case — an intern is hired — leaves an

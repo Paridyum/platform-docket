@@ -1,8 +1,11 @@
 //! What Paridyum publishes about its officers, joined from the registries that own it.
 
 use crate::adapters::registry::Registry;
-use anyhow::{Result, bail};
+use crate::config::Paths;
+use crate::domain::chain::sha256;
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
+use std::fs;
 
 /// One published officer, as the public surface consumes it.
 ///
@@ -134,4 +137,110 @@ pub fn export_json(registry: &Registry) -> Result<String> {
     let mut json = serde_json::to_string_pretty(&members)?;
     json.push('\n');
     Ok(json)
+}
+
+/// What the last export was made from.
+///
+/// D-48. The export is a file committed in another repository, so nothing over there can tell
+/// that `signatories.yaml` moved and nobody re-ran `docket team`. Nothing HERE could tell
+/// either, until this — the digest of the two files the export is derived from, written when
+/// the export runs and compared on every `docket check`.
+///
+/// It cannot prove the other repository actually received it. It proves the narrower thing that
+/// was actually going wrong: an export that no longer matches the registries it came from.
+#[derive(Debug, Serialize, serde::Deserialize)]
+pub struct Export {
+    /// Digest of the sources at the moment `docket team` last ran.
+    pub source_digest: String,
+    /// ISO date of that run.
+    pub exported_on: String,
+    /// How many officers it carried, so a silent truncation is visible.
+    pub members: usize,
+}
+
+/// Digest of every file the team export is derived from.
+///
+/// Both, because the export is a join: `signatories.yaml` supplies name and designation and
+/// `team.yaml` supplies the summary and the order. A change to either changes the output, so a
+/// digest of one alone would miss half the ways it can go stale.
+///
+/// # Errors
+/// Fails if either registry file cannot be read.
+pub fn source_digest(paths: &Paths) -> Result<String> {
+    let mut buf = Vec::new();
+    for name in ["signatories", "team"] {
+        let path = paths.registry(name);
+        buf.extend_from_slice(
+            &fs::read(&path).with_context(|| format!("reading {}", path.display()))?,
+        );
+    }
+    Ok(sha256(&buf))
+}
+
+/// Where the export receipt lives. In the store, not the registry: it records what happened
+/// rather than what is intended, which is the same reason the register is not a registry.
+fn receipt_path(paths: &Paths) -> std::path::PathBuf {
+    paths.store.join("exports").join("team.json")
+}
+
+/// Record that an export was taken, and from what.
+///
+/// # Errors
+/// Fails if the receipt cannot be written.
+pub fn record_export(paths: &Paths, registry: &Registry, on: &str) -> Result<()> {
+    let receipt = Export {
+        source_digest: source_digest(paths)?,
+        exported_on: on.to_owned(),
+        members: published(registry)?.len(),
+    };
+    let path = receipt_path(paths);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(&receipt)?),
+    )
+    .with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+/// Whether the last export still matches the registries, and why not where it does not.
+///
+/// `Ok(None)` means current. `Ok(Some(reason))` is a warning for `docket check` to print — not
+/// an error, because a stale export is a thing to go and fix rather than a reason to refuse
+/// every other operation.
+///
+/// **NO RECEIPT IS SILENT, AND THAT IS DELIBERATE.** The receipt lives in `store/`, which is
+/// gitignored, so a fresh checkout and every CI run would otherwise warn forever — and
+/// `lifecycle.yaml` already records what that costs: "a warning that is always present is one
+/// an operator learns to scroll past, which is how the next genuine orphan hides."
+///
+/// The failure D-48 describes is narrower than "has anyone ever exported": it is *the
+/// registries were edited and nobody re-exported*, which by definition needs a prior export to
+/// detect. Scoping to that keeps the warning rare enough to mean something.
+///
+/// # Errors
+/// Fails only if the registries cannot be read.
+pub fn export_staleness(paths: &Paths) -> Result<Option<String>> {
+    let current = source_digest(paths)?;
+    let path = receipt_path(paths);
+    let Ok(body) = fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let Ok(receipt) = serde_json::from_str::<Export>(&body) else {
+        return Ok(Some(format!(
+            "{} is unreadable; re-run `docket team`",
+            path.display()
+        )));
+    };
+    if receipt.source_digest == current {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "signatories.yaml or team.yaml has changed since the officers page was exported on {}; \
+         the public site still names the old set. Re-run `docket team > \
+         ../../web/web-paridyum/team.json` and commit it there.",
+        receipt.exported_on
+    )))
 }

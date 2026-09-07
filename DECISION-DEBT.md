@@ -725,30 +725,45 @@ detected will eventually swallow a real failure. D-35 remains the underlying gap
 CI still does not exercise rendering at all.
 
 
-## D-46 — Officer confidentiality prose exists twice, and nothing checks that it agrees
+## D-46 — Adapted templates are pinned, because deduplicating them was measured and rejected
 
-`nda-officer.tex` is an adaptation of `nda.tex`, not a generalisation of it. RFC-0042
-decision 2 records why: the intern NDA says "Intern" sixteen times and "internship" six,
-and "the internship" is the arrangement rather than the party, so making one template serve
-both would have meant editing the operative text of a document interns have already signed.
+Five officer documents were adapted from five intern ones. The concern was drift: the intern
+document is amended, the officer one is not, and nobody notices until somebody signs the stale
+half.
 
-**The debt is that a change to the confidentiality terms is now a change to make twice**,
-and no test compares them. The obvious fix — diffing the two templates — fails immediately,
-because they are supposed to differ. A real fix probably factors the clause bodies into
-shared includes with the party term as a macro, which is a bigger change to live legal text
-than this work warranted.
+**The obvious fix was to deduplicate, and the measurement says not to.** Broken into sections
+and compared across the pairs:
 
-**Closed 2026-09-06:** `COO`, `ISO` and `DPO` now exist as officer documents, drafted in
-their own right rather than as edits to the intern set — with four sections substantively
-different and two inverted. The officers' coverage gap is closed; what remains open is the
-duplication below.
+| | sections | byte-identical | differ only by the party term | genuinely different |
+| --- | ---: | ---: | ---: | ---: |
+| nda | 14 | 3 | 5 | 6 |
+| code-of-conduct | 11 | 2 | 2 | 7 |
+| infosec-acceptable-use | 17 | 0 | 10 | 7 |
+| data-protection-notice | 9 | 0 | 1 | 8 |
+| **total** | **51** | **5** | **18** | **28** |
 
-**What stays open is the drift.** There are now five officer documents adapted from five
-intern ones, and the confidentiality, conduct and security text exists twice with nothing
-comparing them. Diffing the pairs fails immediately, because they are supposed to differ. A
-real fix factors the clause bodies into shared includes with the party term as a macro, which
-is a larger change to live legal text than this work warranted — and which would have to be
-made without breaking documents already signed.
+**More than half of all sections differ in substance**, and two are inverted outright — an intern
+may not speak for Paridyum and an officer may; an intern accesses what an assignment allows while
+an officer's access is administrative. Even introducing a party-term macro would make only 45%
+shareable, and it would put `\dkPartyTerm` into prose a person signs, so no reviewer could read
+the document without mentally evaluating it.
+
+A line-level count had suggested 71% duplication and was misleading: it counted boilerplate
+(`\begin{itemize}`, shared phrasing) inside sections that genuinely differ.
+
+**Across the whole template set, only seven duplicate section copies existed.** Five were
+`Governing Law` — the same clause in five documents, two of which differed only in where the line
+wrapped. That one has been extracted to `templates/clauses/governing-law.tex`. The rest are not
+worth the indirection.
+
+**So the drift is detected rather than designed out.** Each adapted template carries a
+`% adapted-from: <source>@<sha256>` header, and `tests/repository.rs` recomputes it. Changing the
+intern document fails the suite, naming the officer file to review and the digest to paste once
+it has been. It does not compare content — the two are supposed to differ — it makes changing one
+half silently impossible.
+
+**Still open**, and smaller than it was: the review is a human one. The pin proves somebody
+looked; it cannot prove they looked carefully.
 
 ## D-47 — Nothing validates `engagement.job_id` against a posting that exists
 
@@ -792,3 +807,87 @@ freshness**, because freshness is a fact about a file in another repository.
 
 Closes with a check that runs where both are cloned, or with an export step in whatever
 publishes the site. Not with a test on either side alone.
+
+## D-50 — The estate key has no rehearsed restore, and losing it loses every vault
+
+ADR-0069 D3: every per-person vault key is `age`-encrypted to the estate identity, so that one
+key is what stands between Paridyum and its whole archive. **Losing it is the same mechanism as
+erasure, invoked by accident** — and the documents it would destroy include ones with
+`retention: permanent`, whose entire purpose is to be producible decades later.
+
+RUN-0004 says where the key lives (one identity, in the password manager, `600` at
+`~/.config/sops/age/keys.txt`). It does not say how a restore is proved to work, and nothing has
+ever done one.
+
+**Partly closed 2026-09-07.** `docket vault backup` puts the register, ledger, event log,
+signatures and tombstones into the uploaded path encrypted to the estate key, and a test
+rehearses the recovery: decrypt with nothing but that key and confirm the serial and hash come
+back — which is exactly what `verify` compares a presented file against. **So the estate key
+alone restores the ability to verify every document ever issued.**
+
+**What is still missing is a rehearsal against the real thing.** The test decrypts a local file.
+Nobody has fetched the ciphertext back from Sync onto a machine that has never seen the store.
+Until that has been done once, "we have a backup" is a belief about the transport rather than
+about the cryptography.
+
+**Closed 2026-09-07, by making the trade explicit rather than solving it.** Crypto-shredding
+needs key material that can genuinely be destroyed, so any backup of it weakens erasure by
+exactly as much as it improves durability — there is no scheme that gets both, and one claiming
+to has picked a side quietly. `docket vault escrow <path>` is therefore a command an operator
+runs deliberately: without it erasure is provable and a lost laptop loses every vault, with it
+the laptop is survivable and erasure becomes asserted. ADR-0069 D6 records both columns.
+
+**What remains open is the operator's part**, and it is genuinely theirs: choosing whether to
+hold an escrow, and if so destroying or re-exporting it after every erasure. `docket check`
+warns after a shredding, and that warning is the only one in the system about a thing docket
+cannot observe.
+
+REQ-0001 (runtime secrets) is the artifact this belongs to.
+
+## D-51 — Nothing checks that only the vault is uploaded
+
+`docket vault sync` prints what to upload and what must never be, and that is the whole
+enforcement: a human reading a list. Uploading `store/keys/` once would put every per-person key
+into a versioned store that retains what you delete from it — after which no erasure this system
+performs is real, and nothing would report that.
+
+The obvious check cannot live here: docket does not talk to Sync (RFC-0038 — the vendor's client
+is Windows and Mac only), so it cannot see what was actually uploaded. What could exist is a
+guard on the other side, in whatever performs the upload, refusing any path outside
+`store/vault/`. That belongs with the runbook for the upload, which does not exist yet either.
+
+## D-52 — The node registry and the off-authority write refusal are not built
+
+ADR-0072 decides five things and code now enforces four: the store lock (D2), the identifier
+uniqueness assertion (D3), the classification of every store path (D5), and restore-and-verify
+(D6). **Decisions 1 and 4 are prose only.**
+
+What that means concretely: the lock stops two writers *on one machine*, and nothing stops a
+second docket being started against a restored store on the spare. That is the exact ADR-0051
+collision the lock exists to prevent, reachable by the one operation a spare exists for. The
+uniqueness check would find it after the fact, on the next `docket check` — which is detection,
+not prevention.
+
+The missing pieces are a node registry naming which machines may hold a store and which one is
+authoritative — `tabla-*` under `device-registry.yaml`, which already has the family — and a
+refusal in `writes()` when this node is not the authoritative one. The lock's holder record is
+already the natural place to put the node name.
+
+**Not built now because it needs a decision this repository cannot make**: which machine is
+authoritative is estate inventory, and RFC-0021 (which governs hostnames) is still `proposed`.
+Building a registry against a proposed naming scheme would bind docket to a name that may change.
+
+## D-53 — The restore has been rehearsed locally, never against Sync
+
+ADR-0072 D6 adopts ADR-0071 §3 — *"a backup that has never been restored is a belief, not a
+control"* — and `tests/node.rs` now rehearses the whole path on a second store from the bundle
+and the key alone, including that a stranger's key cannot open it. Eleven tests, and two
+mutations were checked to confirm they fail when the guards are removed.
+
+**What is proven is the cryptography and the code. What is not proven is the transport.** Nobody
+has pushed a bundle to Sync.com, pulled it down on a machine that has never held the store, and
+restored from that copy. This is the same residual D-50 records, narrowed: the local leg is now
+tested rather than assumed, so what is left is exactly one manual rehearsal.
+
+It cannot be automated from here: RFC-0038 records that the vendor's client is Windows and Mac
+only and docket does not talk to Sync. It is a runbook step, and the runbook is D-51's.

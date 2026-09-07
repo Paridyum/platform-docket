@@ -2,7 +2,9 @@
 
 pub mod clock;
 pub mod console;
+pub mod crypt;
 pub mod http;
+pub mod lock;
 pub mod registry;
 pub mod screen;
 pub mod store;
