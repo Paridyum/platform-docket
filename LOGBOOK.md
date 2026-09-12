@@ -859,3 +859,57 @@ harness to reproduce a runner locally; an actual Tectonic install to test a clai
 reason about it; and a mutation of `.gitignore` to prove the new check fails when it should.
 
 389 tests. fmt, clippy and test green; `check` red on the four held records.
+
+## 2026-09-13 — How a CEO is fired, and an entry I got wrong by not measuring it
+
+**The question had no answer, and finding that out was most of the value.** RFC-0042 decided how an
+officer is appointed — instrument, registry entry, human under C-0004 — and said nothing about
+removal beyond the record's shape. The asymmetry is what made it a defect rather than a gap: an
+appointment without an instrument is a `docket check` finding, and a removal without one was
+indistinguishable from a correct removal.
+
+**Simulating the firing found two live defects that reading would not have.** I set Priyanshu
+`active: false` and resolved a document:
+
+    resolve_signatories(...) -> ["director"]
+
+He would still have been printed as the signatory on every document issued afterwards. Routing
+names an OFFICE; only the register knows who holds it — and the substitution only ever asked "is
+this the subject of the document", never "is this office vacant". `check` was silent because
+`signed_by` is validated against every signatory rather than the active ones.
+
+And `ceased_on` did not exist at all. RFC-0042 §5 says ceasing is `active: false` **plus** a date;
+the struct had no such field, so half the rule had been unimplementable since August.
+
+**Then the decision separated two things I could have conflated.** The operator's answer — Rohan
+absolute, Priyanshu second — is about who may DECIDE. Rohan is `cto` in the signatory register and
+third in Paridyum's fallback order. The tempting move was to reorder that list to match the
+authority, and it would have been wrong: a document is executed by whoever holds the office it
+routes to, because that is what lets the register say who held an office on a date. Reordering
+would have made Rohan sign everything and changed every document Paridyum issues. ADR-0087 keeps
+them apart and says why.
+
+**And I had to retract D-59.** I had written — and put in a summary to the operator — that removing
+Priyanshu would leave "nobody to countersign Ruhani's own documents". Measured:
+
+    PCY, Priyanshu removed — ruhani: ["cyber-cto"]
+    PCY, Priyanshu removed — rohan:  ["cyber-ceo"]
+
+The chain is two deep and survives losing any one of three. I had reasoned from the registry's
+ORDER — he is first in both lists — without following what the substitution does when the first
+entry is vacant. That is a specific way to be wrong: reading a list's shape instead of the code
+that reads it. The entry is kept with the correction rather than deleted, and the property it was
+groping for is now a check — fewer than two PEOPLE among a company's active signatories is an
+error, counted by person because Priyanshu is two rows and one human.
+
+**A note on what I did not touch.** `check-knowledge.sh` reports three errors in `ADR-0086` and
+`STD-0022`, both untracked files from another session and possibly mid-edit. Not mine to fix
+silently.
+
+**Skills and tools used.** Editing the real registry to simulate a removal and restoring it from a
+backup; an existing test as the probe — `the_ceo_and_director_being_one_person_falls_through_to_
+the_cto` failing with `["director"]` was the proof; a throwaway printing test to measure the Cyber
+chain before writing a claim about it, which is what caught D-59; and `mem::forget` being denied by
+STD-0003, which was right — the `Registry` is fully parsed and the temp directory can simply drop.
+
+396 tests. fmt, clippy and test green; `check` red on the four held records.

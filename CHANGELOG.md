@@ -47,6 +47,12 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 - **`docket serve` states its one-request-at-a-time limit on startup**, where an operator is
   standing when a screen appears to hang. D-41.
 
+- **`docket check` refuses a company that cannot countersign its own officers.** ADR-0087.
+  Fewer than two *people* among a company's active signatories means that person's own documents
+  can never be issued — `docket issue` refuses a document whose subject and signatory are the
+  same person, and there is nobody to substitute. Counted by person rather than by entry, because
+  Priyanshu holds both `ceo` and `director` at Paridyum: two rows, one human.
+
 - **`docket check` enforces the group's ownership rule.** ADR-0077 decision 5.
 
   Exactly one company declares no owner; every other reaches it through `owned_by`, no chain

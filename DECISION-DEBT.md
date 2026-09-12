@@ -1001,41 +1001,45 @@ ends with two working engines.
 installs it. The cost is a misleading error on a machine that does not, and this entry is what
 stops that being diagnosed from scratch.
 
-## D-58 — Who may remove an officer is not decided anywhere
+## D-58 — Who may remove an officer is not decided anywhere  (DECIDED 2026-09-13, ADR-0087)
 
-RFC-0042 decides that **appointing** an officer needs a dated instrument, a registry entry citing
-it, and a human approving the change (C-0004). It says nothing about **removal** beyond the shape
-of the record — `active: false` plus `ceased_on`, never deletion.
+RFC-0042 decided that **appointing** an officer needs a dated instrument, a registry entry citing
+it, and a human approving the change (C-0004). It said nothing about **removal** beyond the shape
+of the record. The asymmetry was the defect: an appointment reaching the register without an
+instrument is a `docket check` finding, and a removal reaching it without one was
+indistinguishable from a correct removal.
 
-So the register can now record that somebody ceased to hold office, and nothing says who is
-entitled to decide it. The asymmetry is visible the moment the question is asked: an appointment
-that reaches the register without an instrument is a `docket check` finding; a removal that reaches
-it without one is indistinguishable from a correct removal.
+**ADR-0087 decides it.** Governance authority is personal and ordered — Rohan Batra, then
+Priyanshu Sharma — and is deliberately *not* signing authority, which stays with the office. A
+removal now owes exactly what an appointment owes.
 
-**This is not docket's to close.** Post-incorporation it is company law and the articles — removal
-of a director and removal of a KMP are different acts with different authorities — and
-pre-incorporation it is whatever the founders' written consent says, which does not exist yet
-(the appointing instrument is itself outstanding). Recorded here so the gap is visible, and it
-belongs with counsel alongside RFC-0042 §5's instrument.
+**What remains is not this entry's.** After incorporation the Companies Act and the articles govern
+removing a director regardless of any internal ordering, and the founders' written consent that
+would carry this pre-incorporation is the same instrument RFC-0042 §5 has been owed since August.
+That is one outstanding document, not two open questions.
 
-**What is safe to say without counsel** is the mechanical part, and that is now enforced: a ceased
-officer stops signing new documents, stays in the register forever, and every document they signed
-while in office remains verifiable against its stored hash.
+**Also unenforced, honestly.** `signatories.yaml` is hand-edited and docket cannot know who
+approved an edit. The control is C-0004's — a human — and the evidence is the instrument.
 
-## D-59 — Priyanshu is a single point of failure in both signing chains
+## D-59 — Priyanshu is a single point of failure in both signing chains  (WRONG, and corrected 2026-09-13)
 
-`registry/signatories.yaml` puts him first in Paridyum's fallback order (as `ceo` and `director`)
-and first in Paridyum Cyber's (as `cyber-holding`, signing for the owner). ADR-0077 D4 routes
-Cyber's documents through Paridyum's Director by decision, so this is the structure working as
-designed rather than a mistake.
+**This entry asserted something false and was written without measuring it.** It claimed that
+removing Priyanshu would leave "Cyber with Ruhani and Rohan and nobody to countersign Ruhani's own
+documents". Resolved against the real registry, that is not what happens:
 
-The consequence is worth stating anyway. Removing him leaves Paridyum with `cto` and `coo`, which
-is fine — the substitution reaches them. It leaves **Cyber with Ruhani and Rohan and nobody to
-countersign Ruhani's own documents**, because the chain that was meant to catch that case was him.
-`docket check` does not report it: the company still has active signatories, and the gap only
-appears for one particular subject.
+    PCY, Priyanshu removed — ruhani: ["cyber-cto"]      (Rohan signs hers)
+    PCY, Priyanshu removed — rohan:  ["cyber-ceo"]      (Ruhani signs his)
 
-Closing it means either a second holding-company signatory for Cyber, or a check that every
-officer of a company has at least one possible countersignatory other than themselves. The second
-is the real property and is a small amount of work; it is not done because the first is a
-governance decision about who else may act for the owner.
+The chain is two deep and survives losing any one of the three. Cyber becomes unable to issue only
+when two of three go at once. The entry was reasoned from the registry ORDER — he is first in both
+lists — without following what the substitution actually does when the first entry is vacant.
+
+**The property it was reaching for is now a check** rather than a claim: `docket check` errors
+when a company has fewer than two *people* among its active signatories. Counted by person and not
+by entry, because Priyanshu holds both `ceo` and `director` at Paridyum — two rows, one human, and
+for his own documents both are the subject.
+
+**Kept rather than deleted**, because the correction is the useful part. An entry reasoned from a
+list's shape rather than from the code that reads it is a specific way to be wrong, and this one
+was published in a summary before it was checked.
+

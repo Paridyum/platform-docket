@@ -896,3 +896,54 @@ fn a_ceased_officer_is_still_in_the_register() {
         "the ceased officer is still active"
     );
 }
+
+#[test]
+fn a_company_whose_signatories_are_all_one_person_is_blocking() {
+    // ADR-0087 D4 and the corrected D-59. The failure this prevents appears at
+    // issuance, on the officer hardest to replace: `docket issue` refuses a
+    // document whose subject and signatory are the same person, so a company
+    // with one human among its signatories cannot issue that human anything.
+    //
+    // Counted by PERSON, not by entry -- Priyanshu holds both `ceo` and
+    // `director` at Paridyum, which is two rows and one person. A row count
+    // would call that covered.
+    let reg = registry_without(&["cyber-holding", "cyber-cto"]);
+    let mut items = Vec::new();
+    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    let text = items.join("\n");
+    assert!(
+        text.contains("only one person among its active signatories"),
+        "a one-person company was not reported: {text}"
+    );
+    assert!(text.contains("RUHANI KHURANA"), "{text}");
+}
+
+#[test]
+fn removing_one_of_cybers_three_leaves_it_able_to_issue() {
+    // The measurement that corrected D-59: the chain is two deep and survives
+    // losing Priyanshu. Ruhani's documents fall to Rohan and his to Ruhani.
+    let reg = registry_without(&["cyber-holding"]);
+    let mut items = Vec::new();
+    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    assert!(
+        !items.iter().any(|f| f.contains("only one person")),
+        "{items:?}"
+    );
+
+    let doc = nda_officer(&reg);
+    let ruhani = issue::resolve_signatories(&reg, &officer_named("RUHANI KHURANA"), doc, "PCY");
+    let rohan = issue::resolve_signatories(&reg, &officer_named("ROHAN BATRA"), doc, "PCY");
+    assert_eq!(ruhani, vec!["cyber-cto".to_owned()]);
+    assert_eq!(rohan, vec!["cyber-ceo".to_owned()]);
+}
+
+#[test]
+fn the_shipped_registry_can_countersign_every_company() {
+    let reg = registry();
+    let mut items = Vec::new();
+    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    assert!(
+        !items.iter().any(|f| f.contains("active signatories")),
+        "{items:?}"
+    );
+}

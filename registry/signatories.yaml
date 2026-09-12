@@ -17,6 +17,26 @@ version: 1
 #
 # `company` is the code in registry/org.yaml. Absent means PAR, so an entry
 # written before the second company existed still means what it meant.
+#
+# ════════════════════════════════════════════════════════════════════════════
+# WHO MAY CHANGE THIS FILE is not the same question as who may sign (ADR-0087).
+#
+# Editing an entry here appoints or removes an officer, which is authorised by
+# ROHAN BATRA, and where he cannot act by PRIYANSHU SHARMA. That authority is
+# personal and does not move when an office does -- Rohan is `cto` below and
+# third in Paridyum's fallback order, and both of those are correct.
+#
+# Conflating the two would have meant reordering this list so Rohan signs
+# everything, which is not what was decided and would change every document
+# Paridyum issues. A document is executed by whoever holds the office it routes
+# to, because that is what makes it verifiable years later.
+#
+# CEASING IS `active: false` PLUS `ceased_on`, NEVER DELETION (RFC-0042 §5).
+# `docket check` refuses one without the other: a register that cannot say WHEN
+# an officer ceased cannot say whether they held office on the date a given
+# document was issued. A removal owes what an appointment owes -- a dated
+# instrument, an entry citing it, and a human approving it under C-0004.
+# ════════════════════════════════════════════════════════════════════════════
 
 signatories:
   # ── PARIDYUM ────────────────────────────────────────────────────────────────

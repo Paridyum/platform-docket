@@ -326,15 +326,7 @@ fn organisation(items: &mut Vec<Finding>, registry: &Registry) {
                 ),
             );
         }
-        if registry.active_signatories_of(code).next().is_none() {
-            err(
-                items,
-                format!(
-                    "{code} has no active signatory, so nothing can be issued for it \
-                     (ADR-0077 decision 4)"
-                ),
-            );
-        }
+        countersignatories(items, registry, code);
     }
 
     ownership(items, registry, &codes);
@@ -369,6 +361,48 @@ fn ceased_officers(items: &mut Vec<Finding>, registry: &Registry) {
                 ),
             );
         }
+    }
+}
+
+/// A company can countersign its own officers' documents.
+///
+/// `docket issue` refuses a document whose subject and signatory are the same
+/// person, so a company whose active signatories are all ONE PERSON cannot issue
+/// that person anything -- and the failure appears at issuance, on the officer
+/// who is hardest to replace.
+///
+/// **Counted by person, not by entry**, and that is the whole reason this is not
+/// just "the list is non-empty". Priyanshu holds both `ceo` and `director` at
+/// Paridyum: two entries, one human, and for his own documents both are the
+/// subject. A count of rows would call that covered.
+///
+/// D-59 asserted that removing him would leave Ruhani's Cyber documents
+/// unsignable. Measured, that was wrong -- the chain reaches Rohan. This check
+/// is the property that claim was reaching for, asserted rather than assumed.
+fn countersignatories(items: &mut Vec<Finding>, registry: &Registry, company: &str) {
+    let people: BTreeSet<&str> = registry
+        .active_signatories_of(company)
+        .map(|s| s.legal_name.trim())
+        .collect();
+
+    match people.len() {
+        0 => err(
+            items,
+            format!(
+                "{company} has no active signatory, so nothing can be issued for it \
+                 (ADR-0077 decision 4)"
+            ),
+        ),
+        1 => err(
+            items,
+            format!(
+                "{company} has only one person among its active signatories ({}). Their own \
+                 documents cannot be issued: `docket issue` refuses a document whose subject \
+                 and signatory are the same person, and there is nobody to substitute",
+                people.iter().copied().collect::<Vec<_>>().join(", ")
+            ),
+        ),
+        _ => {}
     }
 }
 
