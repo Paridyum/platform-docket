@@ -161,7 +161,7 @@ mod tests {
             seq,
             year: 2026,
             person_id: crate::domain::identity::PersonId::new(1).expect("valid"),
-            engagement_id: crate::domain::identity::EngagementId::new("INT", 2026, 1)
+            engagement_id: crate::domain::identity::EngagementId::new("PAR", "INT", 2026, 1)
                 .expect("valid"),
             slug: "asha-verma".to_owned(),
             document: "nda".to_owned(),

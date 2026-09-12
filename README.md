@@ -12,6 +12,15 @@ university they attended.
 Rust, class `tool`, binary `docket` (C-0007). Requires TeX Live with
 `pdflatex` on `PATH`.
 
+    cargo build --release
+    ./target/release/docket check     # always first; exit 0 before anything else
+    docket next <slug>                # then do what it prints
+
+**`RUNNING.md` is the setup page** — which machine is authoritative, where the
+data lives, the browser console, SSH access, and what to do when it refuses.
+Read it before the first real record. `HIRING-PLAYBOOK.md` covers posting a role
+through to the offer; `HR-CHECKLIST.md` covers the offer onward.
+
 ## One verb
 
     $ docket next asha-verma
@@ -69,7 +78,10 @@ be the wrong kindness.
 failure modes and audit trail, and none of that belongs in a document register.
 The bodies are plain text to be pasted into a mail client by a person.
 
-`HR-CHECKLIST.md` is the one-page version for whoever actually does this.
+`HR-CHECKLIST.md` is the one-page version for whoever actually does this, from
+the offer onward. `HIRING-PLAYBOOK.md` is everything before the offer — writing
+a posting, publishing it, taking applications and deciding — which is manual
+today and says so.
 
 ## The folder you hand over
 

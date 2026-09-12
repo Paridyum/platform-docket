@@ -184,7 +184,7 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
         return Err(not_found(&format!("no person with slug {slug}")));
     }
 
-    let dossier = personnel::dossier(ctx.paths, ctx.registry, slug)?;
+    let dossier = personnel::dossier(ctx.paths, ctx.registry, slug, None)?;
     let erased = dossier.identity.standing == Standing::Erased;
 
     // An erased person has no record on disk, so there is no stage to read and
@@ -201,7 +201,9 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
             person.stage(),
             person.class(),
         )?;
-        let steps = next::steps(ctx.paths, ctx.registry, slug)?;
+        // No company picker in the console yet; an ambiguous person is refused
+        // rather than resolved by recency (ADR-0077 D3).
+        let steps = next::steps(ctx.paths, ctx.registry, slug, None)?;
         (steps, gates)
     };
 
@@ -268,7 +270,7 @@ fn emails_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
     if !ledger.iter().any(|r| r.slug == slug) {
         return Err(not_found(&format!("no person with slug {slug}")));
     }
-    let due = comms::due(ctx.paths, ctx.registry, slug)?;
+    let due = comms::due(ctx.paths, ctx.registry, slug, None)?;
     let messages: Vec<dto::Message> = due.iter().map(dto::Message::from).collect();
     Ok(json(&messages))
 }
@@ -331,6 +333,11 @@ fn enrol_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
         ctx.registry,
         &ask.slug,
         &ask.class,
+        // The console has no company picker yet, so it opens records at the
+        // default company. Explicit rather than implied: the moment the console
+        // needs to open a Paridyum Cyber record, this line is what must change,
+        // and a caller that silently inherited a default would not say so.
+        ctx.registry.default_company().unwrap_or("PAR"),
         ctx.clock.today()?,
         by,
     )?;

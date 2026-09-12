@@ -127,9 +127,9 @@ pub struct Sealed {
 ///
 /// # Errors
 /// Fails if the register cannot be read, `age` is unavailable, or a document is missing.
-pub fn seal(paths: &Paths, slug: &str, estate: &Path) -> Result<Sealed> {
+pub fn seal(paths: &Paths, slug: &str, company: Option<&str>, estate: &Path) -> Result<Sealed> {
     crypt::detect()?;
-    let who = crate::application::personnel::identify(paths, slug)?;
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     let identity = person_identity(paths, &who.person_id, estate)?;
     let recipient = recipient_in(&identity)?;
     let dir = vault_dir(paths, &who.person_id);
@@ -192,9 +192,15 @@ fn seal_one(source: &Path, dir: &Path, recipient: &str, out: &mut Sealed) -> Res
 /// # Errors
 /// Fails if the key is gone — which is what a shredded vault looks like, and the message says so
 /// rather than reporting a decryption failure.
-pub fn open(paths: &Paths, slug: &str, name: &str, estate: &Path) -> Result<Vec<u8>> {
+pub fn open(
+    paths: &Paths,
+    slug: &str,
+    company: Option<&str>,
+    name: &str,
+    estate: &Path,
+) -> Result<Vec<u8>> {
     crypt::detect()?;
-    let who = crate::application::personnel::identify(paths, slug)?;
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     if !key_path(paths, &who.person_id).exists() {
         bail!(
             "{slug} has no vault key. If they were erased this is expected and permanent: the \

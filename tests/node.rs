@@ -74,8 +74,16 @@ impl Node {
 
     fn add(&self, slug: &str) {
         let reg = Registry::load(&Paths::resolve(&root())).expect("registry");
-        personnel::create(&self.paths, &reg, slug, "officer", d("2026-09-06"), "rohan")
-            .expect("creates");
+        personnel::create(
+            &self.paths,
+            &reg,
+            slug,
+            "officer",
+            "PAR",
+            d("2026-09-06"),
+            "rohan",
+        )
+        .expect("creates");
     }
 }
 
@@ -313,4 +321,154 @@ fn a_wrong_key_cannot_open_the_bundle() {
     )
     .expect_err("a different key must not open it");
     assert!(format!("{err:#}").contains("decrypting"));
+}
+
+// ── docket store push: the guard D-51 said belonged "in whatever performs the
+// upload". Every refusal below is a real upload accident, not a hypothetical.
+
+#[test]
+fn push_copies_only_the_vault_and_is_idempotent() {
+    if skip("push_copies_only_the_vault_and_is_idempotent") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("vivaswan");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+    let dest = tempfile::tempdir().expect("dest");
+
+    let first = node::push(&node.paths, dest.path()).expect("push");
+    assert!(!first.is_empty());
+    assert!(
+        first.iter().all(|p| !p.already_current),
+        "a first push should copy everything"
+    );
+    assert!(
+        first.iter().all(|p| p.name.starts_with("vault/")),
+        "something outside the vault was uploaded: {:?}",
+        first.iter().map(|p| &p.name).collect::<Vec<_>>()
+    );
+
+    let second = node::push(&node.paths, dest.path()).expect("second push");
+    assert!(
+        second.iter().all(|p| p.already_current),
+        "an unchanged store re-uploaded everything"
+    );
+}
+
+#[test]
+fn push_refuses_a_destination_inside_the_store() {
+    if skip("push_refuses_a_destination_inside_the_store") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("a");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+    let err = node::push(&node.paths, &node.paths.store.join("uploads")).expect_err("refused");
+    assert!(format!("{err:#}").contains("inside the store"));
+}
+
+#[test]
+fn push_refuses_a_relative_destination_inside_the_store() {
+    // THE DEFECT THIS TEST EXISTS FOR. The guard compared the destination as
+    // given against an absolute store path, so a RELATIVE `store/uploads` did
+    // not match, the refusal passed, and push wrote into the directory it
+    // exists to protect. Found by running it, not by reading it.
+    if skip("push_refuses_a_relative_destination_inside_the_store") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("a");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+
+    // A relative path that resolves inside this node's store.
+    let relative = pathdiff_from_cwd(&node.paths.store.join("uploads"));
+    let err = node::push(&node.paths, &relative).expect_err("a relative path must not slip past");
+    assert!(format!("{err:#}").contains("inside the store"), "{err:#}");
+}
+
+/// A path expressed relative to the working directory, so the test exercises the
+/// absolutising step rather than the absolute comparison.
+fn pathdiff_from_cwd(target: &std::path::Path) -> PathBuf {
+    let cwd = std::env::current_dir().expect("cwd");
+    let mut up = PathBuf::new();
+    for _ in cwd.components() {
+        up.push("..");
+    }
+    up.join(target.strip_prefix("/").unwrap_or(target))
+}
+
+#[test]
+fn push_refuses_when_a_never_list_directory_is_already_at_the_destination() {
+    // The accident that matters: a `keys/` uploaded once, by hand, months ago.
+    // The only check that inspects what is ALREADY there rather than what is
+    // being sent -- and the only one that can catch an erasure that was never
+    // real.
+    if skip("push_refuses_when_a_never_list_directory_is_already_at_the_destination") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("a");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+    let dest = tempfile::tempdir().expect("dest");
+    std::fs::create_dir_all(dest.path().join("keys")).expect("stray keys");
+
+    let err = node::push(&node.paths, dest.path()).expect_err("refused");
+    let text = format!("{err:#}");
+    assert!(text.contains("must never be uploaded"), "{text}");
+    assert!(text.contains("ADR-0069"), "{text}");
+    assert!(text.contains("every retained version"), "{text}");
+}
+
+#[test]
+fn push_refuses_an_unclassified_path() {
+    if skip("push_refuses_an_unclassified_path") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("a");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+    std::fs::create_dir_all(node.paths.store.join("invoices")).expect("stray");
+    std::fs::write(node.paths.store.join("invoices/a.pdf"), b"x").expect("stray file");
+
+    let err = node::push(&node.paths, tempfile::tempdir().expect("d").path()).expect_err("refused");
+    assert!(format!("{err:#}").contains("nobody has said whether invoices"));
+}
+
+#[test]
+fn push_refuses_while_the_register_has_no_bundle() {
+    if skip("push_refuses_while_the_register_has_no_bundle") {
+        return;
+    }
+    // Uploading here would publish a half archive and report success.
+    let node = Node::new_with_own_key();
+    node.add("a");
+    std::fs::create_dir_all(node.paths.store.join("vault")).expect("vault");
+    let err = node::push(&node.paths, tempfile::tempdir().expect("d").path()).expect_err("refused");
+    assert!(
+        format!("{err:#}").contains("would be left behind"),
+        "{err:#}"
+    );
+}
+
+#[test]
+fn push_refuses_plaintext_and_uploads_nothing() {
+    if skip("push_refuses_plaintext_and_uploads_nothing") {
+        return;
+    }
+    let node = Node::new_with_own_key();
+    node.add("a");
+    vault::back_up_register(&node.paths, &node.estate).expect("backup");
+    std::fs::write(node.paths.store.join("vault/oops.jsonl"), b"leak").expect("plaintext");
+    let dest = tempfile::tempdir().expect("dest");
+
+    let err = node::push(&node.paths, dest.path()).expect_err("refused");
+    assert!(format!("{err:#}").contains("ADR-0071 §1"), "{err:#}");
+    // "Nothing was uploaded" must be true, not merely claimed.
+    assert!(
+        std::fs::read_dir(dest.path())
+            .expect("dest readable")
+            .next()
+            .is_none(),
+        "the destination was written to despite the refusal"
+    );
 }

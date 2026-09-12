@@ -39,6 +39,14 @@ struct Cli {
     /// It writes nothing.
     #[arg(long, global = true)]
     tui: bool,
+    /// Which company a command concerns, e.g. PCY.
+    ///
+    /// For `new` and `reengage` this is the company the engagement is opened
+    /// at. For everything else it disambiguates a person who holds more than
+    /// one open engagement -- and it is only ever needed for such a person,
+    /// because that is the only case docket refuses to guess at.
+    #[arg(long, global = true)]
+    company: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -305,7 +313,13 @@ fn run() -> Result<ExitCode> {
         println!();
         return Ok(ExitCode::from(2));
     };
-    dispatch(command, &paths, &registry, operator.as_deref())
+    dispatch(
+        command,
+        &paths,
+        &registry,
+        operator.as_deref(),
+        cli.company.as_deref(),
+    )
 }
 
 /// Whether a command writes to the store, and so must hold the store lock.
@@ -333,7 +347,7 @@ fn writes(command: &Command) -> bool {
         // DIFFERENT root than the one being locked. Classified by subcommand
         // rather than wholesale, because locking the source store to restore
         // into a spare would refuse the one operation a spare exists for.
-        Command::Store { what } => matches!(what, StoreCmd::Restore { .. }),
+        Command::Store { what } => matches!(what, StoreCmd::Restore { .. } | StoreCmd::Push { .. }),
 
         // Writers. `Team` and `Index` are here because both record a receipt
         // beside their output; `Vault` because seal, shred, backup and escrow
@@ -366,6 +380,7 @@ fn dispatch(
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
+    company: Option<&str>,
 ) -> Result<ExitCode> {
     // Held for the whole command and released on drop. Bound to a name rather
     // than `_`: `let _ = ...` drops immediately and would unlock the store
@@ -376,12 +391,31 @@ fn dispatch(
         None
     };
 
+    route(command, paths, registry, operator, company)
+}
+
+/// The routing table itself, split from the locking so neither grows into the
+/// other. `dispatch` decides whether a command may write; this decides where it
+/// goes.
+fn route(
+    command: Command,
+    paths: &Paths,
+    registry: &Registry,
+    operator: Option<&str>,
+    company: Option<&str>,
+) -> Result<ExitCode> {
     match command {
-        Command::Next { slug } => cmd_next(paths, registry, &slug),
-        Command::Status { slug } => cmd_status(paths, registry, &slug),
-        Command::Onboard { slug, date, force } => {
-            cmd_onboard(paths, registry, &slug, date.as_deref(), force, operator)
-        }
+        Command::Next { slug } => cmd_next(paths, registry, &slug, company),
+        Command::Status { slug } => cmd_status(paths, registry, &slug, company),
+        Command::Onboard { slug, date, force } => cmd_onboard(
+            paths,
+            registry,
+            &slug,
+            company,
+            date.as_deref(),
+            force,
+            operator,
+        ),
         Command::Issue {
             slug,
             code,
@@ -422,17 +456,38 @@ fn dispatch(
             paths,
             registry,
             &slug,
+            company,
             out.as_deref(),
             date.as_deref(),
             operator,
         ),
-        Command::Emails { slug, only } => cmd_emails(paths, registry, &slug, only.as_deref()),
+        Command::Emails { slug, only } => {
+            cmd_emails(paths, registry, &slug, company, only.as_deref())
+        }
         Command::Index => cmd_index(paths, registry),
         Command::Team => cmd_team(paths, registry),
-        Command::Addresses { slug } => cmd_addresses(paths, &slug),
+        Command::Addresses { slug } => cmd_addresses(paths, &slug, company),
         Command::Vault { what } => cmd_vault(paths, &what),
         Command::Store { what } => cmd_store(paths, &what),
         Command::Retention { date } => cmd_retention(paths, registry, date.as_deref()),
+        other => route_person(other, paths, registry, operator, company),
+    }
+}
+
+/// The half of the routing table that concerns a person's record: opening one,
+/// re-engaging, and the events that move them through their lifecycle.
+///
+/// Split from `route` because the table outgrew clippy's line limit, and the
+/// seam is the one that was already there -- everything above reads or issues,
+/// everything here changes who is on the register.
+fn route_person(
+    command: Command,
+    paths: &Paths,
+    registry: &Registry,
+    operator: Option<&str>,
+    company: Option<&str>,
+) -> Result<ExitCode> {
+    match command {
         Command::New {
             slug,
             class,
@@ -444,13 +499,20 @@ fn dispatch(
             registry,
             &slug,
             &class,
+            company,
             date.as_deref(),
             operator,
         ),
-        Command::Reengage { slug, class, date } => {
-            cmd_reengage(paths, registry, &slug, &class, date.as_deref(), operator)
-        }
-        Command::Record { slug } => cmd_record(paths, registry, &slug),
+        Command::Reengage { slug, class, date } => cmd_reengage(
+            paths,
+            registry,
+            &slug,
+            &class,
+            company,
+            date.as_deref(),
+            operator,
+        ),
+        Command::Record { slug } => cmd_record(paths, registry, &slug, company),
         Command::Serve { port } => cmd_serve(paths, registry, port),
         Command::Roster { standing } => cmd_roster(paths, registry, standing.as_deref()),
         Command::Event {
@@ -458,14 +520,33 @@ fn dispatch(
             kind,
             detail,
             date,
-        } => cmd_event(paths, &slug, &kind, detail.as_deref(), date.as_deref()),
+        } => cmd_event(
+            paths,
+            &slug,
+            company,
+            &kind,
+            detail.as_deref(),
+            date.as_deref(),
+        ),
         Command::Separate { slug, date } => cmd_separate(paths, &slug, date.as_deref(), operator),
         Command::Erase {
             slug,
             confirm,
             date,
         } => cmd_erase(paths, &slug, confirm, date.as_deref(), operator),
+        // `route` handles every other variant and delegates here; a command
+        // reaching this arm means the split above lost one.
+        other => unreachable_command(&other),
     }
+}
+
+/// A command that `route` did not handle and `route_person` does not own.
+///
+/// The cost of splitting one exhaustive match in two: the compiler can no
+/// longer prove the halves cover the enum between them. Refusing loudly beats
+/// a silent success, and names the command so the gap is one line to close.
+fn unreachable_command(_command: &Command) -> Result<ExitCode> {
+    bail!("internal: a command reached no route arm; the routing table has a gap")
 }
 
 /// The operator, or a refusal explaining how to supply one.
@@ -487,8 +568,13 @@ fn resolve_date(explicit: Option<&str>) -> Result<time::Date> {
     }
 }
 
-fn cmd_next(paths: &Paths, registry: &Registry, slug: &str) -> Result<ExitCode> {
-    let steps = next::steps(paths, registry, slug)?;
+fn cmd_next(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<ExitCode> {
+    let steps = next::steps(paths, registry, slug, company)?;
     let done = steps.len() == 1 && steps.first().is_some_and(|s| s.command.is_none());
     for (i, step) in steps.iter().enumerate() {
         println!("{}. {}", i + 1, step.what);
@@ -506,9 +592,14 @@ fn cmd_next(paths: &Paths, registry: &Registry, slug: &str) -> Result<ExitCode> 
     })
 }
 
-fn cmd_status(paths: &Paths, registry: &Registry, slug: &str) -> Result<ExitCode> {
+fn cmd_status(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<ExitCode> {
     let person = store::person(paths, slug)?;
-    let who = personnel::identify(paths, slug)?;
+    let who = personnel::identify_at(paths, slug, company)?;
     let register = store::register(paths)?;
     let signatures = store::signatures(paths)?;
     let report = status::report(registry, &person, &who, &register, &signatures)?;
@@ -580,6 +671,7 @@ fn cmd_onboard(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
     date: Option<&str>,
     force: bool,
     operator: Option<&str>,
@@ -598,7 +690,7 @@ fn cmd_onboard(
         return Ok(ExitCode::from(2));
     }
 
-    let who = personnel::identify(paths, slug)?;
+    let who = personnel::identify_at(paths, slug, company)?;
     let register = store::register(paths)?;
     let todo = issue::outstanding(registry, &person, &who, &register)?;
     if todo.is_empty() {
@@ -796,13 +888,22 @@ fn cmd_pack(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
     out: Option<&Path>,
     date: Option<&str>,
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
     let target = out.map_or_else(|| pack::default_out(paths), Path::to_path_buf);
-    let p = pack::assemble(paths, registry, slug, &target, resolve_date(date)?, by)?;
+    let p = pack::assemble(
+        paths,
+        registry,
+        slug,
+        company,
+        &target,
+        resolve_date(date)?,
+        by,
+    )?;
     println!("{}", p.root.display());
     let mut folder = String::new();
     for f in &p.files {
@@ -835,9 +936,10 @@ fn cmd_emails(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
     only: Option<&str>,
 ) -> Result<ExitCode> {
-    let all = comms::due(paths, registry, slug)?;
+    let all = comms::due(paths, registry, slug, company)?;
     let wanted: Vec<&comms::Rendered> = all
         .iter()
         .filter(|m| only.is_none_or(|o| m.id == o))
@@ -901,9 +1003,9 @@ fn cmd_emails(
 /// DERIVED AND PRINTED, NOT WRITTEN. It does not edit the record, because provisioning is a
 /// thing an operator does in Google's console and the record should say what was actually
 /// created rather than what was intended. Paste the two lines back once the accounts exist.
-fn cmd_addresses(paths: &Paths, slug: &str) -> Result<ExitCode> {
+fn cmd_addresses(paths: &Paths, slug: &str, company: Option<&str>) -> Result<ExitCode> {
     let person = store::person(paths, slug)?;
-    let record = personnel::identify(paths, slug)?;
+    let record = personnel::identify_at(paths, slug, company)?;
     let Some(name) = person.string("identity.legal_name") else {
         bail!("{slug}: identity.legal_name is unset; an address is derived from it");
     };
@@ -935,6 +1037,11 @@ fn cmd_addresses(paths: &Paths, slug: &str) -> Result<ExitCode> {
 enum StoreCmd {
     /// Report what this node holds and what would be lost if it were lost.
     Status,
+    /// Copy the uploadable half of the store into the synced folder, guarded.
+    Push {
+        /// The synced folder, e.g. ~/Sync/paridyum-docket. Must be outside the store.
+        to: PathBuf,
+    },
     /// Rebuild a store on a cold spare from a register bundle and the estate key.
     Restore {
         /// The `_register` bundle directory, as synced down from the off-host store.
@@ -1022,6 +1129,28 @@ fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+        StoreCmd::Push { to } => {
+            let pushed = node::push(paths, to)?;
+            let moved = pushed.iter().filter(|p| !p.already_current).count();
+            for item in &pushed {
+                if item.already_current {
+                    println!("current   {}", item.name);
+                } else {
+                    println!("uploaded  {}", item.name);
+                }
+            }
+            println!(
+                "\n{moved} file(s) copied, {} already current, into {}",
+                pushed.len() - moved,
+                to.display()
+            );
+            // The vendor's client does the network leg; this only fills the folder
+            // it watches. Said plainly, because "uploaded" above means "written to
+            // disk" and somebody will otherwise read it as "arrived".
+            println!("The Sync client uploads from there. Confirm it has finished before");
+            println!("treating this as a backup -- ADR-0071 §3.");
+            Ok(ExitCode::SUCCESS)
+        }
         StoreCmd::Restore {
             from,
             into,
@@ -1063,7 +1192,9 @@ fn cmd_vault(paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
             // Resolved here, at the one place that knows a key is needed, rather than deep
             // in the vault where a test would have to fake an environment to reach it.
             let estate = tool_docket::adapters::crypt::estate_identity()?;
-            let out = vault::seal(paths, slug, &estate)?;
+            // `vault seal` has no company of its own: it seals everything issued to a
+            // PERSON, and a person is one archive across companies (ADR-0077 D2).
+            let out = vault::seal(paths, slug, None, &estate)?;
             for name in &out.written {
                 println!("  sealed   {name}");
             }
@@ -1225,16 +1356,43 @@ fn cmd_check(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
     })
 }
 
+/// Resolve a `--company` flag against the registry, or fall back to the default.
+///
+/// An unknown code is refused with the declared list rather than silently
+/// creating a fifth company out of a typo -- the engagement identifier would be
+/// permanent, and `PCU-OFC-2026-0001` is not correctable after issuance.
+fn resolve_company(registry: &Registry, given: Option<&str>) -> Result<String> {
+    let declared = registry.company_codes();
+    match given {
+        Some(code) => {
+            if declared.contains(&code) {
+                Ok(code.to_owned())
+            } else {
+                bail!(
+                    "unknown company {code:?}; declared in registry/org.yaml: {}",
+                    declared.join(", ")
+                )
+            }
+        }
+        None => registry
+            .default_company()
+            .map(str::to_owned)
+            .context("registry/org.yaml declares no companies"),
+    }
+}
+
 fn cmd_new(
     interactive: bool,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
     class: &str,
+    company: Option<&str>,
     date: Option<&str>,
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
+    let company = resolve_company(registry, company)?;
 
     // Interactive writes the record from the answers; the default copies the
     // template. Both paths stay (ADR-0054): the template is what a non-tty
@@ -1248,7 +1406,15 @@ fn cmd_new(
         enrol::write_record(paths, slug, &body)?;
     }
 
-    let record = personnel::create(paths, registry, slug, class, resolve_date(date)?, by)?;
+    let record = personnel::create(
+        paths,
+        registry,
+        slug,
+        class,
+        &company,
+        resolve_date(date)?,
+        by,
+    )?;
     println!(
         "{}  {}  class {}",
         record.person_id, record.slug, record.class
@@ -1263,11 +1429,21 @@ fn cmd_reengage(
     registry: &Registry,
     slug: &str,
     class: &str,
+    company: Option<&str>,
     date: Option<&str>,
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
-    let r = personnel::reengage(paths, registry, slug, class, resolve_date(date)?, by)?;
+    let company = resolve_company(registry, company)?;
+    let r = personnel::reengage(
+        paths,
+        registry,
+        slug,
+        class,
+        &company,
+        resolve_date(date)?,
+        by,
+    )?;
     println!(
         "person     {}  (unchanged -- the archive stays whole)",
         r.person_id
@@ -1277,10 +1453,31 @@ fn cmd_reengage(
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_record(paths: &Paths, registry: &Registry, slug: &str) -> Result<ExitCode> {
-    let d = personnel::dossier(paths, registry, slug)?;
+fn cmd_record(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<ExitCode> {
+    let d = personnel::dossier(paths, registry, slug, company)?;
     println!("{}  ({})", d.identity.person_id, d.identity.slug);
-    println!("engagement {}", d.identity.engagement_id);
+    // EVERY engagement, not the latest. `record` is the answer to "what is held
+    // about this person", and one line showing only their most recent company
+    // was how Rohan's Paridyum office disappeared from his own record.
+    let held = personnel::engagements(paths, slug)?;
+    if held.len() > 1 {
+        println!("engagements ({})", held.len());
+        for e in &held {
+            println!(
+                "  {:<20} {:<10} {}",
+                e.engagement_id.as_str(),
+                e.class,
+                e.standing.as_str()
+            );
+        }
+    } else {
+        println!("engagement {}", d.identity.engagement_id);
+    }
     println!("class      {}", d.identity.class);
     println!(
         "standing   {}  since {}",
@@ -1341,21 +1538,36 @@ fn cmd_roster(paths: &Paths, registry: &Registry, standing: Option<&str>) -> Res
         );
     }
     let (active, separated, erased) = roster::tally(&all);
-    println!(
-        "\n{} people: {active} active, {separated} separated, {erased} erased",
-        all.len()
-    );
+    // PEOPLE AND ENGAGEMENTS ARE COUNTED SEPARATELY (ADR-0077 D3). A row is an
+    // engagement, and one person may hold two at once -- so `all.len()` is the
+    // number of offices held, and calling it "people" made four officers read
+    // as five the moment Rohan took a second one.
+    let people: std::collections::BTreeSet<_> = all.iter().map(|l| l.person_id.clone()).collect();
+    if people.len() == all.len() {
+        println!(
+            "\n{} people: {active} active, {separated} separated, {erased} erased",
+            all.len()
+        );
+    } else {
+        println!(
+            "\n{} people holding {} engagements: {active} active, {separated} separated, \
+             {erased} erased",
+            people.len(),
+            all.len()
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 
 fn cmd_event(
     paths: &Paths,
     slug: &str,
+    company: Option<&str>,
     kind: &str,
     detail: Option<&str>,
     date: Option<&str>,
 ) -> Result<ExitCode> {
-    let record = personnel::identify(paths, slug)?;
+    let record = personnel::identify_at(paths, slug, company)?;
     if record.standing == Standing::Erased {
         bail!("{slug} is erased; no further events may be recorded against them");
     }

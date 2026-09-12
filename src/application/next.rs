@@ -25,8 +25,13 @@ pub struct Step {
 ///
 /// # Errors
 /// Fails if the person is unknown or the store cannot be read.
-pub fn steps(paths: &Paths, registry: &Registry, slug: &str) -> Result<Vec<Step>> {
-    let who = crate::application::personnel::identify(paths, slug)?;
+pub fn steps(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<Vec<Step>> {
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     let mut out = Vec::new();
 
     if who.standing == Standing::Erased {
@@ -170,7 +175,9 @@ fn workflow_steps(
     }
 
     // 7. Messages that carry documents now issued.
-    if let Ok(messages) = crate::application::comms::due(paths, registry, slug) {
+    if let Ok(messages) =
+        crate::application::comms::due(paths, registry, slug, who.engagement_id.company())
+    {
         let ready: Vec<&str> = messages
             .iter()
             .filter(|m| m.missing.is_empty())

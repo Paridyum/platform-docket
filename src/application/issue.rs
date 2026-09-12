@@ -209,6 +209,7 @@ pub fn resolve_signatories(
     registry: &Registry,
     person: &Person,
     document: &Document,
+    company: &str,
 ) -> Vec<String> {
     let routed = document.signatories_for(person.class());
     let subject = person
@@ -218,7 +219,7 @@ pub fn resolve_signatories(
     let is_subject = |id: &String| {
         subject.as_ref().is_some_and(|name| {
             registry
-                .active_signatories()
+                .active_signatories_of(company)
                 .any(|s| &s.id == id && s.legal_name.eq_ignore_ascii_case(name))
         })
     };
@@ -230,7 +231,7 @@ pub fn resolve_signatories(
             // signing this document — otherwise a two-signatory document would collapse
             // to one name printed twice.
             if let Some(alt) = registry
-                .active_signatories()
+                .active_signatories_of(company)
                 .map(|s| s.id.clone())
                 .find(|cand| !is_subject(cand) && !routed.contains(cand) && !out.contains(cand))
             {
@@ -315,7 +316,14 @@ pub fn one_with(
     // identified recipient is exactly what the register exists to prevent.
     let who = crate::application::personnel::identify(paths, &person.slug)?;
 
-    let signatories = resolve_signatories(registry, person, document);
+    // The company comes from the ENGAGEMENT, not from a flag and not from the
+    // person record (ADR-0077 D2). A document belongs to the engagement it was
+    // issued against, so the signatory has to be an officer of that company.
+    let company = who
+        .engagement_id
+        .company()
+        .unwrap_or_else(|| registry.default_company().unwrap_or("PAR"));
+    let signatories = resolve_signatories(registry, person, document, company);
     refuse_if_misrouted(person, document, &signatories)?;
 
     let template = paths.root.join(&document.template);

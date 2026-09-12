@@ -259,6 +259,20 @@ rather than in someone's memory. Two things make it exit non-zero:
   upload list and a prohibition, so a directory added later falls outside both and is silently
   neither backed up nor forbidden. Add it to `node::declared()` and say which it is.
 
+### Uploading, in order
+
+    docket check                       # records are consistent
+    docket vault backup                # the register becomes ciphertext
+    docket store status                # non-zero if anything is at risk
+    docket store push ~/Sync/<folder>  # guarded copy
+
+**Never copy the store by hand.** Three of `push`'s five refusals are invisible to a person doing
+it carefully: a directory added to the store last month is in no list, a `keys/` uploaded once
+months ago is not visible in today's upload, and a half-backed-up register looks complete.
+
+**`push` fills the folder; it does not reach Sync.** The client's leg is the one that fails
+silently — confirm it finished. RUN-0007 is the full procedure.
+
 ### Proving it, before trusting it
 
     ./rehearsal/rehearse.sh

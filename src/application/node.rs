@@ -265,3 +265,188 @@ pub fn verify_restored(paths: &Paths) -> Result<Vec<String>> {
 pub fn bundle_path(paths: &Paths) -> PathBuf {
     paths.store.join("vault").join("_register")
 }
+
+/// One file considered for upload.
+#[derive(Debug, Clone)]
+pub struct Pushed {
+    /// Path relative to the store.
+    pub name: String,
+    /// Whether the destination already held identical bytes.
+    pub already_current: bool,
+}
+
+/// Copy the uploadable half of the store into a synced folder, guarding both ends.
+///
+/// DECISION-DEBT D-51 said the enforcement was "a human reading a list", and named
+/// where the missing check belonged: *"a guard on the other side, in whatever
+/// performs the upload, refusing any path outside `store/vault/`"*. This is that
+/// guard. It decides nothing new -- ADR-0071 §1 makes the `.age` extension the
+/// contract and §4 keeps names opaque; ADR-0072 D5 classifies every store path.
+///
+/// **Four refusals, and each one is a real upload accident.**
+///
+/// 1. A destination inside the store. The store is the thing being uploaded.
+/// 2. Anything unclassified, or a register with no bundle behind it. Uploading a
+///    store that `store status` calls incomplete publishes a half archive and
+///    reports success.
+/// 3. Any file that is not `.age`. One plaintext file in a sensitive tree is a
+///    leak of personal data onto a foreign consumer drive.
+/// 4. **A never-list directory already sitting in the destination.** This is the
+///    only check that looks at what is ALREADY there rather than at what is being
+///    sent, and it is the one that catches the accident that matters: a `keys/`
+///    uploaded once, by hand, months ago. A versioned store retains what you
+///    delete from it, so that key can never be destroyed -- and destroying it is
+///    what erasure is.
+///
+/// # Errors
+/// Fails on any of the four refusals, or if a file cannot be read or written.
+pub fn push(paths: &Paths, dest: &Path) -> Result<Vec<Pushed>> {
+    // Absolutised before comparing, and the reason is a real failure: a RELATIVE
+    // `store/uploads` does not `starts_with` an absolute store path, so the guard
+    // passed and the command wrote into the very directory it exists to protect.
+    // Neither path is canonicalised -- the destination usually does not exist yet,
+    // and `canonicalize` fails on a path that does not.
+    let absolute = normalise(
+        &(if dest.is_absolute() {
+            dest.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .context("resolving the destination against the working directory")?
+                .join(dest)
+        }),
+    );
+    if absolute.starts_with(&paths.store) {
+        bail!(
+            "{} is inside the store, which is the thing being uploaded",
+            absolute.display()
+        );
+    }
+
+    // Refusal 4 first, and deliberately: it is about damage that is already done,
+    // and adding more files to a folder that must be torn down anyway is wasted.
+    let table = declared();
+    for (name, disposition) in &table {
+        if *disposition == Disposition::Never && absolute.join(name).exists() {
+            bail!(
+                "{} already holds {name}/, which must never be uploaded. A versioned store \
+                 retains what you delete from it, so anything in there cannot be destroyed -- \
+                 and for {name}/ specifically, destroying it is what erasure IS (ADR-0069). \
+                 Remove it at the vendor, including every retained version, before uploading \
+                 again",
+                absolute.display()
+            );
+        }
+    }
+
+    let items = classify(paths)?;
+    let stray: Vec<&str> = items
+        .iter()
+        .filter(|i| i.disposition == Disposition::Unclassified)
+        .map(|i| i.name.as_str())
+        .collect();
+    if !stray.is_empty() {
+        bail!(
+            "nobody has said whether {} replicates. Classify it in node::declared() \
+             (ADR-0072 D5) before uploading -- an upload that guesses is how a path ends up \
+             published or lost by accident",
+            stray.join(", ")
+        );
+    }
+    let lost = unreplicated(paths)?;
+    if !lost.is_empty() {
+        bail!(
+            "{} would be left behind: run `docket vault backup` first, or this upload publishes \
+             a half archive and reports success",
+            lost.join(", ")
+        );
+    }
+
+    let source = paths.store.join("vault");
+    if !source.is_dir() {
+        bail!("nothing to upload: {} does not exist", source.display());
+    }
+
+    // EVERY file is checked before ANY file is written. The first version bailed
+    // inside the copy loop while telling the operator "Nothing was uploaded" --
+    // which was false for every file the walk had already reached, and a refusal
+    // that misreports what it did is worse than no refusal at all.
+    let files = walk(&source)?;
+    let mut planned = Vec::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(&paths.store)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .into_owned();
+        if file.extension().and_then(|e| e.to_str()) != Some("age") {
+            bail!(
+                "{relative} is not .age. ADR-0071 §1 makes the extension the contract: a file \
+                 in a sensitive tree without it is plaintext personal data on a foreign \
+                 consumer drive. Nothing was uploaded"
+            );
+        }
+        planned.push((file, relative));
+    }
+
+    let mut out = Vec::new();
+    for (file, relative) in planned {
+        let bytes = fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+        let target = absolute.join(&relative);
+        // Compared rather than copied blindly, so a re-run is cheap and the report
+        // says what actually moved.
+        let already_current = fs::read(&target).is_ok_and(|existing| existing == bytes);
+        if !already_current {
+            if let Some(dir) = target.parent() {
+                fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+            }
+            fs::write(&target, &bytes).with_context(|| format!("writing {}", target.display()))?;
+        }
+        out.push(Pushed {
+            name: relative,
+            already_current,
+        });
+    }
+
+    if out.is_empty() {
+        bail!("nothing to upload: {} holds no files", source.display());
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+/// Resolve `.` and `..` lexically, without touching the filesystem.
+///
+/// `Path::starts_with` is purely lexical, so `/a/b/../../tmp/x` does not start
+/// with `/tmp/x` and an inside-the-store destination expressed with `..` walked
+/// straight past the guard. Not `canonicalize`, which fails on a path that does
+/// not exist yet -- and an upload destination usually does not.
+fn normalise(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                // At the root, `..` is the root. Popping nothing matches what the
+                // kernel does rather than escaping above `/`.
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Every file under a directory, recursively.
+fn walk(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            out.extend(walk(&path)?);
+        } else {
+            out.push(path);
+        }
+    }
+    out.sort();
+    Ok(out)
+}

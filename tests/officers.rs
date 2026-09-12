@@ -13,6 +13,7 @@ use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::{registry::Registry, store};
 use tool_docket::application::{issue, personnel};
 use tool_docket::config::Paths;
+use tool_docket::domain::person;
 
 mod common;
 
@@ -48,10 +49,18 @@ impl Sandbox {
         Self { _dir: dir, paths }
     }
 
-    fn officer(&self, slug: &str) -> tool_docket::domain::person::Person {
+    fn officer(&self, slug: &str) -> person::Person {
         let reg = registry();
-        personnel::create(&self.paths, &reg, slug, "officer", d("2026-09-06"), "rohan")
-            .expect("creates an officer");
+        personnel::create(
+            &self.paths,
+            &reg,
+            slug,
+            "officer",
+            "PAR",
+            d("2026-09-06"),
+            "rohan",
+        )
+        .expect("creates an officer");
         store::person(&self.paths, slug).expect("record")
     }
 }
@@ -160,6 +169,7 @@ fn the_subject_is_substituted_out_rather_than_signing_their_own_document() {
         &reg,
         "self-signer",
         "officer",
+        "PAR",
         d("2026-09-06"),
         "rohan",
     )
@@ -321,7 +331,7 @@ fn an_officer_is_not_blocked_by_the_intern_preconditions() {
     // not employment. `person-classes.yaml` forbids `education` for an officer and does
     // not require an end date, so those refusals were unsatisfiable: the operator could
     // not fix them without breaking a different rule. Found by running the bootstrap.
-    let officer = tool_docket::domain::person::Person::new(
+    let officer = person::Person::new(
         "t".to_owned(),
         serde_yaml::from_str(
             "engagement: {class: officer, stage: preboarding, start_date: 2026-09-06}\n\
@@ -329,7 +339,7 @@ fn an_officer_is_not_blocked_by_the_intern_preconditions() {
         )
         .expect("parses"),
     );
-    let blocked = tool_docket::domain::person::blockers(&officer, Some("Dehradun"));
+    let blocked = person::blockers(&officer, Some("Dehradun"));
     assert!(
         blocked.is_empty(),
         "an officer record is issuable without education or an end date: {blocked:?}"
@@ -341,7 +351,7 @@ fn an_intern_is_still_blocked_by_them() {
     // The other half. Scoping the checks to the intern class must not have removed them
     // from the class they were written for — the unpaid basis genuinely does rest on
     // enrolment, and an unpaid internship genuinely must be time-bound.
-    let intern = tool_docket::domain::person::Person::new(
+    let intern = person::Person::new(
         "t".to_owned(),
         serde_yaml::from_str(
             "engagement: {class: intern, stage: preboarding, start_date: 2026-09-01}\n\
@@ -350,7 +360,7 @@ fn an_intern_is_still_blocked_by_them() {
         )
         .expect("parses"),
     );
-    let blocked: Vec<String> = tool_docket::domain::person::blockers(&intern, Some("Dehradun"))
+    let blocked: Vec<String> = person::blockers(&intern, Some("Dehradun"))
         .iter()
         .map(ToString::to_string)
         .collect();
@@ -451,4 +461,325 @@ fn a_registry_edit_makes_the_officers_page_export_stale() {
     let digest = team::source_digest(&sb.paths).expect("digest computes");
     assert_eq!(digest.len(), 64, "sha256, hex");
     assert_ne!(digest, "0".repeat(64));
+}
+
+// ── ADR-0077: two companies, one archive.
+
+#[test]
+fn the_ceo_and_director_being_one_person_falls_through_to_the_cto() {
+    // The operator's decision of 2026-09-09, arrived at by DATA rather than by a
+    // branch: Priyanshu holds both `ceo` and `director`, so for his own documents
+    // both entries are the subject and the substitution reaches `cto`.
+    let reg = registry();
+    let doc = reg
+        .lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == "NDO")
+        .expect("NDO");
+    let priyanshu = person::Person::new(
+        "priyanshu-sharma".to_owned(),
+        serde_yaml::from_str(
+            "engagement: {class: officer}\nidentity: {legal_name: PRIYANSHU SHARMA}\n",
+        )
+        .expect("yaml"),
+    );
+
+    let signers = issue::resolve_signatories(&reg, &priyanshu, doc, "PAR");
+    assert_eq!(signers, vec!["cto".to_owned()], "{signers:?}");
+}
+
+#[test]
+fn a_cyber_document_is_never_countersigned_by_a_paridyum_only_officer() {
+    // Aditya holds no office at PARIDYUM CYBER. A signature from him on a Cyber
+    // document is one nobody could account for.
+    let reg = registry();
+    let cyber: Vec<&str> = reg
+        .active_signatories_of("PCY")
+        .map(|s| s.legal_name.as_str())
+        .collect();
+    assert!(
+        !cyber.contains(&"ADITYA SHRIVASTAVA"),
+        "a Paridyum-only officer is a Cyber signatory: {cyber:?}"
+    );
+    assert!(cyber.contains(&"RUHANI KHURANA"), "{cyber:?}");
+    assert!(
+        cyber.first() == Some(&"PRIYANSHU SHARMA"),
+        "Paridyum's Director drives Cyber on paper, so he is the first fallback: {cyber:?}"
+    );
+}
+
+#[test]
+fn one_person_holds_office_in_two_companies_on_one_identifier() {
+    // The thing that could not be represented before ADR-0077 D3: Rohan is CTO of
+    // both companies at the same time, and is ONE person with ONE archive.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let people = dir.path().join("people");
+    std::fs::create_dir_all(&people).expect("people");
+    common::filled_officer_template(&root(), &people.join("_TEMPLATE-officer.yaml"));
+    let paths = Paths {
+        root: root(),
+        people,
+        store: dir.path().join("store"),
+    };
+    let reg = registry();
+
+    let first = personnel::create(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PAR",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("paridyum engagement");
+    let second = personnel::reengage(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PCY",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("a concurrent engagement at another company is allowed");
+
+    assert_eq!(
+        first.person_id, second.person_id,
+        "a second company allocated a second identity"
+    );
+    assert_eq!(first.engagement_id.as_str(), "PAR-OFC-2026-0001");
+    assert_eq!(
+        second.engagement_id.as_str(),
+        "PCY-OFC-2026-0001",
+        "the second company restarted its own engagement sequence, as it should"
+    );
+}
+
+#[test]
+fn a_second_engagement_at_the_same_company_is_still_refused() {
+    // The protection the original refusal was actually providing, kept.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let people = dir.path().join("people");
+    std::fs::create_dir_all(&people).expect("people");
+    common::filled_officer_template(&root(), &people.join("_TEMPLATE-officer.yaml"));
+    let paths = Paths {
+        root: root(),
+        people,
+        store: dir.path().join("store"),
+    };
+    let reg = registry();
+
+    personnel::create(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PAR",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("creates");
+    let err = personnel::reengage(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PAR",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect_err("a second engagement at the SAME company must be refused");
+    let text = format!("{err:#}");
+    assert!(
+        text.contains("already holds an open engagement at PAR"),
+        "{text}"
+    );
+    assert!(text.contains("DIFFERENT company is allowed"), "{text}");
+}
+
+// ── ADR-0077 + the operator's rule of 2026-09-09: PARIDYUM owns every other
+// company. Checked rather than commented, because decision 4 resolves signing
+// authority through the relationship.
+
+/// Load the real registry with `org.yaml` swapped for `yaml`, and run `check`.
+fn findings_with_org(yaml: &str) -> Vec<String> {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let reg_dir = dir.path().join("registry");
+    std::fs::create_dir_all(&reg_dir).expect("registry dir");
+    for entry in std::fs::read_dir(root().join("registry")).expect("read registry") {
+        let src = entry.expect("entry").path();
+        let name = src.file_name().expect("name").to_owned();
+        if name == "org.yaml" {
+            std::fs::write(reg_dir.join(&name), yaml).expect("org");
+        } else {
+            std::fs::copy(&src, reg_dir.join(&name)).expect("copy");
+        }
+    }
+    for shared in ["templates", "latex", "people", "manifest.yaml"] {
+        let link = dir.path().join(shared);
+        std::os::unix::fs::symlink(root().join(shared), &link).ok();
+    }
+    let paths = Paths {
+        root: dir.path().to_path_buf(),
+        people: dir.path().join("people"),
+        store: dir.path().join("store"),
+    };
+    let reg = Registry::load(&paths).expect("registry loads");
+    let mut items = Vec::new();
+    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    items
+}
+
+const TWO_ROOTS: &str = r#"
+version: 2
+companies:
+  - code: PAR
+    default: true
+    name: PARIDYUM
+    jurisdiction: {forum: Dehradun}
+    reference: {format: "PAR/{kind}/{year}/{seq:04d}"}
+  - code: PCY
+    name: PARIDYUM CYBER
+    jurisdiction: {forum: Dehradun}
+    reference: {format: "PCY/{kind}/{year}/{seq:04d}"}
+"#;
+
+#[test]
+fn a_company_that_nobody_owns_is_blocking() {
+    let found = findings_with_org(TWO_ROOTS).join("\n");
+    assert!(
+        found.contains("2 companies declare no owner"),
+        "PARIDYUM owns every other company, and an unowned second one passed: {found}"
+    );
+}
+
+#[test]
+fn ownership_that_loops_is_blocking() {
+    let yaml = TWO_ROOTS.replace(
+        "    default: true\n    name: PARIDYUM",
+        "    default: true\n    owned_by: PCY\n    name: PARIDYUM",
+    );
+    let yaml = yaml.replace(
+        "    name: PARIDYUM CYBER",
+        "    owned_by: PAR\n    name: PARIDYUM CYBER",
+    );
+    let found = findings_with_org(&yaml).join("\n");
+    assert!(found.contains("loops back on itself"), "{found}");
+}
+
+#[test]
+fn an_owner_that_is_not_a_declared_company_is_blocking() {
+    let yaml = TWO_ROOTS.replace(
+        "    name: PARIDYUM CYBER",
+        "    owned_by: PXX\n    name: PARIDYUM CYBER",
+    );
+    let found = findings_with_org(&yaml).join("\n");
+    assert!(found.contains("not a declared company"), "{found}");
+}
+
+#[test]
+fn two_companies_sharing_a_serial_format_is_blocking() {
+    // The same serial issued to two people at two companies, and the serial is
+    // what a third party verifies a document by.
+    let yaml = TWO_ROOTS
+        .replace(
+            "    name: PARIDYUM CYBER",
+            "    owned_by: PAR\n    name: PARIDYUM CYBER",
+        )
+        .replace(
+            r#""PCY/{kind}/{year}/{seq:04d}""#,
+            r#""PAR/{kind}/{year}/{seq:04d}""#,
+        );
+    let found = findings_with_org(&yaml).join("\n");
+    assert!(found.contains("share the serial format"), "{found}");
+}
+
+#[test]
+fn the_real_registry_satisfies_the_ownership_rule() {
+    let yaml = std::fs::read_to_string(root().join("registry/org.yaml")).expect("org.yaml");
+    let found = findings_with_org(&yaml).join("\n");
+    assert!(
+        !found.contains("owner") && !found.contains("loops") && !found.contains("serial format"),
+        "the shipped registry breaks its own ownership rule: {found}"
+    );
+}
+
+#[test]
+fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency() {
+    // THE DEFECT THIS TEST EXISTS FOR, and it was live for an hour. `identify`
+    // took the LAST ledger row for a slug, which is right while a person holds
+    // one engagement at a time and silently wrong the moment they hold two:
+    // every per-person command resolved Rohan to Paridyum Cyber and made his
+    // Paridyum office unreachable. `issue` reads the company off the engagement,
+    // so his Paridyum NDA would have been issued on Cyber's letterhead under a
+    // PCY/ serial -- and an issued document is corrected only by reissuing.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let people = dir.path().join("people");
+    std::fs::create_dir_all(&people).expect("people");
+    common::filled_officer_template(&root(), &people.join("_TEMPLATE-officer.yaml"));
+    let paths = Paths {
+        root: root(),
+        people,
+        store: dir.path().join("store"),
+    };
+    let reg = registry();
+
+    personnel::create(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PAR",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::reengage(
+        &paths,
+        &reg,
+        "rohan",
+        "officer",
+        "PCY",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("second company");
+
+    let err = personnel::identify(&paths, "rohan").expect_err("ambiguity must be refused");
+    let text = format!("{err:#}");
+    assert!(text.contains("holds 2 open engagements"), "{text}");
+    assert!(text.contains("PAR-OFC-2026-0001"), "{text}");
+    assert!(text.contains("PCY-OFC-2026-0001"), "{text}");
+
+    // Named, it resolves to exactly what was asked for -- both ways round.
+    let par = personnel::identify_at(&paths, "rohan", Some("PAR")).expect("PAR");
+    assert_eq!(par.engagement_id.as_str(), "PAR-OFC-2026-0001");
+    let pcy = personnel::identify_at(&paths, "rohan", Some("PCY")).expect("PCY");
+    // First engagement at PCY in this store: the sequence is per company.
+    assert_eq!(pcy.engagement_id.as_str(), "PCY-OFC-2026-0001");
+
+    // A company they hold no office at is an error, not the other engagement.
+    let wrong = personnel::identify_at(&paths, "rohan", Some("PXX"))
+        .expect_err("must not fall back to an engagement elsewhere");
+    assert!(format!("{wrong:#}").contains("holds no engagement at PXX"));
+
+    // And one engagement each still needs no flag.
+    personnel::create(
+        &paths,
+        &reg,
+        "aditya",
+        "officer",
+        "PAR",
+        d("2026-10-01"),
+        "rohan",
+    )
+    .expect("creates");
+    let solo = personnel::identify(&paths, "aditya").expect("unambiguous");
+    assert_eq!(solo.engagement_id.as_str(), "PAR-OFC-2026-0002");
+
+    // `engagements` is the view that shows both.
+    let held = personnel::engagements(&paths, "rohan").expect("engagements");
+    assert_eq!(held.len(), 2, "{held:?}");
 }

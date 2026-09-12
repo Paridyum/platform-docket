@@ -10,42 +10,109 @@
 # has been removed. Priyanshu Sharma is Director.
 version: 1
 
+# ORDER IS THE FALLBACK ORDER (ADR-0077 decision 4). `issue` walks a company's
+# entries and takes the first who is not the subject of the document. That is
+# what makes Priyanshu holding CEO and Director at once a data question rather
+# than a special case in code: his own documents fall through to the CTO.
+#
+# `company` is the code in registry/org.yaml. Absent means PAR, so an entry
+# written before the second company existed still means what it meant.
+
 signatories:
+  # ── PARIDYUM ────────────────────────────────────────────────────────────────
+  #
+  # PRIYANSHU HOLDS TWO ENTRIES, `ceo` AND `director`, because he holds both
+  # offices. Two entries rather than one merged office, for two reasons:
+  # lifecycle.yaml routes documents to `ceo` and `director` separately and an
+  # office is not renamed because one person happens to hold both; and the
+  # substitution in `issue` resolves correctly as a result -- for HIS OWN
+  # documents both entries are the subject, so it falls through to `cto`, which
+  # is the operator's decision of 2026-09-09 arrived at by data rather than by a
+  # branch in code.
   - id: ceo
-    legal_name: RUHANI KHURANA
+    company: PAR
+    legal_name: PRIYANSHU SHARMA
     designation: Chief Executive Officer (CEO)
     short: CEO
     active: true
+    appointed_on: null
+    instrument: null
+    note: >
+      APPOINTMENT RECORDED, INSTRUMENT OUTSTANDING. RFC-0042 decision 5 wants a
+      dated instrument (a directors' resolution, or founders' written consent
+      while there is no CIN) cited here. The appointment date is 2026-10-01 for
+      every officer; the instrument has not been produced, so BOTH fields stay
+      null rather than half-filled, which would read as properly recorded.
+
+  - id: director
+    company: PAR
+    legal_name: PRIYANSHU SHARMA
+    designation: Director
+    short: Director
+    active: true
+    appointed_on: null
+    instrument: null
+    note: >
+      The same person as `ceo` above. Signs the business communication letter and
+      is named in the Internship Agreement's future-incorporation clause as the
+      one currently operating Paridyum. Director designate until the CIN is
+      issued and org.yaml records it.
 
   - id: cto
+    company: PAR
     legal_name: ROHAN BATRA
     designation: Chief Technology Officer (CTO)
     short: CTO
     active: true
+    appointed_on: null
+    instrument: null
+    note: >
+      Also CTO of PARIDYUM CYBER. One person, one person identifier, two
+      engagements (ADR-0077 decision 2) -- not two identities. Last in this list
+      on purpose: he is the fallback who executes the CEO-and-Director's own
+      documents.
 
   - id: coo
+    company: PAR
     legal_name: ADITYA SHRIVASTAVA
     designation: Chief Operations Officer (COO)
     short: COO
     active: true
     appointed_on: null
     instrument: null
-    note: >
-      APPOINTMENT RECORDED, INSTRUMENT OUTSTANDING. Adding a name here decides who
-      may bind Paridyum -- governance-altering under C-0004, and RFC-0042 decision 5
-      requires a dated instrument (a directors' resolution, or founders' written
-      consent while there is no CIN) cited in the entry. The operator confirmed the
-      appointment on 2026-09-06; the instrument has not been produced. Fill
-      `appointed_on` and `instrument` when it is, and CHECK THE SPELLING OF THE LEGAL
-      NAME against it -- this file has recorded a name in error once before.
 
-  - id: director
+  # ── PARIDYUM CYBER ──────────────────────────────────────────────────────────
+  #
+  # PARIDYUM owns this company and its Director drives it on paper (operator
+  # decision, 2026-09-09). So Priyanshu is FIRST here as well -- signing for the
+  # holding company rather than from an office he holds at Cyber -- and Ruhani's
+  # own documents fall through to nobody until a second Cyber signatory exists.
+  #
+  # This is an operator decision about who acts, not a legal opinion about who
+  # may bind an unincorporated company. RFC-0042 §3 takes the same posture.
+  - id: cyber-holding
+    company: PCY
     legal_name: PRIYANSHU SHARMA
-    designation: Director
-    short: Director
+    designation: Director, PARIDYUM -- for the holding company
+    short: For PARIDYUM
     active: true
-    note: >
-      Signs the business communication letter, and is the person named in
-      the Internship Agreement's future-incorporation clause as the one
-      currently operating Paridyum. Incorporation is in process, so this is
-      a director designate until the CIN is issued and `org.yaml` records it.
+    appointed_on: null
+    instrument: null
+
+  - id: cyber-ceo
+    company: PCY
+    legal_name: RUHANI KHURANA
+    designation: Chief Executive Officer (CEO)
+    short: CEO
+    active: true
+    appointed_on: null
+    instrument: null
+
+  - id: cyber-cto
+    company: PCY
+    legal_name: ROHAN BATRA
+    designation: Chief Technology Officer (CTO)
+    short: CTO
+    active: true
+    appointed_on: null
+    instrument: null

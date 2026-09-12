@@ -133,9 +133,10 @@ pub fn draw_person(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
 ) -> Result<()> {
     screen::clear(out)?;
-    let who = crate::application::personnel::identify(paths, slug)?;
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     screen::heading(out, &format!("{}  ({slug})", who.person_id))?;
     writeln!(
         out,
@@ -180,7 +181,7 @@ pub fn draw_person(
     }
 
     writeln!(out, "\nNEXT")?;
-    for (i, step) in crate::application::next::steps(paths, registry, slug)?
+    for (i, step) in crate::application::next::steps(paths, registry, slug, company)?
         .iter()
         .enumerate()
     {
@@ -209,7 +210,7 @@ pub fn run(
         let slugs = match &view {
             View::Roster => draw_roster(out, paths, registry)?,
             View::Person(slug) => {
-                draw_person(out, paths, registry, slug)?;
+                draw_person(out, paths, registry, slug, None)?;
                 // Keep the roster's ordering available so a number still works.
                 crate::application::roster::build(paths, registry)?
                     .into_iter()

@@ -173,8 +173,13 @@ fn fill(text: &str, values: &BTreeMap<&'static str, String>) -> (String, Vec<Str
 /// # Errors
 /// Fails if the registry, record or register cannot be read, or a message
 /// names a stage the lifecycle does not declare.
-pub fn due(paths: &Paths, registry: &Registry, slug: &str) -> Result<Vec<Rendered>> {
-    let who = crate::application::personnel::identify(paths, slug)?;
+pub fn due(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<Vec<Rendered>> {
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     let person = store::person(paths, slug)?;
     let values = placeholders(registry, &person);
     let by_code = registry.lifecycle.by_code()?;

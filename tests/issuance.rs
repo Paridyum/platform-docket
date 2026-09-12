@@ -58,6 +58,7 @@ impl Sandbox {
             &registry(),
             slug,
             "intern",
+            "PAR",
             date(),
             "rohan",
         )

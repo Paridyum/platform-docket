@@ -22,6 +22,12 @@ pub struct Signatory {
     /// Short form, where a document has no room for the full designation.
     #[serde(default)]
     pub short: Option<String>,
+    /// Which company this office is held at. Defaults to `PAR` (ADR-0077).
+    ///
+    /// Defaulted rather than required so that an entry written before the
+    /// second company existed still parses and still means what it meant.
+    #[serde(default)]
+    pub company: Option<String>,
     /// Whether this person may currently sign.
     ///
     /// CEASING IS `false`, NEVER DELETION (RFC-0042 decision 5). Documents already
@@ -201,7 +207,63 @@ impl Registry {
     /// The `org` mapping, which every template's letterhead reads.
     #[must_use]
     pub fn org_node(&self) -> Option<&Value> {
-        self.org.get("org")
+        self.company(None)
+    }
+
+    /// The facts of one company, or of the default company when `code` is `None`.
+    ///
+    /// ADR-0077 decision 1: a company is a registry entry. Every document resolves
+    /// its letterhead, jurisdiction, POSH routing and serial format through here,
+    /// so a document issued for Paridyum Cyber cannot accidentally carry Paridyum's
+    /// footer -- there is no second copy of those facts to fall out of step.
+    #[must_use]
+    pub fn company(&self, code: Option<&str>) -> Option<&Value> {
+        let companies = self.org.get("companies")?.as_sequence()?;
+        match code {
+            Some(wanted) => companies
+                .iter()
+                .find(|c| c.get("code").and_then(Value::as_str) == Some(wanted)),
+            // `default: true`, falling back to the first entry. A registry with no
+            // default is a misconfiguration, not a reason to issue nothing.
+            None => companies
+                .iter()
+                .find(|c| c.get("default").and_then(Value::as_bool) == Some(true))
+                .or_else(|| companies.first()),
+        }
+    }
+
+    /// The code of the default company.
+    #[must_use]
+    pub fn default_company(&self) -> Option<&str> {
+        self.company(None)?.get("code")?.as_str()
+    }
+
+    /// Every declared company code, in registry order.
+    #[must_use]
+    pub fn company_codes(&self) -> Vec<&str> {
+        self.org
+            .get("companies")
+            .and_then(Value::as_sequence)
+            .map(|cs| {
+                cs.iter()
+                    .filter_map(|c| c.get("code").and_then(Value::as_str))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Signatories of one company, in registry order.
+    ///
+    /// Order is the fallback order (ADR-0077 decision 4). `issue` walks it and
+    /// takes the first who is not the subject of the document, which is what
+    /// makes Priyanshu holding both CEO and Director a data question rather than
+    /// a special case in code.
+    #[must_use]
+    pub fn signatories_of(&self, company: &str) -> Vec<&Signatory> {
+        self.signatories
+            .iter()
+            .filter(|s| s.company.as_deref().unwrap_or("PAR") == company)
+            .collect()
     }
 
     /// The governing-law forum, or `None` when unset.
@@ -244,6 +306,24 @@ impl Registry {
     /// Signatories who may currently sign.
     pub fn active_signatories(&self) -> impl Iterator<Item = &Signatory> {
         self.signatories.iter().filter(|s| s.active)
+    }
+
+    /// Active signatories of one company, in registry order.
+    ///
+    /// ADR-0077 decision 4: a document is executed by a signatory of the company
+    /// the ENGAGEMENT belongs to. Without this filter a Paridyum Cyber document
+    /// could be countersigned by a Paridyum officer who holds no office there,
+    /// which is a signature nobody can account for.
+    ///
+    /// Registry order is the fallback order. `issue` walks it and takes the first
+    /// who is not the document's subject, which is what makes one person holding
+    /// both CEO and Director a data question rather than a special case in code.
+    pub fn active_signatories_of<'a>(
+        &'a self,
+        company: &'a str,
+    ) -> impl Iterator<Item = &'a Signatory> {
+        self.active_signatories()
+            .filter(move |s| s.company.as_deref().unwrap_or("PAR") == company)
     }
 }
 

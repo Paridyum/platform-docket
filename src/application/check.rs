@@ -259,24 +259,151 @@ fn stage_findings(
 }
 
 /// The organisation's own facts are complete and internally consistent.
+/// Test seam: `check::run` is the front door, and a test that had to build a
+/// whole store to exercise one registry rule would be testing the store.
+pub fn organisation_findings(items: &mut Vec<String>, registry: &Registry) {
+    let mut found = Vec::new();
+    organisation(&mut found, registry);
+    items.extend(found.into_iter().map(|f| f.message));
+}
+
 fn organisation(items: &mut Vec<Finding>, registry: &Registry) {
-    if registry.forum().is_none_or(str::is_empty) {
-        err(items, "org.jurisdiction.forum is unset".to_owned());
+    let codes = registry.company_codes();
+    if codes.is_empty() {
+        err(items, "registry/org.yaml declares no companies".to_owned());
+        return;
     }
-    if registry.serial_format().is_none() {
-        err(items, "org.reference.format is unset".to_owned());
+
+    // EVERY company, not just the default one. A subsidiary with no jurisdiction
+    // produces a governing-law clause naming no court, and the failure would
+    // appear only on that company's first document.
+    let mut formats: BTreeMap<&str, &str> = BTreeMap::new();
+    for code in &codes {
+        let Some(company) = registry.company(Some(code)) else {
+            continue;
+        };
+        let field = |path: &[&str]| -> Option<&serde_yaml::Value> {
+            let mut node = company;
+            for key in path {
+                node = node.get(key)?;
+            }
+            Some(node)
+        };
+
+        if field(&["jurisdiction", "forum"])
+            .and_then(serde_yaml::Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            err(items, format!("{code}: jurisdiction.forum is unset"));
+        }
+        match field(&["reference", "format"]).and_then(serde_yaml::Value::as_str) {
+            None => err(items, format!("{code}: reference.format is unset")),
+            Some(format) => {
+                // TWO COMPANIES SHARING A SERIAL FORMAT COLLIDE. Each keeps its
+                // own per-kind counter, so `PAR/NDA/2026/0001` would be issued
+                // twice to different people at different companies -- and the
+                // serial is what a third party verifies a document by.
+                if let Some(other) = formats.insert(format, code) {
+                    err(
+                        items,
+                        format!(
+                            "{code} and {other} share the serial format {format:?}; \
+                             each company needs its own, or two documents get one serial"
+                        ),
+                    );
+                }
+            }
+        }
+        if field(&["cin"]).is_some_and(|v| !v.is_null())
+            && field(&["legal_status"])
+                .and_then(serde_yaml::Value::as_str)
+                .is_some_and(|v| v.contains("Process"))
+        {
+            err(
+                items,
+                format!(
+                    "{code}: cin is set but legal_status still says \"Incorporation in Process\""
+                ),
+            );
+        }
+        if registry.active_signatories_of(code).next().is_none() {
+            err(
+                items,
+                format!(
+                    "{code} has no active signatory, so nothing can be issued for it \
+                     (ADR-0077 decision 4)"
+                ),
+            );
+        }
     }
-    if let Some(org) = registry.org_node()
-        && org.get("cin").is_some_and(|v| !v.is_null())
-        && org
-            .get("legal_status")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| s.contains("Process"))
-    {
-        err(
+
+    ownership(items, registry, &codes);
+}
+
+/// PARIDYUM owns every other company, directly or through another it owns.
+///
+/// The operator stated this as a general rule rather than a fact about one
+/// subsidiary, so it is checked rather than written in a comment: exactly one
+/// company has no owner, every other reaches it by following `owned_by`, and no
+/// chain loops.
+///
+/// It is not bookkeeping. ADR-0077 decision 4 resolves who may execute a
+/// subsidiary's documents THROUGH this relationship -- Paridyum's Director signs
+/// for the holding company -- so a company whose ownership does not reach the
+/// root has no answer to the question of who may sign for it.
+fn ownership(items: &mut Vec<Finding>, registry: &Registry, codes: &[&str]) {
+    let owner_of = |code: &str| -> Option<String> {
+        registry
+            .company(Some(code))?
+            .get("owned_by")?
+            .as_str()
+            .map(str::to_owned)
+    };
+
+    let roots: Vec<&&str> = codes.iter().filter(|c| owner_of(c).is_none()).collect();
+    match roots.len() {
+        1 => {}
+        0 => err(
             items,
-            "org.cin is set but legal_status still says \"Incorporation in Process\"".to_owned(),
-        );
+            "every company declares an owner, so none is the holding company; \
+             exactly one must have no `owned_by`"
+                .to_owned(),
+        ),
+        _ => err(
+            items,
+            format!(
+                "{} companies declare no owner ({}); PARIDYUM owns every other company, \
+                 so exactly one is the holding company",
+                roots.len(),
+                roots.iter().map(|c| **c).collect::<Vec<_>>().join(", ")
+            ),
+        ),
+    }
+
+    for code in codes {
+        let mut seen = vec![(*code).to_owned()];
+        let mut at = (*code).to_owned();
+        while let Some(owner) = owner_of(&at) {
+            if !codes.contains(&owner.as_str()) {
+                err(
+                    items,
+                    format!("{at}: owned_by names {owner:?}, which is not a declared company"),
+                );
+                break;
+            }
+            if seen.contains(&owner) {
+                err(
+                    items,
+                    format!(
+                        "{code}: ownership loops back on itself through {owner} -- \
+                         a company cannot own itself, however indirectly"
+                    ),
+                );
+                break;
+            }
+            seen.push(owner.clone());
+            at = owner;
+        }
     }
 }
 
@@ -673,7 +800,14 @@ fn people(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Resul
     signatures(items, paths)?;
 
     for slug in store::slugs(paths)? {
-        let Ok(record) = crate::application::personnel::identify(paths, &slug) else {
+        // `engagements`, NOT `identify`. `identify` refuses a person holding two
+        // open engagements (ADR-0077 D3) so that no command silently picks one --
+        // and this `else` read that refusal as "no identifier in the ledger",
+        // reporting a correctly registered officer as hand-created. The question
+        // here is whether the record is registered AT ALL, which is what
+        // `engagements` answers without having to choose between them.
+        let held = crate::application::personnel::engagements(paths, &slug)?;
+        let Some(record) = held.first().cloned() else {
             err(
                 items,
                 format!(
@@ -873,7 +1007,7 @@ mod tests {
     fn ledger_row(seq: u32, eng_seq: u32, slug: &str) -> super::IdentityRecord {
         super::IdentityRecord {
             person_id: crate::domain::identity::PersonId::new(seq).expect("person id"),
-            engagement_id: crate::domain::identity::EngagementId::new("OFC", 2026, eng_seq)
+            engagement_id: crate::domain::identity::EngagementId::new("PAR", "OFC", 2026, eng_seq)
                 .expect("engagement id"),
             slug: slug.to_owned(),
             class: "officer".to_owned(),

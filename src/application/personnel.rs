@@ -22,6 +22,7 @@ pub fn create(
     registry: &Registry,
     slug: &str,
     class_name: &str,
+    company: &str,
     date: time::Date,
     by: &str,
 ) -> Result<Record> {
@@ -55,11 +56,14 @@ pub fn create(
     let record_exists = paths.person(slug).exists();
 
     let year = date.year();
+    // The PERSON identifier is group-wide and carries no company (ADR-0077 D2):
+    // one person, one identifier, however many companies they hold office in.
     let person_id = PersonId::new(identity::next_person_seq(&ledger))?;
     let engagement_id = EngagementId::new(
+        company,
         &class.prefix,
         year,
-        identity::next_engagement_seq(&ledger, &class.prefix, year),
+        identity::next_engagement_seq(&ledger, company, &class.prefix, year),
     )?;
     let created_on = clock::to_iso(date)?;
 
@@ -126,17 +130,33 @@ pub fn reengage(
     registry: &Registry,
     slug: &str,
     class_name: &str,
+    company: &str,
     date: time::Date,
     by: &str,
 ) -> Result<Record> {
     let current = identify(paths, slug)?;
-    match current.standing {
-        Standing::Active => bail!(
-            "{slug} is still in an open engagement ({}); separate them first",
-            current.engagement_id
-        ),
-        Standing::Erased => bail!("{slug} is erased; their data was deleted on request"),
-        Standing::Separated => {}
+    if current.standing == Standing::Erased {
+        bail!("{slug} is erased; their data was deleted on request");
+    }
+    // ONE OPEN ENGAGEMENT PER COMPANY, not one open engagement (ADR-0077 D3).
+    //
+    // The original refusal was protecting something real -- two open internships
+    // at one company is a record nobody can reason about -- and that survives.
+    // What it was ALSO doing, accidentally, was asserting that a person works for
+    // one entity, which was never decided and is now false: Rohan is CTO of both
+    // companies at the same time.
+    let ledger = store::ledger(paths)?;
+    if let Some(open) = ledger
+        .iter()
+        .filter(|r| r.slug == slug && r.standing == Standing::Active)
+        .find(|r| r.engagement_id.company() == Some(company))
+    {
+        bail!(
+            "{slug} already holds an open engagement at {company} ({}); separate them from that \
+             one first. A second engagement at a DIFFERENT company is allowed and is how one \
+             person holds office in two",
+            open.engagement_id
+        );
     }
     let Some(class) = registry.catalogue.class(class_name) else {
         let known: Vec<&str> = registry
@@ -154,9 +174,10 @@ pub fn reengage(
     let ledger = store::ledger(paths)?;
     let year = date.year();
     let engagement_id = EngagementId::new(
+        company,
         &class.prefix,
         year,
-        identity::next_engagement_seq(&ledger, &class.prefix, year),
+        identity::next_engagement_seq(&ledger, company, &class.prefix, year),
     )?;
     let on = clock::to_iso(date)?;
 
@@ -219,13 +240,102 @@ pub fn record_event(
 /// # Errors
 /// Fails if the ledger cannot be read or the slug is not in it.
 pub fn identify(paths: &Paths, slug: &str) -> Result<Record> {
+    identify_at(paths, slug, None)
+}
+
+/// The same, for a caller that knows which company it means.
+///
+/// **`rfind` was wrong the moment one person could hold two engagements.**
+/// Taking the last row for a slug is correct while a person has one engagement
+/// at a time -- an intern who becomes an employee should resolve to the employee
+/// row. With concurrent engagements (ADR-0077 D3) it silently resolved Rohan to
+/// Paridyum Cyber and made his Paridyum office unreachable: `status`, `next`,
+/// `record`, `pack` and `issue` all read through here, and `issue` takes the
+/// company from the engagement, so his Paridyum NDA would have been issued on
+/// Cyber's letterhead under a `PCY/` serial.
+///
+/// So ambiguity is REFUSED rather than resolved by recency. A default here is
+/// the same defect as the default operator that made every event say "docket".
+///
+/// # Errors
+/// Fails if the slug has no entry, if `company` names one it has no engagement
+/// at, or if it holds more than one open engagement and none was named.
+pub fn identify_at(paths: &Paths, slug: &str, company: Option<&str>) -> Result<Record> {
     let ledger = store::ledger(paths)?;
-    // The ledger appends on every standing change, so the LAST entry for a
-    // slug is the current one.
-    ledger
-        .into_iter()
-        .rfind(|r| r.slug == slug)
-        .with_context(|| format!("{slug} has no identifier; run `docket new {slug} <class>`"))
+    let mine: Vec<&Record> = ledger.iter().filter(|r| r.slug == slug).collect();
+    if mine.is_empty() {
+        bail!("{slug} has no identifier; run `docket new {slug} <class>`");
+    }
+
+    // One row per company, latest wins -- a standing change appends, so the last
+    // row for a company is its current state.
+    let mut current: Vec<&Record> = Vec::new();
+    for r in &mine {
+        if let Some(slot) = current
+            .iter_mut()
+            .find(|x| x.engagement_id.company() == r.engagement_id.company())
+        {
+            *slot = r;
+        } else {
+            current.push(r);
+        }
+    }
+
+    if let Some(wanted) = company {
+        return current
+            .into_iter()
+            .find(|r| r.engagement_id.company() == Some(wanted))
+            .cloned()
+            .with_context(|| format!("{slug} holds no engagement at {wanted}"));
+    }
+
+    let open: Vec<&&Record> = current
+        .iter()
+        .filter(|r| r.standing == Standing::Active)
+        .collect();
+    match open.len() {
+        // No open engagement: a separated or erased person still has to be
+        // readable, so the most recent row answers.
+        0 => current
+            .last()
+            .map(|r| (*r).clone())
+            .with_context(|| format!("{slug} has no identifier")),
+        1 => open
+            .first()
+            .map(|r| (**r).clone())
+            .context("one open engagement, which could not be read back"),
+        _ => bail!(
+            "{slug} holds {} open engagements -- {}. Name one with --company: which company this \
+             concerns decides the letterhead, the jurisdiction and the serial, so it is not \
+             something to guess at",
+            open.len(),
+            open.iter()
+                .map(|r| r.engagement_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Every engagement a person holds, latest row per company.
+///
+/// # Errors
+/// Fails if the ledger cannot be read.
+pub fn engagements(paths: &Paths, slug: &str) -> Result<Vec<Record>> {
+    let ledger = store::ledger(paths)?;
+    let mut out: Vec<Record> = Vec::new();
+    for r in ledger.into_iter().filter(|r| r.slug == slug) {
+        if let Some(slot) = out
+            .iter_mut()
+            .find(|x| x.engagement_id.company() == r.engagement_id.company())
+        {
+            *slot = r;
+        } else {
+            out.push(r);
+        }
+    }
+    out.sort_by(|a, b| a.engagement_id.cmp(&b.engagement_id));
+    Ok(out)
 }
 
 /// A person's class, from the ledger.
@@ -260,8 +370,13 @@ pub struct Dossier {
 ///
 /// # Errors
 /// Fails if the ledger, register, log or record cannot be read.
-pub fn dossier(paths: &Paths, registry: &Registry, slug: &str) -> Result<Dossier> {
-    let identity = identify(paths, slug)?;
+pub fn dossier(
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    company: Option<&str>,
+) -> Result<Dossier> {
+    let identity = identify_at(paths, slug, company)?;
     let class = class_of(registry, &identity)?;
 
     let violations = if identity.standing == Standing::Erased {

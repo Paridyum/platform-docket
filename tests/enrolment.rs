@@ -230,6 +230,7 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
         &reg,
         "t",
         "intern",
+        "PAR",
         tool_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
         "rohan",
     )
@@ -274,6 +275,7 @@ fn a_complete_record_has_nothing_unrenderable() {
         &reg,
         "t",
         "intern",
+        "PAR",
         tool_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
         "rohan",
     )

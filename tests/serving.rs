@@ -122,7 +122,16 @@ fn store_bytes(sandbox: &Sandbox) -> Vec<(PathBuf, Vec<u8>)> {
 
 /// Enrol one intern, the way the CLI does.
 fn enrol(sandbox: &Sandbox, registry: &Registry, slug: &str) {
-    personnel::create(&sandbox.paths, registry, slug, "intern", date(), "ruhani").expect("enrols");
+    personnel::create(
+        &sandbox.paths,
+        registry,
+        slug,
+        "intern",
+        "PAR",
+        date(),
+        "ruhani",
+    )
+    .expect("enrols");
 }
 
 #[test]
@@ -217,7 +226,7 @@ fn a_person_page_matches_dossier_and_next_rather_than_recomputing_them() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let dossier = personnel::dossier(&sandbox.paths, &reg, "asha").expect("dossier");
+    let dossier = personnel::dossier(&sandbox.paths, &reg, "asha", None).expect("dossier");
     let (_, body) = get(&sandbox, &reg, "/api/person/asha");
 
     assert_eq!(body["person_id"], dossier.identity.person_id.to_string());

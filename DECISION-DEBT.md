@@ -846,15 +846,36 @@ REQ-0001 (runtime secrets) is the artifact this belongs to.
 
 ## D-51 — Nothing checks that only the vault is uploaded
 
-`docket vault sync` prints what to upload and what must never be, and that is the whole
-enforcement: a human reading a list. Uploading `store/keys/` once would put every per-person key
-into a versioned store that retains what you delete from it — after which no erasure this system
-performs is real, and nothing would report that.
+**Closed 2026-09-09 by `docket store push`, in the place this entry said the check belonged.**
 
-The obvious check cannot live here: docket does not talk to Sync (RFC-0038 — the vendor's client
-is Windows and Mac only), so it cannot see what was actually uploaded. What could exist is a
-guard on the other side, in whatever performs the upload, refusing any path outside
-`store/vault/`. That belongs with the runbook for the upload, which does not exist yet either.
+The entry's own words were that the guard could not live in docket because docket cannot see what
+Sync received, and that what could exist is *"a guard on the other side, in whatever performs the
+upload, refusing any path outside `store/vault/`"*. That was right about the network and wrong
+about the boundary: the thing performing the upload is a person copying files into a watched
+folder, and filling that folder is an operation docket can perform and therefore guard.
+
+`docket store push <dir>` copies `store/vault/` and nothing else, and refuses five ways:
+a destination inside the store; a never-list directory **already at the destination**; an
+unclassified path; a file that is not `.age`; a register with no bundle behind it. RUN-0007 is the
+procedure.
+
+**The second refusal is the one this entry was actually about.** Every other check looks at what
+is being sent; that one looks at what is already there, and so it is the only thing that can catch
+a `store/keys/` uploaded once, by hand, months ago — after which no erasure this system performs
+is real and nothing would have reported it.
+
+**Two defects were found by the tests rather than by review**, both worth recording because both
+produced a refusal that lied. The plaintext check bailed inside the copy loop while telling the
+operator "Nothing was uploaded", which was false for every file already written; validation now
+runs over every file before any file is copied. And the inside-the-store guard compared paths with
+`starts_with`, which is purely lexical, so a relative `store/uploads` walked straight past it and
+wrote into the directory it existed to protect — and a `..`-laden path defeated the first fix too.
+Destinations are now normalised lexically before the comparison.
+
+**What remains is not a check.** The vendor's leg still cannot be observed from here: `push` fills
+the folder, and whether Sync replicated it is the client's business. RUN-0007 says so in those
+words rather than letting "uploaded" imply "arrived", and D-53 holds the one manual rehearsal that
+would prove the transport.
 
 ## D-52 — The node registry and the off-authority write refusal are not built
 
@@ -906,3 +927,55 @@ line-based and therefore flags binary ciphertext; it now inspects the first eigh
 deliberately injected plaintext file makes it fail. The reachability check curled a container that
 was not serving at all, so it was measuring an absent listener rather than `require_loopback`; the
 server must now answer on its own loopback before its unreachability from elsewhere is counted.
+
+## D-54 — A person record holds one engagement block, and a person may hold two
+
+**Half closed 2026-09-12.** The resolution defect is fixed; the record shape is not.
+
+**What was actually wrong was worse than the record shape, and it was live.**
+`personnel::identify` took the LAST ledger row for a slug — correct while a person holds one
+engagement at a time, and silently wrong the moment they hold two. Every per-person command read
+through it, so Rohan resolved to Paridyum Cyber and his Paridyum office was unreachable by
+`status`, `next`, `record`, `pack` and `onboard`. `issue` derives the company from the engagement,
+so **his Paridyum NDA would have been issued on Cyber's letterhead under a `PCY/` serial** — and an
+issued document is corrected only by reissuing under a new one.
+
+Ambiguity is now refused rather than resolved by recency: `identify` errors naming both
+engagements, a global `--company` selects one, and a company the person holds no office at is an
+error rather than a silent fallback to the other. `docket record` lists every engagement.
+Regression test in `tests/officers.rs`.
+
+**What remains is the original entry.** `people/<slug>.yaml` still has a single `engagement:`
+block — one role, one start date, one stage. Rohan is CTO of both companies so the one role is
+true of both; somebody holding different offices at the two cannot be represented, and whichever
+document reads `engagement.role` prints the wrong title on half of them. Nothing enforces that
+constraint, which is what keeps this open.
+
+The fix is a schema change with a real choice in it: either the record gains engagements keyed by
+company — making every reader of `engagement.role` company-aware, templates included — or the
+record splits per engagement and the person-level identity fields need a home that is not
+duplicated across them. The second is closer to what the ledger already does.
+
+## D-55 — The officers page names one company
+
+`docket check` warns that `signatories.yaml` has changed since the officers page was exported.
+It has, substantially: Priyanshu now holds CEO and Director, Ruhani has moved to Paridyum Cyber,
+and three Cyber signatories exist that the public page has no concept of.
+
+`registry/team.yaml` and the exported `team.json` have no company dimension, so re-exporting now
+would publish a single flat list mixing officers of two companies — which is worse than the stale
+page, because it would read as one company with six officers.
+
+The web surface needs the same decision `org.yaml` just took: a company is data, and the page
+groups by it. Held rather than half-done, and the warning is left standing so it is not forgotten.
+
+## D-56 — The console resolves an ambiguous person by refusing, and offers no way through
+
+`docket serve` has no company picker, so the HTTP routes pass `None` and a person holding two open
+engagements is refused with an error naming both. That is the correct failure — the alternative is
+the recency bug D-54 records — but the console gives the operator no way to answer it, where the
+CLI has `--company`.
+
+Nobody is blocked today: one person holds two engagements and the console is used for enrolment,
+which opens records at the default company. It becomes a real gap the first time an officer with
+two offices is administered from the console rather than the terminal.

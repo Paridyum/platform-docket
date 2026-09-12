@@ -110,16 +110,23 @@ fn countersignatories(
         ))
         .unwrap_or_default(),
     );
-    crate::application::issue::resolve_signatories(registry, &stand_in, doc)
-        .iter()
-        .filter_map(|id| {
-            registry
-                .signatories
-                .iter()
-                .find(|s| &s.id == id)
-                .map(|s| s.short.clone().unwrap_or_else(|| s.id.clone()))
-        })
-        .collect()
+    crate::application::issue::resolve_signatories(
+        registry,
+        &stand_in,
+        doc,
+        // The signatory's own company: a countersignature is resolved among the
+        // officers of the company whose office this person holds.
+        sig.company.as_deref().unwrap_or("PAR"),
+    )
+    .iter()
+    .filter_map(|id| {
+        registry
+            .signatories
+            .iter()
+            .find(|s| &s.id == id)
+            .map(|s| s.short.clone().unwrap_or_else(|| s.id.clone()))
+    })
+    .collect()
 }
 
 /// The published team as JSON, for the web surface to commit.

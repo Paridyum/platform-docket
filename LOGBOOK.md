@@ -563,3 +563,241 @@ the other; `python3 -m http.server` as the off-host stand-in; a deliberate plain
 prove one assertion could fail.
 
 371 tests plus 13 container assertions. Gates green.
+
+---
+
+## 2026-09-08 — the front half gets a playbook, and it is honest about being manual
+
+`HR-CHECKLIST.md` begins at "1 · Offer". Everything before that — writing a posting, publishing
+it, taking applications, deciding — was undocumented, and the CLI has no `post`, `apply` or
+`shortlist` subcommand to document. ADR-0063 named this the front half of docket and left it for
+Phase B. `HIRING-PLAYBOOK.md` covers it now.
+
+**Capability was retrieved before it was written, per STD-0013.** `HR-CHECKLIST.md` (123 lines)
+and `SOP.md` (837) already cover offer through alumni, so the playbook does not restate them: it
+ends at section 5 by handing over to `HR-CHECKLIST.md` §1 at the exact line where docket takes
+over. Two documents meeting at one seam, not two overlapping ones.
+
+**The load-bearing decision was to describe the manual path rather than the designed one.**
+`api/apply` is built and deliberately inert — gate 1 returns 503 with *"Until then, apply by
+email"* unless `PARIDYUM_BACKUPS_CONFIRMED=1`, which asserts a rehearsed off-host restore
+(ADR-0071 D3, ADR-0068 §5). So intake is a mailbox today, and sections 3 and 4 of the playbook
+have no commands in them at all. Writing them as though the store existed would have produced a
+checklist nobody could follow. The future state is confined to one closing section that says
+exactly which sections change and which do not.
+
+**Two joins between repositories are stated because neither is enforced.** `engagement.class` on
+the posting must match the class passed to `docket new`, and `engagement.job_id` in the person
+record must be the posting id — the only join between `web-paridyum/jobs/` and
+`tool-docket/people/`. Both are checkboxes because nothing checks them; `jobs.ts` already carries
+a hand-copied mirror of `ENGAGEMENT_CLASSES` and `DOCUMENT_PROVIDES` with a comment admitting a
+copy goes stale silently.
+
+**Skills and tools used.** `paridyum-platform:new-decision` for ADR-0074 and
+`paridyum-platform:design-change` for RFC-0043 earlier in the session, which is where the
+surface split this playbook assumes was decided; `check-knowledge.sh` after each; grep and sed
+over `src/main.rs` to establish that no hiring subcommand exists rather than assuming it, and
+over `api/apply/route.ts` to read the three gates in the order the code applies them.
+
+No code changed. Documentation only.
+
+**Later the same day — `RUNNING.md`, because the README answered the wrong question.**
+`README.md` is 422 lines across 20 headings and had no install step, no first command and no
+statement of which machine to run on. STD-0002 requires a fixed README shape with "Run locally"
+and "Test"; this repository had neither, so the entry path was 400 lines of capability with no
+door. The setup facts existed but were scattered across ADR-0072 (one authoritative node, the
+`O_EXCL` lock), ADR-0068 D1 (loopback, SSH forwarding as the authentication), ADR-0071 (`.age`
+before anything leaves), `scripts/serve.sh`'s header comment (build-first, refuse-occupied-port,
+both written after real faults) and `config.rs` (`DOCKET_PEOPLE`, `DOCKET_STORE`). `RUNNING.md`
+collects them; the README gains four lines and a pointer rather than a rewrite.
+
+**The section that matters is §1, and it is first for that reason.** "Which machine" is the
+question that goes wrong irreversibly — two docket instances fork a hash chain, and a forked
+chain reads as tampering later. Everything else in the file is recoverable.
+
+## 2026-09-09 — Four real people, and the guard D-51 had put in the wrong place
+
+**Four officers are now recorded**, and the register stopped being a demonstration. That changed
+which open debt was worth taking: not the node registry, but the one standing between four real
+people and a single laptop.
+
+**D-51 had reasoned itself into the wrong boundary, and its own words contained the correction.**
+The entry said the check could not live in docket, because docket cannot see what Sync received —
+true — and that what could exist is *"a guard on the other side, in whatever performs the
+upload"*. The thing performing the upload is a person copying files into a watched folder. Filling
+that folder is an operation docket can perform, and therefore one it can guard. The vendor's leg
+was never the part that needed checking.
+
+**The refusal worth building was the one that looks backwards.** Four of the five inspect what is
+being sent. Only the never-list check inspects what is *already at the destination*, and it is the
+only thing that can catch a `store/keys/` uploaded once, by hand, months ago — after which no
+erasure the system performs is real and nothing would ever have said so.
+
+**Two defects, both found by tests, both producing a refusal that lied.** The plaintext check
+bailed inside the copy loop while printing "Nothing was uploaded", which was false for every file
+the walk had already reached; a refusal that misreports what it did is worse than no refusal.
+And the inside-the-store guard used `starts_with`, which is purely lexical — a relative
+`store/uploads` walked straight past it and wrote into the directory it existed to protect. I
+found that one by running the command against the real store and then having to delete what it
+had created. The first fix absolutised the path and a `..`-laden path still defeated it, so
+destinations are now normalised lexically.
+
+**On the officer records.** A date of birth reading 27/01/2026 made the record structurally
+impossible rather than merely wrong: DPDP s9 demanded a guardian and the officer class forbids
+holding one, commented *"an officer is not a minor"*. Two rules disagreeing was the signal the
+data was wrong. I asked rather than assuming 2006, because the year is printed on both documents.
+
+**And the identifiers were reassigned, which is only possible because nothing has been issued.**
+The request was to reorder four people across four identifiers, which locked ADR-0051 forbids as
+reuse. Checking first showed what the prohibition is actually about: no document, no serial, no
+signature, no tombstone, and every address field still null. ADR-0051's harm is a certificate that
+stops naming the same person, and no certificate existed. So the ledger was reset and re-allocated
+rather than edited — editing an append-only chain would have invalidated every digest after the
+change — and the filled records survived untouched, because they are keyed by slug and a slug is a
+filename, never an identity. That window is now closed: the first issuance ends it.
+
+**`pre_existing_ip` is held as FILL-ME on all four deliberately**, which keeps `docket check` red.
+That red is accurate — the records are incomplete — and it converts "remember not to issue" into
+"cannot issue", with `--force` explicitly not applying.
+
+**Skills and tools used.** `docket check` as the arbiter rather than my own reading of the
+registry; deliberate mutations to confirm new tests fail; the real store as a test subject once,
+which is how the relative-path defect surfaced and also why it had to be cleaned up by hand;
+`check-knowledge.sh` to catch that citing a check in a new ADR left its `blocks:` list stale.
+
+378 tests. fmt, clippy and test green; `check` red on four held records.
+
+## 2026-09-09 (later) — A second company, and the decision that had already been taken
+
+**Paridyum Cyber arrived, and the first useful thing was finding out how much of this was already
+decided.** ADR-0051 labels the first segment of `PAR-P-000147-3` as *organisation* and states that
+*"one person may hold many engagements; the archive stays whole across all of them."* Both
+sentences were written for a single-company estate and both turned out to be the answer. Nothing
+locked needed superseding, and the engagement identifier's shape did not change at all — only the
+value of a segment that already existed.
+
+**The obvious design was the wrong one, and its wrongness was checkable.** One docket store per
+company is what anybody would reach for. It means two ledgers, so a person in both is allocated
+two person identifiers — Rohan's archive splits down the middle, and the check that identifiers
+are never reused cannot see across the boundary it would most need to. That is the exact harm
+ADR-0051 exists to prevent, arrived at by convenience.
+
+**The real work was not the registries.** `reengage` refused any second engagement while one was
+open — *"separate them first"* — which reads as a rule about sequence and is actually an assertion
+that a person works for one entity. That assertion was never decided and is now false. Narrowing it
+to one open engagement **per company** keeps the protection it was actually providing (two open
+internships at one company is a record nobody can reason about) and drops the part nobody had
+chosen.
+
+**Two collapses that resolved themselves into data.** Priyanshu holds CEO and Director at once, so
+RFC-0042's rule — the CEO signs the Director's own documents — had nothing left to point at. Rather
+than branch on it, he gets both entries in `signatories.yaml`; for his own documents both are the
+subject, and the substitution that already existed falls through to the CTO. The operator's
+decision and the code's behaviour are the same object. A test asserts the NDO resolves to `cto`.
+
+**And the roster was quietly lying within minutes of the change working.** `identity::current`
+keeps the last ledger row per person, which is correct for an intern who becomes an employee and
+wrong for a man holding two offices: it showed Rohan at Paridyum Cyber and omitted Paridyum
+entirely. Found by reading the roster after the ledger was already right — the ledger had five
+correct rows and the view showed four. The summary then said "5 people" for four officers, which
+is the same defect one line further down.
+
+**On resetting the ledger a second time.** Ruhani's engagement had been opened at Paridyum before
+she moved to Cyber, and an engagement's company is immutable by decision. Nothing is issued, no
+address is provisioned, and every appointment date is still in the future, so the reset cost
+nothing — and the person identifiers the operator chose were preserved exactly, which is why no
+address changed. That window closes at the first issuance, and I said so rather than leaving it to
+be discovered.
+
+**What I did not do.** The officers page still names one company, and re-exporting now would
+publish six officers of two companies as one flat list — worse than a stale page. D-55 holds it.
+And a person record still has one `engagement:` block: Rohan being CTO of both is true of both, so
+it works by luck, and D-54 names the schema choice rather than guessing at it.
+
+**Skills and tools used.** `grep` against the locked ADR before designing anything, which is what
+turned a supersede into a reading; `docket check` as the arbiter after every registry edit; four
+new tests in `tests/officers.rs` including the two-companies-one-identifier case; and a careful
+note that zsh does not word-split unquoted parameters, after a loop silently passed an empty
+`--company` four times.
+
+382 tests. fmt, clippy and test green; `check` red on four held records, plus the D-55 warning.
+
+## 2026-09-09 (later still) — "Paridyum owns every other company"
+
+**Said as an aside, and it is the sentence that decides who may sign.** ADR-0077 decision 4
+resolves a subsidiary's countersignature through ownership — Paridyum's Director signs for the
+holding company — so a company whose ownership does not reach the root has no answer to the
+question of who may execute its documents. It would find that out at its first issuance, months
+after somebody added the entry.
+
+So it became an invariant rather than a comment: exactly one company declares no `owned_by`, every
+other reaches it by following the chain, no chain loops, and no owner names a company that is not
+declared. Four tests, each swapping `org.yaml` for a registry that breaks one rule.
+
+**`owned_by` names a company rather than asserting `PAR` everywhere.** A company owned by Paridyum
+Cyber is still owned by Paridyum, and a rule that demanded the root be named directly would be
+wrong the first time the group is two levels deep.
+
+**Widening the check found a second collision nobody had asked about.** `organisation` had only
+ever validated the default company — so a subsidiary with no jurisdiction would have produced a
+governing-law clause naming no court, visible only on that company's first document. Validating
+every company made the shared-serial-format problem obvious: each company keeps its own per-kind
+counter, so two companies with `PAR/{kind}/{year}/{seq}` issue `PAR/NDA/2026/0001` twice, to
+different people. The serial is the string a third party verifies a document by. That check exists
+now because the loop made it visible, not because anybody predicted it.
+
+**A shell lesson, twice in one day.** Backticks inside a double-quoted `python -c` are executed by
+zsh before python sees them, which silently ate a doc comment's `` `check::run` `` and left the
+sentence starting "Test seam:  is the front door". Heredocs for anything containing backticks;
+`python -c` only for the trivial case.
+
+387 tests. fmt, clippy and test green; `check` red on the four held records.
+
+## 2026-09-12 — Asked for a timeline, found a live correctness hole instead
+
+**The question was whether docket should have a timeline or graph view. Checking before answering
+is what made the answer easy, and it was not the answer the question expected.**
+
+`docket record` already prints a dated history — the hash chain IS a timeline. ADR-0065 already
+assigns structural diagrams to archify, with hand-authored `lifecycle` and `dataflow` IR explicitly
+legal, so a renderer here would duplicate a tool pinned four weeks ago. And a graph of two
+companies and four people is a screenshot, not a feature. The estate's own idiom applies: a planned
+region is not a region, it is a sales conversation.
+
+**But running the per-person commands to check what a view would even show surfaced this.**
+
+    docket status rohan-batra
+      engagement PCY-OFC-2026-0002    <- Paridyum Cyber
+
+`identify` took the last ledger row for a slug. That is correct while a person holds one engagement
+at a time — an intern who becomes an employee should resolve to the employee row — and it was
+silently wrong from the moment concurrent engagements landed, an hour earlier, in code I had
+written. Every per-person command reads through it, so Rohan's Paridyum office was unreachable, and
+**`issue` derives the company from the engagement**: his Paridyum NDA would have carried Cyber's
+letterhead, Cyber's jurisdiction and a `PCY/` serial. An issued document is corrected only by
+reissuing under a new serial.
+
+**I had already fixed this exact defect once, in `current()`, for the roster — and missed that
+`identify` is a separate path doing the same thing.** One fix, one sibling left behind. The lesson
+is not "be careful"; it is that a recency-based lookup is a *pattern*, and finding one instance
+should have prompted a grep for the rest.
+
+**Refusing beat resolving.** Ambiguity now errors and names both engagements rather than picking
+one, because which company a command concerns decides the letterhead, the jurisdiction and the
+serial. A global `--company` answers it — one flag, reused by `new` and `reengage` for allocation
+and by everything else for disambiguation, rather than a per-command flag repeated eleven times.
+A company the person holds no office at is an error, never a quiet fallback to the other.
+
+**On the view question, the honest position is recorded rather than implied:** no graph, no general
+timeline, with a named trigger — a person holding engagements at three or more companies, or the
+group going two ownership levels deep. The one view I would still argue for is a forward
+obligations report, because `retention` answers what is past due and nothing answers what falls due
+next, and those are DPDP deadlines with legal consequence. Even that is a sorted list.
+
+**Process note.** Threading one parameter through nineteen call sites with regexes double-patched
+several and mis-inserted others into the middle of function bodies. Reading the compiler's error
+list as a worklist rather than trusting the scripts is what kept it correct; three signatures had
+to be repaired by hand after a script put `company: Option<&str>,` on the line after a closing
+brace.
+
+388 tests. fmt, clippy and test green; `check` red on the four held records.

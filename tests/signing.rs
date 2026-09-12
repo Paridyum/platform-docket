@@ -52,8 +52,16 @@ impl Sandbox {
     /// A person with exactly the named documents issued.
     fn with_docs(&self, slug: &str, codes: &[&str]) -> tool_docket::domain::identity::Record {
         let reg = registry();
-        let r = personnel::create(&self.paths, &reg, slug, "intern", d("2026-08-19"), "rohan")
-            .expect("creates");
+        let r = personnel::create(
+            &self.paths,
+            &reg,
+            slug,
+            "intern",
+            "PAR",
+            d("2026-08-19"),
+            "rohan",
+        )
+        .expect("creates");
         let person = store::person(&self.paths, slug).expect("record");
         let by_code = reg.lifecycle.by_code().expect("codes");
         for code in codes {

@@ -115,8 +115,9 @@ pub fn grouped(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
 ) -> Result<Vec<(Action, Vec<Entry>)>> {
-    let who = crate::application::personnel::identify(paths, slug)?;
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
     let by_code = registry.lifecycle.by_code()?;
     let owed: BTreeSet<&str> = registry
         .lifecycle
@@ -166,12 +167,13 @@ pub fn assemble(
     paths: &Paths,
     registry: &Registry,
     slug: &str,
+    company: Option<&str>,
     out: &Path,
     date: time::Date,
     by: &str,
 ) -> Result<Pack> {
-    let who = crate::application::personnel::identify(paths, slug)?;
-    let buckets = grouped(paths, registry, slug)?;
+    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let buckets = grouped(paths, registry, slug, company)?;
     if buckets.iter().all(|(_, v)| v.is_empty()) {
         bail!("{slug} has no issued documents; run `docket onboard {slug}` first");
     }

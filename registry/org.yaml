@@ -1,60 +1,128 @@
-# Paridyum's own facts. THE single home for every one of them.
+# Paridyum group companies. THE single home for every fact about each one.
 #
-# Nothing in latex/ or templates/ may restate a value from this file. To
-# change the office address, the email, or the legal status, edit it here
-# and rebuild: every document picks it up.
-version: 1
+# ADR-0077: a company is registry data, not a second store. One docket, one
+# register, one chain, many companies -- because two stores means two ledgers,
+# and a person in both would be allocated two person identifiers, splitting the
+# archive ADR-0051 exists to keep whole.
+#
+# Nothing in latex/ or templates/ may restate a value from this file. To change
+# an office address, edit it here and rebuild: every document picks it up.
+#
+# `code` is the first segment of every engagement identifier and serial issued
+# by that company -- PAR-OFC-2026-0001, PCY-OFC-2026-0001. It is NOT the first
+# segment of a PERSON identifier, which stays `PAR-` for the whole group: one
+# person, one identifier, however many companies they hold office in.
+# PARIDYUM OWNS EVERY OTHER COMPANY. Exactly one entry below declares no
+# `owned_by` -- that is the holding company -- and every other reaches it by
+# following `owned_by`, directly or through an intermediate. `docket check`
+# enforces it, because ADR-0077 decision 4 resolves who may SIGN a subsidiary's
+# documents through that relationship: a company whose ownership does not reach
+# the root has no answer to who may sign for it, and would fail only at its
+# first issuance.
+#
+# Each company also needs its OWN serial format. Two sharing one would issue
+# PAR/NDA/2026/0001 twice, to different people, at different companies -- and
+# the serial is what a third party verifies a document by.
+version: 2
 
-org:
-  name: PARIDYUM
-  tagline: Technology & Software
+companies:
+  - code: PAR
+    default: true
+    name: PARIDYUM
+    tagline: Technology & Software
 
-  # Rendered into the letterhead on every page of every document.
-  address: Opposite Raghav Tower, Near Aroma Clinic, Herbertpur, Dehradun -- 248142
-  email: legal@paridyum.com
-  web: www.paridyum.com
+    # Rendered into the letterhead on every page of every document.
+    address: Opposite Raghav Tower, Near Aroma Clinic, Herbertpur, Dehradun -- 248142
+    email: legal@paridyum.com
+    web: www.paridyum.com
 
-  # The line in the footer of every document.
-  legal_status: Incorporation in Process
+    # The line in the footer of every document.
+    legal_status: Incorporation in Process
 
-  # Populated when incorporation completes; `legal_status` changes then too.
-  cin: null
-  incorporated_on: null
+    # Populated when incorporation completes; `legal_status` changes then too.
+    cin: null
+    incorporated_on: null
 
-  # Governing-law clause in the NDA, IP Assignment and Internship Agreement.
-  # The source .docx files all read "[City, State, India]".
-  jurisdiction:
-    country: India
-    forum: Dehradun, Uttarakhand, India
+    # Governing-law clause in the NDA, IP Assignment and Internship Agreement.
+    # The source .docx files all read "[City, State, India]".
+    jurisdiction:
+      country: India
+      forum: Dehradun, Uttarakhand, India
 
-  # Information Security Policy section 12 routes incidents here.
-  security:
-    contact: ROHAN BATRA
-    contact_role: Chief Technology Officer (CTO)
-    email: security@paridyum.com
+    # Information Security Policy section 12 routes incidents here.
+    security:
+      contact: ROHAN BATRA
+      contact_role: Chief Technology Officer (CTO)
+      email: security@paridyum.com
 
-  # Where POSH complaints go. Below ten employees this is the district
-  # Local Committee, not an Internal Committee -- but an intern must still
-  # be told where to complain.
-  posh:
-    internal_committee: false
-    local_committee: District Officer, Dehradun District, Uttarakhand
-    contact_email: legal@paridyum.com
+    # Where POSH complaints go. Below ten employees this is the district
+    # Local Committee, not an Internal Committee -- but an intern must still
+    # be told where to complain.
+    posh:
+      internal_committee: false
+      local_committee: District Officer, Dehradun District, Uttarakhand
+      contact_email: legal@paridyum.com
 
-  # Internship Agreement section 11. The .docx wrote "[7] days".
-  notice_period_days: 7
+    # Internship Agreement section 11. The .docx wrote "[7] days".
+    notice_period_days: 7
 
-  # Where a third party checks a certificate or reference letter. Printed on
-  # every issued document alongside its serial and verification code.
-  verification:
-    contact: legal@paridyum.com
+    # Where a third party checks a certificate or reference letter. Printed on
+    # every issued document alongside its serial and verification code.
+    verification:
+      contact: legal@paridyum.com
 
-  # Grievance Policy section 3. Working days.
-  grievance:
-    acknowledge_days: 3
-    outcome_days: 20
+    # Grievance Policy section 3. Working days.
+    grievance:
+      acknowledge_days: 3
+      outcome_days: 20
 
-  # Serial number format. {kind} is the document code, {year} the issue
-  # year, {seq} a zero-padded per-kind counter.
-  reference:
-    format: "PAR/{kind}/{year}/{seq:04d}"
+    # Serial number format. {kind} is the document code, {year} the issue
+    # year, {seq} a zero-padded per-kind counter.
+    reference:
+      format: "PAR/{kind}/{year}/{seq:04d}"
+
+  - code: PCY
+    # Owned by PARIDYUM. Recorded because decision 4 of ADR-0077 resolves signing
+    # authority through it: Paridyum's Director executes this company's documents.
+    #
+    # THE SHAREHOLDING IS NOT RECORDED HERE, and that is deliberate (ADR-0077 D5).
+    # Who owns what proportion is a cap table and belongs to the incorporation
+    # documents; docket has no question that needs it, and a field with no purpose
+    # is the over-collection `fields.yaml` refuses.
+    owned_by: PAR
+    name: PARIDYUM CYBER
+    tagline: Cyber Security
+
+    address: Opposite Raghav Tower, Near Aroma Clinic, Herbertpur, Dehradun -- 248142
+    email: legal@paridyum.com
+    web: www.paridyum.com
+
+    legal_status: Incorporation in Process
+    cin: null
+    incorporated_on: null
+
+    jurisdiction:
+      country: India
+      forum: Dehradun, Uttarakhand, India
+
+    security:
+      contact: ROHAN BATRA
+      contact_role: Chief Technology Officer (CTO)
+      email: security@paridyum.com
+
+    posh:
+      internal_committee: false
+      local_committee: District Officer, Dehradun District, Uttarakhand
+      contact_email: legal@paridyum.com
+
+    notice_period_days: 7
+
+    verification:
+      contact: legal@paridyum.com
+
+    grievance:
+      acknowledge_days: 3
+      outcome_days: 20
+
+    reference:
+      format: "PCY/{kind}/{year}/{seq:04d}"

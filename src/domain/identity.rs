@@ -122,11 +122,26 @@ impl EngagementId {
     /// # Errors
     /// Fails if the prefix is not two to four uppercase letters; anything
     /// else would make the identifier ambiguous to parse back.
-    pub fn new(prefix: &str, year: i32, seq: u32) -> Result<Self> {
+    pub fn new(company: &str, prefix: &str, year: i32, seq: u32) -> Result<Self> {
         if !(2..=4).contains(&prefix.len()) || !prefix.chars().all(|c| c.is_ascii_uppercase()) {
             bail!("class prefix {prefix:?} must be 2-4 uppercase letters");
         }
-        Ok(Self(format!("PAR-{prefix}-{year}-{seq:04}")))
+        // Same rule as the class prefix: the company occupies the segment that
+        // held the literal `PAR`, and a lowercase or overlong code would make
+        // the identifier ambiguous to split back apart.
+        if !(2..=4).contains(&company.len()) || !company.chars().all(|c| c.is_ascii_uppercase()) {
+            bail!("company code {company:?} must be 2-4 uppercase letters");
+        }
+        Ok(Self(format!("{company}-{prefix}-{year}-{seq:04}")))
+    }
+
+    /// The company this engagement was opened at.
+    ///
+    /// ADR-0077 decision 2: the company is immutable for an engagement and plural
+    /// for a person, so it belongs here for exactly the reason class does.
+    #[must_use]
+    pub fn company(&self) -> Option<&str> {
+        self.0.split('-').next()
     }
 
     /// The identifier as written.
@@ -254,11 +269,17 @@ pub fn next_person_seq(ledger: &[Record]) -> u32 {
 
 /// The next engagement sequence for a class prefix and year.
 #[must_use]
-pub fn next_engagement_seq(ledger: &[Record], prefix: &str, year: i32) -> u32 {
+pub fn next_engagement_seq(ledger: &[Record], company: &str, prefix: &str, year: i32) -> u32 {
     ledger
         .iter()
         .filter(|r| {
-            r.engagement_id.year() == Some(year) && r.engagement_id.prefix() == Some(prefix)
+            // Filtered by COMPANY as well as class and year (ADR-0077 D2).
+            // Without it Paridyum and Paridyum Cyber share one counter, and the
+            // first officer of the second company is numbered 0005 for no reason
+            // anybody reading the identifier could reconstruct.
+            r.engagement_id.company() == Some(company)
+                && r.engagement_id.year() == Some(year)
+                && r.engagement_id.prefix() == Some(prefix)
         })
         .filter_map(|r| r.engagement_id.seq())
         .max()
@@ -280,13 +301,24 @@ pub fn slug_taken(ledger: &[Record], slug: &str) -> bool {
 pub fn current(ledger: &[Record]) -> Vec<&Record> {
     let mut latest: Vec<&Record> = Vec::new();
     for r in ledger {
-        if let Some(slot) = latest.iter_mut().find(|x| x.person_id == r.person_id) {
+        // KEYED ON PERSON **AND COMPANY** (ADR-0077 D3). Keying on the person
+        // alone is right for a sequential change -- an intern who becomes an
+        // employee should show as an employee -- and wrong for a concurrent one:
+        // it showed Rohan at Paridyum Cyber and silently omitted that he is also
+        // CTO of Paridyum, which is a roster that hides half an office.
+        if let Some(slot) = latest.iter_mut().find(|x| {
+            x.person_id == r.person_id && x.engagement_id.company() == r.engagement_id.company()
+        }) {
             *slot = r;
         } else {
             latest.push(r);
         }
     }
-    latest.sort_by(|a, b| a.person_id.cmp(&b.person_id));
+    latest.sort_by(|a, b| {
+        a.person_id
+            .cmp(&b.person_id)
+            .then_with(|| a.engagement_id.cmp(&b.engagement_id))
+    });
     latest
 }
 
@@ -304,7 +336,7 @@ mod tests {
     fn row(pseq: u32, eseq: u32, slug: &str, standing: Standing) -> Record {
         Record {
             person_id: PersonId::new(pseq).expect("valid"),
-            engagement_id: EngagementId::new("INT", 2026, eseq).expect("valid"),
+            engagement_id: EngagementId::new("PAR", "INT", 2026, eseq).expect("valid"),
             slug: slug.to_owned(),
             class: "intern".to_owned(),
             created_on: "2026-08-19".to_owned(),
@@ -401,7 +433,7 @@ mod tests {
     fn an_engagement_identifier_does_carry_class_and_year() {
         // Correct, and the whole distinction: class is immutable for an
         // engagement even though it is mutable for a person.
-        let e = EngagementId::new("INT", 2026, 7).expect("valid");
+        let e = EngagementId::new("PAR", "INT", 2026, 7).expect("valid");
         assert_eq!(e.as_str(), "PAR-INT-2026-0007");
         assert_eq!(e.prefix(), Some("INT"));
         assert_eq!(e.year(), Some(2026));
@@ -410,10 +442,10 @@ mod tests {
 
     #[test]
     fn a_malformed_class_prefix_is_rejected() {
-        assert!(EngagementId::new("I", 2026, 1).is_err());
-        assert!(EngagementId::new("INTERN", 2026, 1).is_err());
-        assert!(EngagementId::new("IN7", 2026, 1).is_err());
-        assert!(EngagementId::new("int", 2026, 1).is_err());
+        assert!(EngagementId::new("PAR", "I", 2026, 1).is_err());
+        assert!(EngagementId::new("PAR", "INTERN", 2026, 1).is_err());
+        assert!(EngagementId::new("PAR", "IN7", 2026, 1).is_err());
+        assert!(EngagementId::new("PAR", "int", 2026, 1).is_err());
     }
 
     #[test]
@@ -423,14 +455,14 @@ mod tests {
             row(2, 2, "b", Standing::Active),
         ];
         assert_eq!(next_person_seq(&ledger), 3);
-        assert_eq!(next_engagement_seq(&ledger, "INT", 2026), 3);
+        assert_eq!(next_engagement_seq(&ledger, "PAR", "INT", 2026), 3);
         assert_eq!(
-            next_engagement_seq(&ledger, "EMP", 2026),
+            next_engagement_seq(&ledger, "PAR", "EMP", 2026),
             1,
             "new class starts at one"
         );
         assert_eq!(
-            next_engagement_seq(&ledger, "INT", 2027),
+            next_engagement_seq(&ledger, "PAR", "INT", 2027),
             1,
             "new year starts at one"
         );
@@ -451,7 +483,7 @@ mod tests {
         // The case the whole decision exists for: an intern who is hired.
         let mut ledger = vec![row(1, 1, "asha", Standing::Separated)];
         let mut second = row(1, 1, "asha", Standing::Active);
-        second.engagement_id = EngagementId::new("EMP", 2027, 1).expect("valid");
+        second.engagement_id = EngagementId::new("PAR", "EMP", 2027, 1).expect("valid");
         second.class = "employee".to_owned();
         ledger.push(second);
 

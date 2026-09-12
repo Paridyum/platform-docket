@@ -25,6 +25,54 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   key alone, then verifies every chain before reporting success. It refuses to restore onto a
   store that already holds any of the target files.
 
+- **`docket check` enforces the group's ownership rule.** ADR-0077 decision 5.
+
+  Exactly one company declares no owner; every other reaches it through `owned_by`, no chain
+  loops, and no owner names a company that is not declared. Stated by the operator as a general
+  rule — Paridyum owns every other company — so it is an invariant rather than a comment.
+
+  Not bookkeeping: decision 4 resolves who may execute a subsidiary's documents *through* that
+  relationship, so a company whose ownership does not reach the root has no answer to who may sign
+  for it, and would discover that at its first issuance. `check` now also validates **every**
+  company's jurisdiction, serial format and signatories rather than only the default one, and
+  refuses two companies sharing a serial format — which would issue one serial to two people.
+
+- **Two companies, one archive.** ADR-0077. `--company` on `docket new` and `docket reengage`.
+
+  Paridyum is no longer the only entity. `registry/org.yaml` becomes `companies:`, each with its
+  own letterhead, jurisdiction, POSH routing and serial format; `signatories.yaml` gains a
+  `company` and its order is now the fallback order for countersignatures.
+
+  **The person identifier stays group-wide and the engagement identifier carries the company.**
+  Rohan is `PAR-P-000001-X` once, holding `PAR-OFC-2026-0001` and `PCY-OFC-2026-0002`. ADR-0051
+  already labelled that first segment "organisation" and already said one person may hold many
+  engagements, so nothing locked needed superseding — one store per company was rejected precisely
+  because it would have allocated him two identities and split his archive.
+
+  `reengage` was refusing any second engagement while one was open. That refusal was protecting
+  something real — two open internships at one company — and was also, accidentally, asserting
+  that a person works for one entity. Narrowed to one open engagement **per company**.
+
+  **The CEO and Director being one person is now data, not a special case.** Priyanshu holds both
+  `ceo` and `director` entries, so for his own documents both are the subject and the existing
+  substitution falls through to `cto` — which is the operator's decision, arrived at without a
+  branch in code.
+
+- **`docket store push` — the upload guard, in the place D-51 said it belonged.** RUN-0007.
+
+  D-51 held that the check could not live in docket, because docket cannot see what Sync received.
+  Right about the network, wrong about the boundary: the thing performing the upload is a person
+  copying files into a watched folder, and filling that folder is an operation docket can guard.
+
+  Copies `store/vault/` and nothing else, skips what is already current, and refuses five ways —
+  a destination inside the store, a never-list directory **already at the destination**, an
+  unclassified path, a file that is not `.age`, a register with no bundle behind it. The second is
+  the one that matters: every other refusal inspects what is being sent, and only that one can
+  catch a `store/keys/` uploaded by hand months ago, after which no erasure is real.
+
+  `push` fills the folder; the vendor's client does the network leg. The output says so, because
+  "uploaded" otherwise reads as "arrived".
+
 - **A cross-machine restore rehearsal, in containers.** `rehearsal/rehearse.sh`, `rehearsal/Dockerfile`.
 
   Four containers on a private network with no shared filesystem between the nodes. Node A creates
@@ -51,6 +99,33 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   rather than a guess.
 
 ### Fixed
+
+- **Every per-person command silently targeted the wrong company.** `personnel::identify` took the
+  last ledger row for a slug, which is right while a person holds one engagement at a time and
+  wrong the moment concurrent engagements landed an hour earlier. Rohan resolved to Paridyum
+  Cyber; his Paridyum office was unreachable by `status`, `next`, `record`, `pack` and `onboard` —
+  and because `issue` reads the company off the engagement, **his Paridyum NDA would have been
+  issued on Cyber's letterhead under a `PCY/` serial.**
+
+  Ambiguity is now refused rather than resolved by recency, naming both engagements. A global
+  `--company` selects one; a company the person holds no office at is an error rather than a
+  silent fallback. `docket record` lists every engagement instead of the latest.
+
+
+- **The roster hid half an office.** `identity::current` kept the last ledger row per person,
+  which is right for a sequential change (an intern who becomes an employee shows as an employee)
+  and wrong for a concurrent one: it showed Rohan at Paridyum Cyber and silently omitted that he
+  is also CTO of Paridyum. Now keyed on person **and** company. The summary counts people and
+  engagements separately for the same reason — four officers were reading as five.
+
+
+- **Two refusals in `store push` that lied, both caught by tests rather than review.** The
+  plaintext check bailed inside the copy loop while reporting "Nothing was uploaded" — false for
+  every file already written; every file is now validated before any file is copied. And the
+  inside-the-store guard used `starts_with`, which is purely lexical, so a relative
+  `store/uploads` walked past it and wrote into the directory it was protecting; a `..`-laden path
+  defeated the first fix too. Destinations are normalised lexically before comparison.
+
 
 - **A duplicated person identifier could pass `docket check` in silence.**
   `docket.identifiers_are_never_reused` was declared against ADR-0051 on 2026-08-19 and never
