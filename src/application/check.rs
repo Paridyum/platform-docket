@@ -149,7 +149,7 @@ pub fn run(paths: &Paths, registry: &Registry) -> Result<Findings> {
     stages(&mut items, registry, &by_code);
     organisation(&mut items, registry);
     templates(&mut items, paths, registry)?;
-    gitignore(&mut items, paths);
+    gitignore(&mut items, paths, registry);
     catalogue(&mut items, registry);
     communications(&mut items, registry)?;
     people(&mut items, paths, registry)?;
@@ -338,6 +338,38 @@ fn organisation(items: &mut Vec<Finding>, registry: &Registry) {
     }
 
     ownership(items, registry, &codes);
+    ceased_officers(items, registry);
+}
+
+/// An officer who has ceased says when (RFC-0042 §5).
+///
+/// `active: false` alone records that somebody stopped holding office and not
+/// when, which is the half of the question a document issued in between turns
+/// on. The register's job is to say who was an officer on a given date; without
+/// the date it can only say who is one now.
+fn ceased_officers(items: &mut Vec<Finding>, registry: &Registry) {
+    for s in &registry.signatories {
+        if !s.active && s.ceased_on.is_none() {
+            err(
+                items,
+                format!(
+                    "signatories.{}: active is false with no ceased_on. RFC-0042 §5 wants both: \
+                     a register that cannot say WHEN an officer ceased cannot say whether they \
+                     held office on the date a given document was issued",
+                    s.id
+                ),
+            );
+        }
+        if s.active && s.ceased_on.is_some() {
+            err(
+                items,
+                format!(
+                    "signatories.{}: ceased_on is set while active is still true",
+                    s.id
+                ),
+            );
+        }
+    }
 }
 
 /// PARIDYUM owns every other company, directly or through another it owns.
@@ -444,13 +476,75 @@ fn templates(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Re
 
 /// Personal data is excluded from git. Git history cannot be erased, so a
 /// person record committed once can never be removed on request.
-fn gitignore(items: &mut Vec<Finding>, paths: &Paths) {
+fn gitignore(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) {
     let ignored = fs::read_to_string(paths.root.join(".gitignore")).unwrap_or_default();
     for dir in ["people/", "store/"] {
         if !ignored.contains(dir) {
             err(
                 items,
                 format!(".gitignore does not exclude {dir}: personal data must never enter git"),
+            );
+        }
+    }
+    let classes: Vec<String> = registry
+        .catalogue
+        .classes
+        .iter()
+        .map(|c| c.class.clone())
+        .collect();
+    class_templates_are_not_ignored(items, &paths.people, &classes, &ignored);
+}
+
+/// Every class template on disk is admitted back by a negation (D-49).
+///
+/// `people/*` is ignored so that personal data never enters git, and each class
+/// template needs its own `!people/_TEMPLATE-<class>.yaml` line to come back.
+/// `_TEMPLATE-officer.yaml` was written and silently ignored: on a fresh clone
+/// `docket new <slug> officer` falls back to `_TEMPLATE.yaml`, producing a
+/// record carrying `education` -- a field the officer class forbids -- which
+/// `check` then rejects as over-collection. The failure reads as a product
+/// defect rather than as a missing file, and it was found by running
+/// `git check-ignore` by hand while reviewing a diff, which is not a process.
+///
+/// **Asserted against the file rather than by shelling out to git**, because
+/// the question is whether the NEGATION was written, and a `git check-ignore`
+/// answers something subtly different: a file already tracked is reported as
+/// not ignored whether or not the line exists. That difference already wasted
+/// one mutation test, which passed while proving nothing.
+///
+/// A glob negation was considered and rejected when the line was first written:
+/// `!people/_TEMPLATE*.yaml` would also admit anything a person happened to name
+/// that way, and this directory is the one place in the repository where a false
+/// negative is personal data in git history. Per-template lines, deliberately --
+/// so this check exists to make the deliberate step a required one.
+fn class_templates_are_not_ignored(
+    items: &mut Vec<Finding>,
+    people: &std::path::Path,
+    classes: &[String],
+    ignored: &str,
+) {
+    let negations: BTreeSet<&str> = ignored
+        .lines()
+        .map(str::trim)
+        .filter_map(|l| l.strip_prefix('!'))
+        .collect();
+
+    for class in classes {
+        let name = format!("_TEMPLATE-{class}.yaml");
+        if !people.join(&name).exists() {
+            // No class-specific template is legitimate: the class uses the
+            // generic one. Only a template that EXISTS can be lost to the
+            // ignore rule.
+            continue;
+        }
+        if !negations.contains(format!("people/{name}").as_str()) {
+            err(
+                items,
+                format!(
+                    "people/{name} exists but .gitignore does not admit it. Add \
+                     `!people/{name}` -- without it a fresh clone has no {class} template and \
+                     `docket new <slug> {class}` silently falls back to the intern record"
+                ),
             );
         }
     }
@@ -1021,6 +1115,61 @@ mod tests {
             prev_sha256: String::new(),
             entry_sha256: String::new(),
         }
+    }
+
+    #[test]
+    fn a_class_template_with_no_negation_is_blocking() {
+        // D-49. The failure this prevents is silent: a fresh clone has no
+        // officer template, `docket new` falls back to the intern record, and
+        // the resulting over-collection error reads as a product defect.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let people = dir.path().join("people");
+        std::fs::create_dir_all(&people).expect("people");
+        std::fs::write(people.join("_TEMPLATE-officer.yaml"), "version: 1\n").expect("template");
+
+        let paths = crate::config::Paths {
+            root: dir.path().to_path_buf(),
+            people,
+            store: dir.path().join("store"),
+        };
+        let classes = vec!["officer".to_owned()];
+
+        let mut items = Vec::new();
+        super::class_templates_are_not_ignored(&mut items, &paths.people, &classes, "people/*\n");
+        assert_eq!(items.len(), 1, "{items:?}");
+        assert!(items[0].message.contains("does not admit it"));
+
+        // With the negation, clean.
+        let mut ok = Vec::new();
+        super::class_templates_are_not_ignored(
+            &mut ok,
+            &paths.people,
+            &classes,
+            "people/*\n!people/_TEMPLATE-officer.yaml\n",
+        );
+        assert!(ok.is_empty(), "{ok:?}");
+    }
+
+    #[test]
+    fn a_class_with_no_template_of_its_own_is_not_a_finding() {
+        // Using the generic record is legitimate; only a template that EXISTS
+        // can be lost to the ignore rule.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let people = dir.path().join("people");
+        std::fs::create_dir_all(&people).expect("people");
+        let paths = crate::config::Paths {
+            root: dir.path().to_path_buf(),
+            people,
+            store: dir.path().join("store"),
+        };
+        let mut items = Vec::new();
+        super::class_templates_are_not_ignored(
+            &mut items,
+            &paths.people,
+            &["intern".to_owned()],
+            "people/*\n",
+        );
+        assert!(items.is_empty(), "{items:?}");
     }
 
     #[test]

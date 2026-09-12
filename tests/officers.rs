@@ -783,3 +783,116 @@ fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency
     let held = personnel::engagements(&paths, "rohan").expect("engagements");
     assert_eq!(held.len(), 2, "{held:?}");
 }
+
+// ── Removal. RFC-0042 §5: ceasing is `active: false`, never deletion -- so the
+// register keeps saying who was an officer in 2026, and stops letting them sign
+// in 2027.
+
+/// The real registry with some signatories forced inactive.
+fn registry_without(ceased: &[&str]) -> Registry {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let reg_dir = dir.path().join("registry");
+    std::fs::create_dir_all(&reg_dir).expect("registry dir");
+    for entry in std::fs::read_dir(root().join("registry")).expect("read registry") {
+        let src = entry.expect("entry").path();
+        let name = src.file_name().expect("name").to_owned();
+        std::fs::copy(&src, reg_dir.join(&name)).expect("copy");
+    }
+    let path = reg_dir.join("signatories.yaml");
+    let mut text = std::fs::read_to_string(&path).expect("signatories");
+    for id in ceased {
+        let marker = format!("- id: {id}\n");
+        let at = text.find(&marker).expect("signatory id");
+        let rest = &text[at..];
+        let offset = rest.find("    active: true").expect("active flag");
+        text.replace_range(at + offset..at + offset + 16, "    active: false");
+    }
+    std::fs::write(&path, text).expect("write");
+    for shared in ["templates", "latex", "people", "manifest.yaml"] {
+        std::os::unix::fs::symlink(root().join(shared), dir.path().join(shared)).ok();
+    }
+    let paths = Paths {
+        root: dir.path().to_path_buf(),
+        people: dir.path().join("people"),
+        store: dir.path().join("store"),
+    };
+    let reg = Registry::load(&paths).expect("registry loads");
+    // The temp directory drops here, deliberately. `Registry::load` parses every
+    // file into owned structs and holds no path afterwards, so nothing needs the
+    // directory to outlive this function -- and `mem::forget` on a `Drop` type is
+    // denied by STD-0003 for exactly the reason it was reached for here.
+    drop(dir);
+    reg
+}
+
+fn officer_named(name: &str) -> person::Person {
+    person::Person::new(
+        "x".to_owned(),
+        serde_yaml::from_str(&format!(
+            "engagement: {{class: officer}}\nidentity: {{legal_name: {name}}}\n"
+        ))
+        .expect("yaml"),
+    )
+}
+
+fn nda_officer(reg: &Registry) -> &tool_docket::domain::lifecycle::Document {
+    reg.lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == "NDO")
+        .expect("NDO")
+}
+
+#[test]
+fn a_ceased_officer_stops_signing_new_documents() {
+    // THE DEFECT THIS TEST EXISTS FOR, found by simulating a removal rather than
+    // by reading the code. Officer documents route to `director`, and the
+    // substitution only ever asked "is this the subject" -- so marking Priyanshu
+    // `active: false` left him named as the signatory on every document issued
+    // afterwards, and `docket check` reported nothing.
+    let reg = registry_without(&["ceo", "director"]);
+    let signers = issue::resolve_signatories(
+        &reg,
+        &officer_named("ADITYA SHRIVASTAVA"),
+        nda_officer(&reg),
+        "PAR",
+    );
+    assert!(
+        !signers.contains(&"director".to_owned()),
+        "a ceased officer is still signing: {signers:?}"
+    );
+    assert_eq!(signers, vec!["cto".to_owned()], "{signers:?}");
+}
+
+#[test]
+fn removing_every_signatory_of_a_company_yields_no_signatory_rather_than_a_stale_one() {
+    // Cyber's chain is two deep: Priyanshu for the holding company, then Ruhani.
+    // Removing both must leave the document unsignable -- which `refuse_if_misrouted`
+    // turns into a refusal -- never a blank or a stale name.
+    let reg = registry_without(&["cyber-holding", "cyber-ceo", "cyber-cto"]);
+    let signers = issue::resolve_signatories(
+        &reg,
+        &officer_named("RUHANI KHURANA"),
+        nda_officer(&reg),
+        "PCY",
+    );
+    assert!(
+        signers.is_empty(),
+        "a company with no active signatory produced one: {signers:?}"
+    );
+}
+
+#[test]
+fn a_ceased_officer_is_still_in_the_register() {
+    // RFC-0042 §5: never deletion. A register that cannot say who was an officer
+    // in 2026 cannot verify a document issued in 2026.
+    let reg = registry_without(&["ceo", "director"]);
+    assert!(
+        reg.signatories.iter().any(|s| s.id == "director"),
+        "the ceased officer was removed from the register rather than deactivated"
+    );
+    assert!(
+        !reg.active_signatories_of("PAR").any(|s| s.id == "director"),
+        "the ceased officer is still active"
+    );
+}

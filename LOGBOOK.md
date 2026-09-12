@@ -801,3 +801,61 @@ to be repaired by hand after a script put `company: Option<&str>,` on the line a
 brace.
 
 388 tests. fmt, clippy and test green; `check` red on the four held records.
+
+## 2026-09-12 (later) — Working the debt list, and the first thing it found was a red CI
+
+**Asked to implement the open engineering debt, the first useful act was `gh run list`.** CI had
+been failing for five days — three consecutive red runs, including one from that morning — and
+nothing in this checkout says so. `gates.sh` runs four local gates and reports them green, which
+is exactly the trap D-28 had written down in 2026-08-20 and which nobody had come back to read:
+*"do not treat a green local gate as evidence that CI passes."* The entry's status line was stale
+and its warning was the live part.
+
+**The failure was a fixture, not a test.** `the_keystore_is_never_in_what_gets_uploaded` reads two
+paths and asserts about a layout, and it failed on every runner because `Sandbox::new` called
+`age-keygen` unconditionally. Green everywhere `age` is installed, red everywhere it is not. That
+is D-45's defect a second time, and the second occurrence is what made the general fix obvious:
+`scripts/ci-parity.sh`, which runs the suite with `PATH` stripped to the Rust toolchain. Both
+instances had been found by pushing and reading a log.
+
+**Then D-30 closed by being proved true.** Tectonic had never been run against this repository —
+no machine on the estate had it — so I installed it, and found two defects stacked.
+
+`TEXINPUTS` was set for both engines and **Tectonic does not read it**. Every render failed with
+`File 'paridyum.cls' not found`. The engine has `-Z search-path`, documented as "like TEXINPUTS",
+and nothing had ever passed it. Fixed.
+
+With that fixed, the real one: `paridyum.cls` uses `pdfx` for PDF/A, and under XeTeX it fails with
+`CreationDate is not properly supported`. Seven of thirteen issuance tests pass; six cannot render
+at all. **So the engine docket advertises as its supported alternative has never worked**, and
+`detect` still offers it — which is now D-57 rather than a surprise for whoever first runs docket
+on a machine without TeX Live.
+
+**That finding chose the CI design.** I had written the render job around Tectonic for the obvious
+reason: a 10MB checksummed binary against a multi-hundred-megabyte apt install. Having to throw it
+away produced a better argument than the one I started with — **pdflatex is what every developer
+machine runs and what has produced every document this estate has issued, so a CI job rendering
+with a different engine would be verifying something nobody ships.** The registry entry says
+`texlive`, not `tectonic`, and its exit path cites the experiment rather than asserting a
+preference.
+
+**A correction I nearly did not make.** Closing D-35 made a comment in `ci.yml` wrong: it promised
+coverage would rise from 60 to 70 "when D-35 is closed and CI can render". D-35 is closed, CI does
+render, and coverage cannot move — because **rendering and coverage are two different jobs**, and
+only one of them is in docket's own workflow. The other belongs to the shared `infra-ci`
+workflow in another repository. The comment is corrected in place so the next reader does not
+repeat the inference.
+
+**On D-49, a distinction worth keeping.** The check asserts against the `.gitignore` TEXT rather
+than shelling out to `git check-ignore`, because those answer different questions: a file already
+tracked is reported as not ignored whether or not the negation line exists. That difference had
+already wasted one mutation test in an earlier session, which passed while proving nothing.
+
+**Closed: D-28, D-30, D-35, D-45, D-49. Narrowed: D-36, D-41. Opened: D-57.**
+
+**Skills and tools used.** `gh run list` / `gh run view --log-failed` to read a CI failure without
+pushing; `gh api` to find a real pinned release rather than inventing a version; a stripped-`PATH`
+harness to reproduce a runner locally; an actual Tectonic install to test a claim rather than
+reason about it; and a mutation of `.gitignore` to prove the new check fails when it should.
+
+389 tests. fmt, clippy and test green; `check` red on the four held records.

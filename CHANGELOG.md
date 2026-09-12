@@ -25,6 +25,28 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   key alone, then verifies every chain before reporting success. It refuses to restore onto a
   store that already holds any of the target files.
 
+- **CI renders.** A `render` job installs TeX Live and runs the four suites that produce PDFs,
+  plus a step that fails if any of them *skips* — a skip prints to stderr and would otherwise
+  leave the job green while testing nothing. D-30, D-35.
+
+  **TeX Live rather than Tectonic, and that ordering is a finding.** Tectonic was tried first for
+  the obvious reason — a 10MB binary against a multi-hundred-MB apt install — and cannot render
+  these documents: `paridyum.cls` uses `pdfx` for PDF/A, which fails under XeTeX with
+  "CreationDate is not properly supported". More decisively, pdflatex is what every developer
+  machine runs and what produced every document this estate has issued.
+
+- **`scripts/ci-parity.sh`** runs the suite with `PATH` stripped to the Rust toolchain. Both
+  times a test has passed locally and failed on a runner, it was found by pushing and reading a
+  log; that now takes seconds.
+
+- **`docket check` asserts that every class template is admitted back by `.gitignore`.** D-49.
+  Checked against the file text rather than `git check-ignore`, which reports an already-tracked
+  file as not ignored whether or not the negation exists — the difference that made an earlier
+  mutation test pass while proving nothing.
+
+- **`docket serve` states its one-request-at-a-time limit on startup**, where an operator is
+  standing when a screen appears to hang. D-41.
+
 - **`docket check` enforces the group's ownership rule.** ADR-0077 decision 5.
 
   Exactly one company declares no owner; every other reaches it through `owned_by`, no chain
@@ -99,6 +121,32 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   rather than a guess.
 
 ### Fixed
+
+- **A ceased officer went on signing new documents.** Routing names an *office*; only the register
+  knows who holds it. `resolve_signatories` substituted only when the routed signatory was the
+  *subject* of the document, never when the office was vacant — so marking an officer
+  `active: false` (RFC-0042 §5's way of recording that they ceased) left their name printed on
+  every document issued afterwards, and `docket check` reported nothing because `signed_by` was
+  validated against every signatory rather than the active ones. Found by simulating a removal.
+
+- **`ceased_on` did not exist.** RFC-0042 §5 requires ceasing to be `active: false` *plus* a date;
+  the struct had no such field, so half its rule was unimplementable. Added, with a check that
+  refuses `active: false` without it — a register that cannot say *when* an officer ceased cannot
+  say whether they held office on the date a given document was issued.
+
+
+- **CI was red for five days and nothing said so.** One test —
+  `the_keystore_is_never_in_what_gets_uploaded` — failed on every runner and passed on every
+  developer machine, because `Sandbox::new` called `age-keygen` unconditionally for a test that
+  reads two paths and needs no cryptography. The guard belongs on the resource the test uses, not
+  on the fixture that builds it. D-45, the second occurrence.
+
+- **Tectonic could never have rendered a Paridyum document.** `TEXINPUTS` was set for both
+  engines and Tectonic does not read it, so every render failed with `File 'paridyum.cls' not
+  found`. The invocation now passes `-Z search-path`, the engine's documented equivalent. This
+  had been broken since the engine was added and no machine on the estate had Tectonic installed
+  to find out (D-30). It is still not usable — see D-57.
+
 
 - **Every per-person command silently targeted the wrong company.** `personnel::identify` took the
   last ledger row for a slug, which is right while a person holds one engagement at a time and

@@ -363,15 +363,19 @@ agreement to the wrong address".
 The bodies are plain text for a person to paste. That person is the audit
 trail, and their sent folder is the evidence.
 
-## D-28 — CI is configured but has never run  (OPEN)
-`infra-ci/.github/workflows/rust-ci.yml` is installed and `tool-docket` calls
-it, and both repositories pass `check-repo.sh` locally. Neither has run on
-GitHub Actions, because neither has been pushed to a remote from this
-checkout — `repo.git_remote_configured` reports `n/a` for exactly that reason.
+## D-28 — CI is configured but has never run  (CLOSED — it runs, and the entry was stale)
 
-So the honest state is: the pipeline is written and locally verified, and the
-first real run will find whatever local checks cannot. Do not treat a green
-local gate as evidence that CI passes.
+**Superseded by reality on 2026-09-12.** CI has run many times; this entry described the state on
+2026-08-20 and nobody came back to it. `gh run list` shows runs from 2026-09-06 onwards, and the
+workflow file itself cites measurements from real runs ("First real run measured 64.81%").
+
+**What the entry got right is the warning it ended with**, and it was worth more than the status
+line above it: *"do not treat a green local gate as evidence that CI passes."* On 2026-09-12 that
+was exactly the situation -- four gates green locally, three consecutive CI runs red, and nobody
+looking. The failure was one test, and D-45 holds it.
+
+The lesson kept rather than the entry: a red CI is not visible from this checkout unless somebody
+asks, and `gates.sh` does not ask. `scripts/ci-parity.sh` closes the common half of that gap.
 
 ## D-29 — Nothing records what has already been sent  (OPEN)
 `docket next` lists messages as "ready to send", not "outstanding", and says
@@ -384,19 +388,23 @@ The honest fix, if this ever matters, is `docket event <slug> message_sent
 That is a real workflow step rather than a guess, and it is deliberately not
 added until someone actually wants it.
 
-## D-30 — The Tectonic render path is unverified end to end  (OPEN)
-`tests/engines.rs` verifies that Tectonic is invoked with the right flags, one
-pass, and `SOURCE_DATE_EPOCH` set, using a shim. It does NOT verify that
-`paridyum.cls` renders under Tectonic, or that Tectonic output is
-byte-reproducible, because Tectonic is not installed on this machine.
+## D-30 — The Tectonic render path is unverified end to end  (CLOSED 2026-09-12, by finding it broken)
 
-Both are plausible and neither is proven. Tectonic bundles its own TeX
-distribution, so a package our class depends on may resolve differently, and
-its PDF writer is not pdfTeX's — `\pdftrailerid`, which is what makes output
-byte-identical, is a pdfTeX primitive and probably does nothing there.
+**Closed by verification, and the verification failed.** Tectonic was installed and pointed at
+this repository for the first time. Two defects, in order:
 
-**Do not assume the Tectonic path produces reproducible output.** Install
-Tectonic, issue a document twice, and compare before relying on it.
+`TEXINPUTS` was set for both engines and **Tectonic does not read it** -- it searches its bundle
+and the input file's directory and nothing else. Every render failed with
+`File 'paridyum.cls' not found`. Fixed: the invocation now passes `-Z search-path` once per
+directory, which is the engine's documented equivalent and which nothing had ever exercised.
+
+With that fixed, the real incompatibility appeared: `paridyum.cls` uses **`pdfx` for PDF/A**, and
+under Tectonic's XeTeX engine it fails with `CreationDate is not properly supported`. 7 of 13
+issuance tests pass; 6 cannot render at all.
+
+**So the engine docket advertised as its supported alternative does not work**, and had not
+worked at any point, because no machine on the estate had it installed to find out. The search
+path fix stays -- it is correct and was plainly a bug -- and D-57 holds what remains.
 
 ## D-31 — The interview cannot ask for a nested field  (OPEN, small)
 `identity.pronouns` is a single declared field whose value is three sub-keys,
@@ -478,57 +486,42 @@ The distinction between a bare command and one inside `\dkfill` is load-bearing:
 a form wants a ruled line where a value is absent, and an agreement wants the
 build to stop.
 
-## D-35 — CI does not exercise rendering  (OPEN)
-Found by the first real CI run, 2026-08-20. The integration tests render real
-PDFs, and a GitHub runner has neither TeX Live nor Tectonic, so `test` and
-`coverage` failed with `no typesetter found`.
+## D-35 — CI does not exercise rendering  (CLOSED 2026-09-12)
 
-The tests now SKIP when no typesetter is installed, printing which test and
-why, using the same pattern `pdflatex_is_preferred_when_present` already used.
-That makes CI green and honest, and it is not the same as making CI complete:
-**rendering, determinism and the whole PDF/A claim are currently verified only
-on a developer machine.** A green CI badge does not cover them.
+A `render` job in `tool-docket/.github/workflows/ci.yml` installs TeX Live and runs the four
+suites that produce PDFs, plus a step that **fails if any of them skips** -- a skip is printed to
+stderr and would otherwise leave the job green while testing nothing, which is the shape of
+D-45's defect.
 
-Two ways to close it, and the choice is not mine:
+**TeX Live rather than Tectonic, and that ordering is the finding rather than the preference.**
+Tectonic was tried first for the obvious reason -- a single 10MB binary against a multi-hundred-MB
+apt install -- and cannot render these documents (D-30, D-57). More decisively, pdflatex is what
+every developer machine runs and what produced every document this estate has issued: a CI job
+rendering with a different engine would be verifying something nobody ships.
 
-1. **Install Tectonic in the shared workflow.** A single binary, so it is cheap,
-   and it would resolve D-30 as a side effect by exercising that path for real.
-   But `rust-ci.yml` is shared by every `rust`-stack repository under ADR-0021,
-   and most of them will never typeset anything. It would need to be optional —
-   a `typesetter:` input the caller opts into.
-2. **A tool-docket-specific workflow** that installs Tectonic and runs only the
-   render tests. Simpler, and a deviation from ADR-0021's "all logic lives in
-   the shared workflow", which is a decision to take deliberately rather than by
-   adding a file.
+`texlive` is now declared in `tool-registry.yaml`. It had been a critical dependency of the
+estate's only user-facing output since the beginning and was in no registry, because it arrived
+as "whatever the developer already had" rather than as a decision.
 
-Option 1 is better and costs a change to a shared workflow. Until one is taken,
-run `cargo test` locally before trusting a release.
+## D-36 — Coverage in CI measures the no-typesetter subset  (OPEN, and narrowed)
 
-## D-36 — Coverage in CI measures the no-typesetter subset  (OPEN)
-First real run: **64.81% total**, against a 70 default. The breakdown is the
-finding, not the total:
+Coverage is 60% rather than 70% because every `cmd_*` path that issues a document needs a
+typesetter, and the runner measuring coverage has none. `main.rs` sits at 14% with 940 of 1098
+lines uncovered; every `domain/` module is 95-99%.
 
-    domain/person.rs        96.47%
-    domain/personnel.rs     95.14%
-    domain/register.rs      99.43%
-    domain/serial.rs        99.35%
-    domain/signature.rs     97.40%
-    domain/template.rs      98.54%
-    main.rs                 14.39%   940 of 1098 lines uncovered
+**Narrowed on 2026-09-12, and the narrowing is the useful part.** D-35 is closed: a `render` job
+now installs TeX Live and typesets for real. Coverage did not move, and the reason is that they
+are **two different jobs** — rendering is docket's own job in its own workflow file, coverage is
+the shared `infra-ci` workflow's job in another repository. Only one of them gained a typesetter.
 
-The logic is covered. `main.rs` is argument parsing and printing, and most
-`cmd_*` paths issue documents — which needs a typesetter, which a runner does
-not have (D-35). So the CI number measures the subset that runs without
-rendering, and is structurally lower than the local one.
+So what is left is not "CI cannot render" but "the job that measures coverage cannot", and closing
+it means either teaching the shared workflow to install a typesetter for one consumer — which is
+the wrong shape, since no other repository typesets anything — or measuring coverage in docket's
+own render job and having the shared one stop asserting a total. The second is probably right and
+is a change to `infra-ci`, not here.
 
-The threshold in `.github/workflows/ci.yml` is set to 60 with that reasoning
-written next to it. **This is a statement, not a licence.** Two things follow:
-it returns to 70 when D-35 is closed, and it does not excuse the domain
-slipping — that is where the logic is and it is at 95%+.
-
-The alternative considered and rejected was excluding `main.rs` from the
-measurement, which reaches ~71% arithmetically and hides the fact that 940
-lines of it are never executed by anything.
+Until then the number stays at 60 with the cause stated, and `ci.yml` carries the correction so
+the next reader does not repeat the inference that closing D-35 would raise it.
 
 ## D-37 — No class describes an internal operator application  (OPEN, recorded not closed)
 `class-registry.yaml` has ten classes and none fits a graphical interface used
@@ -610,20 +603,26 @@ forge one. The header is mandatory, so a form post can never satisfy it — the
 defence is the same mechanism as the attribution, which is why there is no separate
 token to expire or store.
 
-## D-41 — one connection at a time is correct and undocumented as a limit
+## D-41 — one connection at a time is correct and undocumented as a limit  (DOCUMENTED 2026-09-12, still a limit)
 
-The accept loop handles connections serially, so one slow request blocks the
-next. That is deliberate — it is what keeps four append-only hash chains safe
-without file locking — and at three operators it is invisible.
+The accept loop handles connections serially, so one slow request blocks the next. That is
+deliberate — it is what keeps four append-only hash chains safe without file locking — and at
+three operators it is invisible.
 
-It stops being invisible if a route ever becomes slow. Issuing twelve documents
-through `pdflatex` takes seconds, and as a write route that would block every
-other operator's screen for its duration with no indication why.
+It stops being invisible if a route ever becomes slow. Issuing twelve documents through
+`pdflatex` takes seconds, and as a write route that would block every other operator's screen for
+its duration with no indication why.
 
-**Clears when** either the slow work moves off the request (a job the console
-polls), or the writer is separated from the readers so reads can be concurrent
-while writes stay serialised. Choosing the second means the file-locking argument
-above has to be answered properly rather than assumed away.
+**The "undocumented" half is closed.** `docket serve` now says it on startup, in the place an
+operator is standing when a screen appears to hang: one request at a time, a slow route blocks
+the others, that is waiting rather than a crash, and the process holds the store lock so CLI
+writes are refused while it runs. A limit stated only in a ledger is not stated to the person who
+meets it.
+
+**The limit itself stands, and it is not a documentation problem.** It clears when either the
+slow work moves off the request — a job the console polls — or the writer is separated from the
+readers so reads can be concurrent. Both are real changes to the server's shape, and neither is
+worth making for three operators.
 
 ## D-42 — RESOLVED 2026-08-21 — an unfilled record is refused
 
@@ -705,25 +704,22 @@ while the API and every other caller printed the macro; the mapping now lives in
 one place and its local copy is gone. D-34's claim that the difference is reported
 as record paths is now true of every caller, not just that one.
 
-## D-45 — a skip guard was written on the wrong signal, and CI caught it
+## D-45 — a skip guard was written on the wrong signal, and CI caught it  (CLOSED 2026-09-12)
 
-`onboarding_a_filled_record_issues_and_records_the_operator` originally skipped
-when the API returned 409, on the assumption that a refusal meant "no typesetter
-here". Two things were wrong with that. A genuine refusal — a gate unmet, a record
-unfilled — would have been silently accepted as a pass, so the test could not fail
-for the reason it exists. And it did not cover the case that actually broke CI: a
-runner with no typesetter gets a **500**, not a 409, because `issue::one` fails
-inside the handler.
+**It happened a second time, and the second time is what closed it.** CI was red on
+`the_keystore_is_never_in_what_gets_uploaded`, a test that reads two paths and asserts about a
+layout. It failed because `Sandbox::new` called `crypt::generate_identity()` unconditionally, so a
+fixture demanded `age-keygen` for a test that needs no cryptography at all. Green on every
+developer machine, red on every runner.
 
-Now guarded on `typeset::detect()`, the same signal the issuance and engines
-suites use, and verified in both directions by running the test binary with an
-empty `PATH`.
+**The guard belongs on the resource the test uses, not on the fixture that happens to build it.**
+The sandbox now generates a key only where `age` exists; every test that uses one already calls
+`skip` first.
 
-**Not itself open debt** — the guard is fixed. Recorded because the shape recurs:
-a skip condition inferred from a symptom rather than from the thing being
-detected will eventually swallow a real failure. D-35 remains the underlying gap:
-CI still does not exercise rendering at all.
-
+**And the general fix is `scripts/ci-parity.sh`**, which runs the suite with `PATH` stripped to
+the Rust toolchain. Both instances of this defect were discovered by pushing and reading a CI log;
+that now takes seconds locally. It does not replace `gates.sh` -- green there means the code is
+correct, green here means nothing depends on a tool the runner lacks.
 
 ## D-46 — Adapted templates are pinned, because deduplicating them was measured and rejected
 
@@ -780,19 +776,23 @@ where both repositories happen to be cloned reports absence as failure.
 Closes when postings and person records live in one store, which is ADR-0063 Phase B and
 blocked on persistence.
 
-## D-49 — Nothing checks that a class template is not gitignored
+## D-49 — Nothing checks that a class template is not gitignored  (CLOSED 2026-09-12)
 
-`people/*` is ignored so personal data never enters git history, with one negation per template.
-`_TEMPLATE-officer.yaml` was written and silently ignored: `docket new <slug> officer` then falls
-back to `_TEMPLATE.yaml` on a fresh clone, which produces a record carrying `education` — a field
-the officer class forbids — and `docket check` rejects it as over-collection the moment it is
-written. The failure reads as a product defect rather than as a missing file.
+`docket check` now asserts that every class in `person-classes.yaml` **with a template on disk**
+has a matching `!people/_TEMPLATE-<class>.yaml` negation. A class using the generic record is not
+a finding; only a template that exists can be lost to the ignore rule.
 
-Caught by running `git check-ignore` while reviewing the diff, which is not a process. A glob
-negation was considered and rejected: `!people/_TEMPLATE*.yaml` would also admit anything a person
-happened to name that way, and this directory is the one place in the repository where a false
-negative is personal data in git history. So the fix is per-template lines, and the gap is that
-nothing asserts every class in `person-classes.yaml` with a template has one.
+**Asserted against the `.gitignore` text rather than by shelling out to `git check-ignore`**, and
+that distinction is the one this entry was originally written about. `git check-ignore` answers
+whether a path is ignored *right now*, and a file already tracked is reported as not ignored
+whether or not the negation exists — which is exactly how the first mutation test of this rule
+passed while proving nothing. The question worth asking is whether the line was written.
+
+The glob negation stays rejected for the reason first recorded: `!people/_TEMPLATE*.yaml` would
+admit anything a person happened to name that way, and this directory is the one place in the
+repository where a false negative is personal data in git history. Per-template lines,
+deliberately — and this check is what makes the deliberate step a required one rather than a
+remembered one.
 
 ## D-48 — Nothing detects a stale `team.json`
 
@@ -979,3 +979,63 @@ CLI has `--company`.
 Nobody is blocked today: one person holds two engagements and the console is used for enrolment,
 which opens records at the default company. It becomes a real gap the first time an officer with
 two offices is administered from the console rather than the terminal.
+
+## D-57 — Tectonic cannot render these documents, and `detect` still offers it
+
+`typeset::detect` tries `pdflatex`, then `tectonic`. The second branch does not work:
+`paridyum.cls` uses `pdfx` for PDF/A and Tectonic's XeTeX engine fails it with `CreationDate is
+not properly supported`. Established 2026-09-12 by installing Tectonic and running the suite --
+7 of 13 issuance tests pass, 6 cannot render.
+
+**The fallback is therefore advertised and broken.** A machine with Tectonic and no TeX Live
+detects a typesetter successfully and then fails on the sixth document with an error about a
+date, which reads as a docket bug rather than as an unsupported engine.
+
+Three ways out, none free. Drop `pdfx` and lose PDF/A, which ADR-0053's archival case wants.
+Keep both engines and have `detect` refuse Tectonic with the real reason, which is honest and
+leaves a branch nobody can use. Or find the XeTeX-compatible route to PDF/A -- `pdfx` has
+XeTeX-specific configuration this estate has not investigated, and that is the only option that
+ends with two working engines.
+
+**Not taken now because nothing is blocked**: every machine that renders has TeX Live, and CI now
+installs it. The cost is a misleading error on a machine that does not, and this entry is what
+stops that being diagnosed from scratch.
+
+## D-58 — Who may remove an officer is not decided anywhere
+
+RFC-0042 decides that **appointing** an officer needs a dated instrument, a registry entry citing
+it, and a human approving the change (C-0004). It says nothing about **removal** beyond the shape
+of the record — `active: false` plus `ceased_on`, never deletion.
+
+So the register can now record that somebody ceased to hold office, and nothing says who is
+entitled to decide it. The asymmetry is visible the moment the question is asked: an appointment
+that reaches the register without an instrument is a `docket check` finding; a removal that reaches
+it without one is indistinguishable from a correct removal.
+
+**This is not docket's to close.** Post-incorporation it is company law and the articles — removal
+of a director and removal of a KMP are different acts with different authorities — and
+pre-incorporation it is whatever the founders' written consent says, which does not exist yet
+(the appointing instrument is itself outstanding). Recorded here so the gap is visible, and it
+belongs with counsel alongside RFC-0042 §5's instrument.
+
+**What is safe to say without counsel** is the mechanical part, and that is now enforced: a ceased
+officer stops signing new documents, stays in the register forever, and every document they signed
+while in office remains verifiable against its stored hash.
+
+## D-59 — Priyanshu is a single point of failure in both signing chains
+
+`registry/signatories.yaml` puts him first in Paridyum's fallback order (as `ceo` and `director`)
+and first in Paridyum Cyber's (as `cyber-holding`, signing for the owner). ADR-0077 D4 routes
+Cyber's documents through Paridyum's Director by decision, so this is the structure working as
+designed rather than a mistake.
+
+The consequence is worth stating anyway. Removing him leaves Paridyum with `cto` and `coo`, which
+is fine — the substitution reaches them. It leaves **Cyber with Ruhani and Rohan and nobody to
+countersign Ruhani's own documents**, because the chain that was meant to catch that case was him.
+`docket check` does not report it: the company still has active signatories, and the gap only
+appears for one particular subject.
+
+Closing it means either a second holding-company signatory for Cyber, or a check that every
+officer of a company has at least one possible countersignatory other than themselves. The second
+is the real property and is a small amount of work; it is not done because the first is a
+governance decision about who else may act for the owner.

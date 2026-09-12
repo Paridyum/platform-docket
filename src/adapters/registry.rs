@@ -22,6 +22,15 @@ pub struct Signatory {
     /// Short form, where a document has no room for the full designation.
     #[serde(default)]
     pub short: Option<String>,
+    /// ISO date the officer ceased to hold this office, where they have.
+    ///
+    /// RFC-0042 §5: **ceasing is `active: false` plus this date, never deletion.**
+    /// Documents already issued name their signatory, and a register that cannot
+    /// say who was an officer in 2026 cannot verify a document issued in 2026.
+    /// The RFC asked for this field and the struct did not have it, so half of
+    /// its rule was unimplementable until 2026-09-12.
+    #[serde(default)]
+    pub ceased_on: Option<String>,
     /// Which company this office is held at. Defaults to `PAR` (ADR-0077).
     ///
     /// Defaulted rather than required so that an entry written before the

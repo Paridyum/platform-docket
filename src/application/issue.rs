@@ -224,12 +224,30 @@ pub fn resolve_signatories(
         })
     };
 
+    // Whether this id still names someone who may sign.
+    //
+    // ROUTING NAMES AN OFFICE; ONLY THE REGISTER KNOWS WHO HOLDS IT. A document
+    // routed to `director` was printed with the Director's name whatever the
+    // register said, because the loop below only ever asked "is this the subject
+    // of the document". So an officer marked `active: false` -- RFC-0042 §5's
+    // way of recording that somebody ceased to hold office -- went on signing
+    // new documents indefinitely, and `check` reported nothing, because
+    // `signed_by` was validated against every signatory rather than the active
+    // ones. Found by simulating a removal rather than by reading the code.
+    let is_vacant = |id: &String| !registry.active_signatories_of(company).any(|s| &s.id == id);
+
     let mut out: Vec<String> = Vec::new();
     for id in routed {
-        if is_subject(id) {
+        if is_subject(id) || is_vacant(id) {
             // The substitute must not itself be the subject, and must not already be
             // signing this document — otherwise a two-signatory document would collapse
             // to one name printed twice.
+            //
+            // A vacant office substitutes by the same path as a conflicted one:
+            // the next active signatory of this company, in registry order. If
+            // the list is exhausted nothing is pushed, and `refuse_if_misrouted`
+            // is what turns a document with no signatory into a refusal rather
+            // than a document with a blank signature block.
             if let Some(alt) = registry
                 .active_signatories_of(company)
                 .map(|s| s.id.clone())

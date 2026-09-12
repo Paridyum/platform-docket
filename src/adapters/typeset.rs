@@ -173,6 +173,51 @@ impl Metadata {
         )
     }
 }
+/// The engine-specific half of the command line.
+///
+/// Split from `render` because the two engines disagree about more than flags
+/// and the difference deserves to be readable in one place -- pdflatex takes an
+/// output directory and honours `TEXINPUTS`; Tectonic takes neither.
+fn add_engine_args(cmd: &mut Command, engine: Engine, paths: &Paths, job: &Job<'_>, source: &Path) {
+    match engine {
+        Engine::PdfLatex => {
+            cmd.arg("-interaction=nonstopmode")
+                .arg("-halt-on-error")
+                .arg(format!("-output-directory={}", job.out_dir.display()))
+                .arg(source);
+        }
+        Engine::Tectonic => {
+            // Tectonic resolves cross-references itself, so the loop below
+            // runs it once. `--keep-intermediates` so a failure leaves the
+            // same .log an operator would look for after pdflatex.
+            //
+            // `-Z search-path` IS NOT OPTIONAL, and its absence is what made
+            // this engine unusable while it was advertised as the supported
+            // alternative. TECTONIC DOES NOT READ `TEXINPUTS` -- it searches
+            // its bundle and the input file's directory and nothing else --
+            // so every render failed with `File 'paridyum.cls' not found`,
+            // on an estate where no developer machine had Tectonic installed
+            // to notice (D-30). The engine documents this flag as "like
+            // TEXINPUTS", which is exactly the job the variable above does
+            // for pdflatex.
+            //
+            // One flag per directory: the option takes a single path and is
+            // repeatable, rather than a colon-joined list.
+            cmd.arg("--outdir")
+                .arg(job.out_dir)
+                .arg("--keep-intermediates")
+                .arg("--keep-logs");
+            for dir in [
+                job.out_dir.to_path_buf(),
+                paths.root.join("latex"),
+                paths.root.join("latex").join("assets"),
+            ] {
+                cmd.arg(format!("-Zsearch-path={}", dir.display()));
+            }
+            cmd.arg(source);
+        }
+    }
+}
 
 /// Render one document, returning the path to the PDF.
 ///
@@ -237,24 +282,7 @@ pub fn render(paths: &Paths, job: &Job<'_>) -> Result<PathBuf> {
             .env("SOURCE_DATE_EPOCH", clock::epoch_seconds(job.date).to_string())
             .env("FORCE_SOURCE_DATE", "1");
 
-        match engine {
-            Engine::PdfLatex => {
-                cmd.arg("-interaction=nonstopmode")
-                    .arg("-halt-on-error")
-                    .arg(format!("-output-directory={}", job.out_dir.display()))
-                    .arg(&source);
-            }
-            Engine::Tectonic => {
-                // Tectonic resolves cross-references itself, so the loop below
-                // runs it once. `--keep-intermediates` so a failure leaves the
-                // same .log an operator would look for after pdflatex.
-                cmd.arg("--outdir")
-                    .arg(job.out_dir)
-                    .arg("--keep-intermediates")
-                    .arg("--keep-logs")
-                    .arg(&source);
-            }
-        }
+        add_engine_args(&mut cmd, engine, paths, job, &source);
 
         let output = cmd.output().with_context(|| {
             format!(

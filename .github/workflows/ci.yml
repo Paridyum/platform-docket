@@ -41,8 +41,89 @@ jobs:
       # and that is structurally lower than what runs locally.
       #
       # Lowering it to pass would be gaming the check. Stating the number and
-      # the cause is not: this rises back to 70 when D-35 is closed and CI can
-      # render. It is not a licence to let the domain slip -- that is where the
-      # logic is, and it is at 95%+.
+      # the cause is not. It is not a licence to let the domain slip -- that is
+      # where the logic is, and it is at 95%+.
+      #
+      # CORRECTED 2026-09-12. This previously said the number rises to 70 "when
+      # D-35 is closed and CI can render". D-35 IS closed -- the `render` job
+      # below typesets for real -- and this number still cannot rise, because
+      # COVERAGE is measured by the shared workflow's own job, which has no
+      # typesetter and is in another repository. Two different jobs, and only one
+      # of them gained a TeX Live install. D-36 holds the remaining half.
       coverage-total: 60
       coverage-patch: 80
+
+  # ── D-30 and D-35: the render path, exercised where it was not ──────────────
+  #
+  # The shared workflow's runner has no typesetter, so every test that produces
+  # a PDF skipped -- silently, on the tier where the product actually lives.
+  # docket's output IS the deliverable, and until this job existed the bytes of
+  # a rendered document were verified only on a developer's machine.
+  #
+  # A SEPARATE JOB rather than a change to infra-ci, because this need is
+  # docket's alone: no other repository in the estate typesets anything.
+  #
+  # TEX LIVE RATHER THAN TECTONIC, and that is a finding rather than a
+  # preference. Tectonic is a single 10MB binary and was the obvious choice; it
+  # was tried first and it cannot render these documents. `paridyum.cls` uses
+  # `pdfx` for PDF/A, and under Tectonic's XeTeX engine that fails with
+  # "CreationDate is not properly supported". More importantly, pdflatex is what
+  # every developer machine runs and what has produced every document this
+  # estate has ever issued -- a CI job rendering with a DIFFERENT engine would
+  # be testing something nobody ships. See DECISION-DEBT D-57.
+  render:
+    name: rendering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # The targeted set, not `texlive-full` (~5GB). Each package below is here
+      # because `latex/paridyum.cls` requires something in it:
+      #   latex-base        tabularx, graphicx, array
+      #   latex-recommended setspace, parskip, fancyhdr
+      #   latex-extra       pdfx, tcolorbox, enumitem, titlesec, eso-pic, lastpage
+      #   pictures          tikz/pgf
+      #   fonts-recommended the default font set the class assumes
+      # Adding a \RequirePackage to the class may mean adding a package here.
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-pictures \
+            texlive-fonts-recommended
+          pdflatex --version | head -1
+
+      # The vault suite needs it. Without it those tests SKIP, which is how a
+      # fixture reaching for `age-keygen` unconditionally reached main and
+      # failed the runner while passing everywhere else (D-45, twice).
+      - name: Install age
+        run: sudo apt-get install -y --no-install-recommends age
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
+
+      # The suites that render. Named individually rather than `cargo test`,
+      # because the point of this job is the rendering tier -- the rest already
+      # runs in `test`, and repeating it here would double the slowest gate for
+      # no additional coverage.
+      - name: Rendering tests
+        run: cargo test --test issuance --test records --test signing --test vault
+
+      # A skip here is a silent hole: the whole job exists so these do NOT skip,
+      # and a skip is reported on stderr rather than as a failure, so nothing
+      # else would notice.
+      - name: Refuse a silent skip
+        run: |
+          set -euo pipefail
+          out="$(cargo test --test issuance 2>&1)"
+          if echo "$out" | grep -q 'SKIP'; then
+            echo "::error::a rendering test skipped on the job built to run it"
+            echo "$out" | grep 'SKIP'
+            exit 1
+          fi
+          echo "no rendering test skipped"

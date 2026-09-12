@@ -54,11 +54,20 @@ impl Sandbox {
         std::fs::create_dir_all(&people).expect("people dir");
         common::filled_officer_template(&root(), &people.join("_TEMPLATE-officer.yaml"));
 
+        // GENERATED ONLY WHERE `age` EXISTS, and this is D-45's lesson arriving a
+        // second time. Every test that USES the key already calls `skip` first;
+        // this constructor demanded `age-keygen` unconditionally, so a test that
+        // reads nothing but paths -- `the_keystore_is_never_in_what_gets_uploaded`
+        // -- failed on a runner with no typesetter or age, while passing on every
+        // developer machine. The guard belongs on the resource the test actually
+        // uses, not on the fixture that happens to build it.
         let keys = dir.path().join("estate");
         std::fs::create_dir_all(&keys).expect("estate dir");
-        let identity = crypt::generate_identity().expect("age-keygen runs");
         let key_file = keys.join("keys.txt");
-        std::fs::write(&key_file, identity).expect("estate key written");
+        if crypt::detect().is_ok() {
+            let identity = crypt::generate_identity().expect("age-keygen runs");
+            std::fs::write(&key_file, identity).expect("estate key written");
+        }
 
         Self {
             estate: key_file,

@@ -55,6 +55,17 @@ pub fn serve(ctx: &Context<'_>, port: u16) -> Result<()> {
     // and watches, and the SSH command is the thing they actually need next.
     println!("docket serving on http://{addr}");
     println!("reach it from another machine with:  ssh -L {port}:127.0.0.1:{port} <this-host>");
+    // D-41: the limit stated where an operator meets it, rather than only in a
+    // ledger nobody reads at the moment a screen appears to hang. One connection
+    // at a time is deliberate -- it is what keeps four append-only hash chains
+    // safe without file locking -- and the visible symptom of a slow route is
+    // indistinguishable from a crash unless it was said in advance.
+    println!();
+    println!("ONE REQUEST AT A TIME, deliberately: this process is the only writer to four");
+    println!("append-only hash chains. A slow route -- issuing a pack runs the typesetter --");
+    println!("blocks every other operator's screen until it finishes. That is waiting, not a");
+    println!("hang. This process also holds the store lock, so CLI writes are refused while");
+    println!("it runs (ADR-0072).");
 
     for incoming in listener.incoming() {
         match incoming {
