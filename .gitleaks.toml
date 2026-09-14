@@ -96,5 +96,9 @@ regexes = [
   # ANCHORED. Unanchored, this matched any secret whose value merely CONTAINED one of these
   # words: `API_KEY=exampleZ9kR4vN8pL1sW3xY6cF0dG5jU2aB9eH4iQ7` was silently allowlisted. A
   # placeholder is the whole value, never a prefix of a real one.
-  '''(?i)^(changeme|placeholder|example|dummy|redacted|xxxxx|your[_-]?secret)$''',
+  # `unused` is the deleted axum spike's placeholder DB password (user, password and host were all
+  # the literal word "unused", on an unroutable port) — a documented placeholder like the others,
+  # never a real credential. Anchored, so it allowlists only a value that is exactly "unused",
+  # clearing that finding across the whole --history scan without a per-commit fingerprint.
+  '''(?i)^(changeme|placeholder|example|dummy|redacted|xxxxx|your[_-]?secret|unused)$''',
 ]

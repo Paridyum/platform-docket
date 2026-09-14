@@ -5,6 +5,14 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ## [Unreleased]
 
+### Fixed
+
+- **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close
+  `RUSTSEC-2026-0285` (TLS 1.3 handshake messages accepted at the wrong encryption level) on docket's
+  live TLS path, and cleared a `.gitleaksignore` self-finding by allowlisting the documented
+  placeholder value `unused` in `.gitleaks.toml` (ADR-0017-compliant value allowlist). Postgres CI
+  still needs a `contents:read` token (DECISION-DEBT D-69).
+
 ### Added
 
 - **The deployment surface for the served backend.** ADR-0093 §3. A Helm chart (`helm/` —

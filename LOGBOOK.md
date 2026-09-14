@@ -4,7 +4,32 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
-## 2026-09-14 (later still again) — the blob port: document bytes move to Garage (ADR-0094, design §11)
+## 2026-09-14 (go-live) — the first green CI on main after the merges, and what the merges broke
+
+Merging the stacked branches to `main` and moving `infra-ci@v1` finally let real CI run (before the
+tag move it was `startup_failure`: the caller passed `postgres: true` to a `@v1` that predated the
+input). It surfaced two failures that only a real run could:
+
+- **`RUSTSEC-2026-0285`** — rustls 0.23.44 accepted TLS 1.3 handshake messages at the wrong
+  encryption level. This is docket's actual TLS path (the API client, the S3 signer), not a dev-dep,
+  so it is **fixed, not ignored**: `cargo update -p rustls` → 0.23.45, the patched release. `cargo
+  deny check advisories` is clean.
+- **Secret scan (`leaks found: 1`)** — ironically the `.gitleaksignore` comment itself: it spelled
+  out the deleted spike's example DSN in full, so the `paridyum-db-url-with-password` rule fired on
+  the comment on every commit that carried the file, and the served.rs fingerprint (pinned to a
+  now-rewritten commit) no longer covered it after the squash. Fixed durably at the value layer: the
+  captured "password" in every one of these findings is the placeholder word `unused`, so it joins
+  the anchored placeholder alternation in `.gitleaks.toml` (beside `changeme`, `dummy`, …). That
+  clears the finding across the whole `--history` scan with no per-commit fingerprint to chase — and
+  respects ADR-0017 (no blanket path allowlist; this is a value allowlist for a documented
+  non-secret). The comment is also reworded to stop spelling the DSN out.
+
+Verified locally against a throwaway PG17 with platform-tenancy 0001–0007 applied: 261 lib + 5
+served-API tests pass; `gitleaks` reports no leaks over full history; `cargo deny` clean. The one
+remaining red is not a code defect: the cross-repo migration checkout needs a `contents:read` token
+on platform-tenancy (D-69), which `read:packages`-only `PARIDYUM_PACKAGES_TOKEN` is not.
+
+
 
 The `Store` port moved docket's *records* to Postgres and deliberately left the *bytes* — issued PDFs,
 packs, signed scans, the plaintext a vault seals — on the filesystem. That was the right interim, but

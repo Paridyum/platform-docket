@@ -1199,3 +1199,16 @@ backend a vault sealed on one host is not visible on another until this is addre
 is a break-glass CLI operation, so the exposure is small. **Reopens when:** vault sealing is offered on
 the served backend, or the estate decides `.age` objects belong in Garage (encrypt-before-bucket flow,
 ADR-0094 §2), whichever is first.
+
+## D-69 — CI's cross-repo migration checkout needs a `contents:read` token  (OPEN, blocks Postgres CI)
+
+The Postgres test/coverage jobs (infra-ci `rust-ci` with `postgres: true`) check out
+`platform-tenancy`'s `migrations/*.sql` to build the schema the DB tests run against. That checkout
+uses `PARIDYUM_PACKAGES_TOKEN` (caller `secrets: inherit`). The token currently stored is the GHCR
+registry token — scope `read:packages` ONLY — so the checkout returns `Not Found` on the private
+`platform-tenancy` repo, the schema is never applied, and the `test`/`coverage` jobs fail (no other
+job is affected; fmt/clippy/deny/secret-scan run without it). **Fix:** a fine-grained PAT scoped
+`contents:read` on `Paridyum/platform-tenancy` (plus `read:packages` for image pulls), SOPS-stored
+and set as `PARIDYUM_PACKAGES_TOKEN` on tool-docket — the fine-grained replacement RUN-0001 already
+names as the answer to risk R3. A broad classic/OAuth token would work but re-widens R3, so it is not
+the fix. **Reopens/closes when:** that token is created and set.
