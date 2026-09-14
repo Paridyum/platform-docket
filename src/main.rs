@@ -2363,15 +2363,16 @@ fn cmd_serve(
     port: u16,
 ) -> Result<ExitCode> {
     let clock = SystemClock;
-    let ctx = http::router::Context {
-        store,
-        blobs,
+    // A fixed store for this one tenant: no verifier here, so no token to derive a tenant from, and
+    // the loopback/break-glass backend is single-tenant by construction (ADR-0099 leaves it be).
+    let serving = http::server::Serving {
+        backend: http::server::Backend::Fixed { store, blobs },
         paths,
         registry,
         verifier: None,
         clock: &clock,
     };
-    http::server::serve(&ctx, SocketAddr::from(([127, 0, 0, 1], port)))?;
+    http::server::serve(&serving, SocketAddr::from(([127, 0, 0, 1], port)))?;
     Ok(ExitCode::SUCCESS)
 }
 

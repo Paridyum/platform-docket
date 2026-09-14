@@ -26,11 +26,9 @@ use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::path::Path;
 use tool_docket::adapters::auth::{OperatorVerifier, keys_from_jwks};
-use tool_docket::adapters::blobs;
 use tool_docket::adapters::clock::SystemClock;
-use tool_docket::adapters::http::router::Context as RouterContext;
-use tool_docket::adapters::http::server;
-use tool_docket::adapters::pg::{self, PgStore};
+use tool_docket::adapters::http::server::{self, Backend, Serving};
+use tool_docket::adapters::pg::{self, PgTenantStores};
 use tool_docket::adapters::registry::Registry;
 use tool_docket::config::Paths;
 
@@ -59,9 +57,9 @@ fn main() -> Result<()> {
     let jwks_url =
         std::env::var("DOCKET_OIDC_JWKS").unwrap_or_else(|_| format!("{issuer}/oauth/v2/keys"));
     let audience = env("DOCKET_OIDC_AUDIENCE")?;
-    let tenant = env("DOCKET_TENANT_ID")?
-        .parse()
-        .context("DOCKET_TENANT_ID is not a uuid")?;
+    // No DOCKET_TENANT_ID: the served backend derives the tenant from each operator token's org
+    // (ADR-0099/ADR-0082), so one deployment serves every tenant. The break-glass CLI still names
+    // its one tenant explicitly; only the served path became multi-tenant.
     let bind: SocketAddr = std::env::var("DOCKET_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_owned())
         .parse()
@@ -94,22 +92,20 @@ fn main() -> Result<()> {
     // driven on the same runtime the PgStore uses. `paths` remains for the remaining filesystem
     // artifacts (generated indexes, templates).
     let paths = Paths::resolve(Path::new(&root));
-    let store = PgStore::new(pool, tenant, runtime.handle().clone());
-    let blobs = blobs::open(&paths, &tenant.to_string(), Some(runtime.handle().clone()))
-        .context("opening the blob store (DOCKET_S3_* configured?)")?;
     let clock = SystemClock;
+    // The record + blob stores are built PER REQUEST from the token's tenant (design §11, ADR-0099).
+    let stores = PgTenantStores::new(pool, runtime.handle().clone(), paths.clone());
 
-    let ctx = RouterContext {
-        store: &store,
-        blobs: blobs.as_ref(),
+    let serving = Serving {
+        // The verifier's presence is exactly what permits a routable bind (design §5, server.rs).
+        backend: Backend::PerTenant { stores: &stores },
         paths: &paths,
         registry: &registry,
-        // The verifier's presence is exactly what permits a routable bind (design §5, server.rs).
         verifier: Some(&verifier),
         clock: &clock,
     };
 
-    tracing::info!(addr = %bind, "docket serving the real operator API over Postgres");
-    server::serve(&ctx, bind).context("the server exited with an error")?;
+    tracing::info!(addr = %bind, "docket serving the real operator API over Postgres (multi-tenant)");
+    server::serve(&serving, bind).context("the server exited with an error")?;
     Ok(())
 }

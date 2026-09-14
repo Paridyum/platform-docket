@@ -369,6 +369,10 @@ fn the_binary_reports_meaningful_exit_codes() {
             .arg(root())
             .env("DOCKET_STORE", &sb.paths.store)
             .env("DOCKET_PEOPLE", &sb.paths.people)
+            // File-mode test: an ambient DB/API URL (CI's Postgres job exports one) would route the
+            // binary to break-glass/remote mode and change these exit codes. Clear both.
+            .env_remove("DOCKET_DATABASE_URL")
+            .env_remove("DOCKET_API_URL")
             .output()
             .expect("runs");
         // Surfaced on failure: an exit code alone does not say what broke.

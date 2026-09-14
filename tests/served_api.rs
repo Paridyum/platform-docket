@@ -34,6 +34,8 @@ fn token(enc: &EncodingKey, subject: &str) -> String {
     let claims = json!({
         "iss": ISS, "sub": subject, "aud": AUD, "exp": 9_999_999_999u64,
         "urn:zitadel:iam:org:project:ops:roles": { "operator": {} },
+        // The org id the tenant is derived from (ADR-0099); required by the verifier now.
+        "urn:zitadel:iam:user:resourceowner:id": "389623583590057140",
     });
     format!("Bearer {}", encode(&header, &claims, enc).expect("sign"))
 }

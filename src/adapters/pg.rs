@@ -12,7 +12,10 @@
 //! is refused, never silently widened. They are set LOCAL to the transaction, so a pooled
 //! connection cannot carry one request's identity into the next.
 
+use crate::adapters::blobs::{self, Blobs};
+use crate::adapters::http::server::TenantStores;
 use crate::adapters::store::Store;
+use crate::config::Paths;
 use crate::domain::chain::{Chained, seal, verify};
 use crate::domain::event::Event;
 use crate::domain::identity::Record;
@@ -443,5 +446,64 @@ impl Store for PgStore {
             "erasing on the Postgres store needs migration 0007 (append-only delete exception); \
              tracked as debt. Use the break-glass CLI on the file store to honour this erasure."
         )
+    }
+}
+
+/// Builds a Postgres record store and a Garage/S3 blob store for a request's tenant (ADR-0099). The
+/// served backend holds one and calls it once per request, since the tenant comes from the operator
+/// token rather than a fixed env. Owns the pool; drives blob I/O on the shared runtime.
+pub struct PgTenantStores {
+    pool: PgPool,
+    handle: tokio::runtime::Handle,
+    paths: Paths,
+}
+
+impl PgTenantStores {
+    /// A factory over `pool`, driving async work on `handle`, with `paths` for the blob store.
+    #[must_use]
+    pub fn new(pool: PgPool, handle: tokio::runtime::Handle, paths: Paths) -> Self {
+        Self {
+            pool,
+            handle,
+            paths,
+        }
+    }
+}
+
+impl TenantStores for PgTenantStores {
+    fn build(&self, tenant: Uuid) -> Result<(Box<dyn Store>, Box<dyn Blobs + '_>)> {
+        let store = PgStore::new(self.pool.clone(), tenant, self.handle.clone());
+        let blobs = blobs::open(&self.paths, &tenant.to_string(), Some(self.handle.clone()))
+            .context("opening the blob store (DOCKET_S3_* configured?)")?;
+        Ok((Box::new(store), blobs))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    // Runs only when DOCKET_DATABASE_URL is set (like the pg_store integration tests). A plain
+    // `#[test]`: PgStore block_on's on the handle from THIS thread, outside the runtime.
+    #[test]
+    fn the_factory_builds_a_tenant_scoped_store() {
+        let Ok(url) = std::env::var("DOCKET_DATABASE_URL") else {
+            return;
+        };
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let pool = runtime.block_on(pool(&url)).expect("connect");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let factory =
+            PgTenantStores::new(pool, runtime.handle().clone(), Paths::resolve(dir.path()));
+
+        // A fresh tenant that never had a row: the factory builds a store bound to it, and a read
+        // returns empty rather than another tenant's data — the store is tenant-scoped.
+        let tenant = Uuid::new_v4();
+        let (store, _blobs) = factory.build(tenant).expect("build a store for the tenant");
+        assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
     }
 }

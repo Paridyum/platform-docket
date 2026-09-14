@@ -10,7 +10,7 @@ pub mod lifecycle;
 pub mod person;
 pub mod personnel;
 pub mod register;
-pub mod tenant;
 pub mod serial;
 pub mod signature;
 pub mod template;
+pub mod tenant;

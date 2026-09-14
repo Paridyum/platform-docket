@@ -33,6 +33,7 @@ pub fn derive_tenant_id(zitadel_org_id: &str) -> anyhow::Result<Uuid> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

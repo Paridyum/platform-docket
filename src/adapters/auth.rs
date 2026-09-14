@@ -11,10 +11,17 @@
 //! ADR-0092 §3 records that a shared Rust `lib-auth` waits for a third consumer rather than being
 //! extracted speculatively.
 
+use crate::domain::tenant::derive_tenant_id;
 use anyhow::{Context, Result, bail};
 use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use uuid::Uuid;
+
+/// The Zitadel claim carrying the signing-in user's organization id — present when the
+/// `urn:zitadel:iam:user:resourceowner` scope is requested (oidc.rs / web-admin do). ADR-0099
+/// derives the tenant uuid from it (ADR-0082), which is the RLS context for the request.
+const RESOURCEOWNER_ID_CLAIM: &str = "urn:zitadel:iam:user:resourceowner:id";
 
 /// The role a token must carry to operate docket.
 const OPERATOR_ROLE: &str = "operator";
@@ -26,6 +33,10 @@ const BEARER: &str = "Bearer ";
 pub struct VerifiedOperator {
     /// The Zitadel `sub` — opaque and permanent (ADR-0092 §2).
     pub subject: String,
+    /// The tenant this request acts within, derived from the token's `resourceowner` org id
+    /// (ADR-0099 / ADR-0082). The RLS context for every store call in the request; one deployment
+    /// serves many tenants and this is what keeps them apart.
+    pub tenant: Uuid,
 }
 
 /// Validates operator tokens against the control-plane instance's published keys.
@@ -74,7 +85,17 @@ impl OperatorVerifier {
             .and_then(Value::as_str)
             .context("the token carries no subject")?
             .to_owned();
-        Ok(VerifiedOperator { subject })
+        let org = data
+            .claims
+            .get(RESOURCEOWNER_ID_CLAIM)
+            .and_then(Value::as_str)
+            .context(
+                "the token carries no resourceowner (org id). The CLI/console must request the \
+                 `urn:zitadel:iam:user:resourceowner` scope so docket can derive the tenant \
+                 (ADR-0099); a multi-tenant request cannot be defaulted to one.",
+            )?;
+        let tenant = derive_tenant_id(org)?;
+        Ok(VerifiedOperator { subject, tenant })
     }
 }
 
@@ -162,14 +183,31 @@ mod tests {
         json!({
             "iss": ISS, "sub": "390506086174098663", "aud": AUD, "exp": 9_999_999_999u64,
             "urn:zitadel:iam:org:project:390606436373103770:roles": { "operator": {} },
+            // Paridyum's org id; derives the tenant 68445ee9-… (ADR-0082).
+            "urn:zitadel:iam:user:resourceowner:id": "389623583590057140",
         })
     }
 
     #[test]
-    fn a_valid_operator_token_yields_its_subject() {
+    fn a_valid_operator_token_yields_its_subject_and_tenant() {
         let (enc, v) = keypair();
         let out = v.verify(&sign(&enc, &operator_claims())).expect("verifies");
         assert_eq!(out.subject, "390506086174098663");
+        assert_eq!(
+            out.tenant,
+            Uuid::parse_str("68445ee9-175a-58a9-834e-a2f0c9c9b124").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_token_without_a_resourceowner_is_refused() {
+        let (enc, v) = keypair();
+        let mut claims = operator_claims();
+        claims
+            .as_object_mut()
+            .unwrap()
+            .remove("urn:zitadel:iam:user:resourceowner:id");
+        assert!(v.verify(&sign(&enc, &claims)).is_err());
     }
 
     #[test]

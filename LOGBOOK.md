@@ -4,6 +4,34 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-15 — the served backend derives its tenant from the token (ADR-0099 stage 2)
+
+The single-tenant fixpoint was `serve.rs` reading one `DOCKET_TENANT_ID` and stamping it on every
+request. It is gone: `auth.rs`'s `VerifiedOperator` now carries the tenant, derived from the token's
+`resourceowner` org claim (ADR-0082, `domain::tenant`), and the store is built PER REQUEST for that
+tenant. One deployment serves every tenant; RLS keeps them apart, as it already did for the data.
+
+**The shape of the change is a store factory, not a param on every method.** `Store`/`Blobs` are
+built once at startup in the single-tenant design; making them per-request without threading a
+`tenant` through forty method signatures meant a `TenantStores` port that builds `(Store, Blobs)`
+for a tenant, and a `Serving` context that is either `Fixed` (the loopback/break-glass backend and
+the CLI, one tenant, no token) or `PerTenant` (the served backend). The server verifies the token at
+the boundary, derives the tenant, builds the store for it, and only then dispatches — so a handler
+never sees a store scoped to the wrong tenant.
+
+**Two consequences worth stating.** Reads are now authenticated too: a read names no operator today,
+but it names a *tenant*, and without a token there is no tenant — so every request but `/api/health`
+(which names neither, and is the k8s probe) now carries a bearer token. And `docket login` requests
+the `urn:zitadel:iam:user:resourceowner` scope so the token actually carries the org; without it the
+backend refuses the request rather than guessing a tenant, which is the multi-tenant version of the
+`DOCKET_TENANT_ID` guess this removes.
+
+The break-glass CLI is untouched: it still names its one tenant explicitly (`DOCKET_TENANT_ID` +
+direct DB), because a break-glass path that inferred the tenant would be less legible, not more.
+Proven against a PG17 whose app role is a non-superuser (RLS binds it, as in CI): the full suite is
+green, and a token with no `resourceowner` is refused. Config still loads from the git registry
+(Paridyum's) as the fallback; moving it to the per-tenant tables (0008) is stage 3.
+
 ## 2026-09-14 (go-live) — the first green CI on main after the merges, and what the merges broke
 
 Merging the stacked branches to `main` and moving `infra-ci@v1` finally let real CI run (before the

@@ -66,7 +66,11 @@ impl OidcConfig {
     }
 
     fn scope(&self) -> String {
-        let mut scope = String::from("openid profile");
+        // `resourceowner` puts the signing-in user's org id into the token
+        // (urn:zitadel:iam:user:resourceowner:id); the served backend derives the tenant from it
+        // (ADR-0099/ADR-0082), the way web-admin already does. Without it a multi-tenant request
+        // names no tenant and is refused.
+        let mut scope = String::from("openid profile urn:zitadel:iam:user:resourceowner");
         if let Some(project) = &self.project_id {
             // Zitadel's audience-reservation scope: it adds the project id to the token's `aud`,
             // which is what makes the served backend's audience check pass (ADR-0092).
@@ -269,7 +273,10 @@ mod tests {
     fn a_missing_project_id_omits_the_aud_scope() {
         let mut c = cfg("x".to_owned());
         c.project_id = None;
-        assert_eq!(c.scope(), "openid profile");
+        assert_eq!(
+            c.scope(),
+            "openid profile urn:zitadel:iam:user:resourceowner"
+        );
     }
 
     #[test]

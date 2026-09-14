@@ -57,11 +57,7 @@ pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
     // `operator::resolve`, which is also what makes a cross-site form unable to
     // forge one of these.
     let result = match (req.method.as_str(), parts.as_slice()) {
-        ("GET", ["api", "health"]) => Ok(json(&Health {
-            ok: true,
-            version: env!("CARGO_PKG_VERSION"),
-            contract: dto::CONTRACT,
-        })),
+        ("GET", ["api", "health"]) => Ok(health()),
         ("GET", ["api", "roster"]) => roster_handler(ctx, req),
         ("GET", ["api", "person", slug]) => person_handler(ctx, slug),
         ("GET", ["api", "check"]) => check_handler(ctx),
@@ -122,6 +118,18 @@ struct Health {
 }
 
 /// Serialise, or report the failure to serialise rather than hiding it.
+/// The unauthenticated health response (`GET /api/health`). Public so the served boundary can
+/// answer the k8s probe without a token and without building a tenant store (ADR-0099): health
+/// names no tenant, so it must not be behind the tenant-from-token gate the rest of the API is.
+#[must_use]
+pub fn health() -> Response {
+    json(&Health {
+        ok: true,
+        version: env!("CARGO_PKG_VERSION"),
+        contract: dto::CONTRACT,
+    })
+}
+
 fn json<T: Serialize>(value: &T) -> Response {
     match serde_json::to_vec(value) {
         Ok(body) => Response::json(body),
