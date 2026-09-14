@@ -13,6 +13,12 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   placeholder value `unused` in `.gitleaks.toml` (ADR-0017-compliant value allowlist). Postgres CI
   still needs a `contents:read` token (DECISION-DEBT D-69).
 
+- **`engines` test is isolated from an ambient store URL.** With the Postgres CI job exporting
+  `DOCKET_DATABASE_URL`, the file-mode engine test's `docket` subprocess inherited it and routed to
+  PgStore instead of the file store it set up, so `docket new` failed. The test now `env_remove`s
+  `DOCKET_DATABASE_URL` and `DOCKET_API_URL`, exercising file mode as intended regardless of the
+  ambient environment.
+
 ### Added
 
 - **The deployment surface for the served backend.** ADR-0093 §3. A Helm chart (`helm/` —

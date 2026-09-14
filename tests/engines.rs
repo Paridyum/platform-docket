@@ -97,6 +97,11 @@ fn detection_names_both_engines_when_neither_is_installed() {
         .env("PATH", empty.path())
         .env("DOCKET_STORE", empty.path().join("store"))
         .env("DOCKET_PEOPLE", empty.path().join("people"))
+        // This test exercises the file-mode engine invocation; a DB/API URL
+        // ambient in the environment (CI's Postgres job exports one) would route
+        // `docket` to PgStore/the API client instead, so clear both.
+        .env_remove("DOCKET_DATABASE_URL")
+        .env_remove("DOCKET_API_URL")
         .output()
         .expect("runs");
     let err = String::from_utf8_lossy(&out.stderr);
@@ -164,6 +169,10 @@ exit 0
             .env("DOCKET_STORE", dir.path().join("store"))
             .env("DOCKET_PEOPLE", &people)
             .env("DOCKET_OPERATOR", "rohan")
+            // File-mode test: an ambient DB/API URL (CI's Postgres job sets one)
+            // would route `docket` to PgStore/the API client, so clear both.
+            .env_remove("DOCKET_DATABASE_URL")
+            .env_remove("DOCKET_API_URL")
             .output()
             .expect("runs")
     };
