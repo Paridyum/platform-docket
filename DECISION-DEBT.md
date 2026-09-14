@@ -1138,3 +1138,35 @@ references to it) that ADR-0093 does not schedule, and it is not something to do
 adding a chart. **Reopens when:** the rename is scheduled, or forge ships a check that binds a
 manifest's `class` to its repository-name prefix — whichever is first. Sibling debt: console-docket
 D-? (its manifest is now `class: web` while named `console-docket`).
+
+## D-65 — API mode needs a Zitadel device-flow public client that does not exist yet  (OPEN, blocks the API path)
+
+ADR-0097 §3 gives the CLI `docket login` over the OIDC device authorization grant. It authenticates as
+a PUBLIC client (no secret, RFC 8628), whose id the operator supplies as `DOCKET_OIDC_CLIENT_ID` —
+there is deliberately no default, so an unset one is refused up front rather than failing obscurely at
+the issuer. That client must be registered in paridyum-operations (control plane, `id.paridyum.com`)
+as a device-flow public client, with the `…:aud` scope reserving the paridyum-operations project so the
+token it mints is audienced to match `auth.rs` (ADR-0092). **Until it exists, API mode cannot be used**
+even against a deployed backend; the file and database modes are unaffected. **Reopens/closes when:**
+the client is created and its id is handed to operators (and put in the SOP task). Sibling of the
+deployment gate ADR-0097 already records as an accepted cost (the backend must be served at an ingress).
+
+## D-66 — API mode deferrals: refresh-token healing, sign-scan upload, interactive-new validation parity  (OPEN, low risk)
+
+Three things ADR-0097's first slice deliberately does not do:
+
+- **Refresh-token healing.** `docket login` caches a refresh token when the issuer returns one, and
+  `token.rs` keeps it, but nothing uses it: a mid-session expiry is met with "run `docket login`", not a
+  silent refresh. A later slice can exchange the refresh token for a new access token without a second
+  browser round-trip.
+- **`sign --scan` over the API.** Recording a wet-ink signature needs the returned scan filed on the
+  server's disk; there is no upload endpoint, so `sign --scan` is refused in API mode. Record the scan
+  offline (file store or database), or add a multipart upload route later.
+- **Interactive `new` validation parity.** `docket new -i` over the API fetches the server's form
+  (`GET /api/form/{class}`) and asks its questions, but the answers are only validated when the server
+  writes the record — the local interview's inline per-field checks (`console::ask` closed-choice
+  enforcement) are not fully mirrored client-side. A partial/invalid set is caught by the server's
+  enrol refusal, not at the prompt. Close by having the form carry enough to validate client-side, or by
+  a `POST /api/form/{class}/validate` preflight.
+
+**Reopens when:** any of the three is scheduled. None blocks the everyday API path.

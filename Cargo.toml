@@ -36,7 +36,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 jsonwebtoken = "9"   # RS256 validation of operator tokens against the control-plane JWKS (ADR-0092)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }  # fetch the control-plane JWKS at startup
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }  # async: fetch the control-plane JWKS at startup (serve); blocking: the CLI API-mode client (ADR-0097)
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

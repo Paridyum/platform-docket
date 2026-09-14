@@ -2,15 +2,21 @@
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use std::collections::BTreeMap;
+use std::io::{BufRead, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use tool_docket::adapters::api::{
+    self, AdvanceRequest, ApiClient, EnrolRequest, PostOutcome, SignRequest,
+};
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
+use tool_docket::adapters::console;
 use tool_docket::adapters::http;
 use tool_docket::adapters::lock;
 use tool_docket::adapters::pg::{self, PgStore};
 use tool_docket::adapters::store::{FileStore, Store};
-use tool_docket::adapters::{registry::Registry, typeset};
+use tool_docket::adapters::{oidc, registry::Registry, token, typeset};
 use tool_docket::application::{
     archive, browse, check, comms, enrol, issue, next, node, pack, personnel, roster, sign, status,
     vault, verify,
@@ -135,6 +141,11 @@ enum Command {
         /// The returned scan. Required for wet-ink, which leaves no other trail.
         #[arg(long)]
         scan: Option<PathBuf>,
+        /// The person the serial belongs to. Required in API mode, where the write is
+        /// person-scoped (`POST /api/person/{slug}/sign`); ignored locally, where the serial
+        /// is enough to find the record.
+        #[arg(long = "for")]
+        r#for: Option<String>,
     },
     /// Move a person to the next lifecycle stage.
     Advance {
@@ -261,6 +272,13 @@ enum Command {
         #[arg(long)]
         date: Option<String>,
     },
+    /// Sign in to a remote docket by OIDC device flow, and cache the operator token.
+    ///
+    /// The token is the credential for API mode (ADR-0097 §3): short-lived, cached with owner-only
+    /// permissions, and never a database link. Needs `DOCKET_OIDC_CLIENT_ID` set.
+    Login,
+    /// Remove the cached operator token.
+    Logout,
 }
 
 /// Exit codes are contractual: 0 clean, 1 outstanding or integrity failure,
@@ -275,6 +293,61 @@ fn main() -> ExitCode {
     }
 }
 
+/// Which store the CLI reaches, chosen by what the operator holds (ADR-0097 §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// An authenticated HTTP client of a remote docket's `/api/*` (an operator token, no DB link).
+    Api,
+    /// A direct Postgres client of the cluster database (a prod secret — break-glass).
+    Database,
+    /// The offline file store under `store/`.
+    File,
+}
+
+/// Choose the mode from what is set, in precedence order: API URL, then database URL, then files.
+///
+/// A pure function so the precedence is a fact a test can pin rather than something buried in `run`.
+const fn classify(api: bool, database: bool) -> Mode {
+    if api {
+        Mode::Api
+    } else if database {
+        Mode::Database
+    } else {
+        Mode::File
+    }
+}
+
+/// The refusal for a command that only local or database access can serve (ADR-0097 §1).
+const UNAVAILABLE_OVER_API: &str =
+    "this command needs local or database access; it is not available over the API";
+
+/// Commands that cannot be served over the API, because they touch local blobs, the filesystem
+/// layout, or the estate key — none of which the remote `/api/*` exposes (ADR-0097 §1).
+///
+/// Stated as an explicit list rather than a default so that a command added later does not silently
+/// become available over the API before someone has decided it should be. `Login`/`Logout` are
+/// handled before dispatch and never reach here; `Sign`'s `--scan` and the `--tui` flag are refused
+/// at their call sites, being runtime conditions rather than whole commands.
+const fn unavailable_over_api(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Issue { .. }
+        | Command::Render { .. }
+        | Command::Verify { .. }
+        | Command::Pack { .. }
+        | Command::Index
+        | Command::Team
+        | Command::Vault { .. }
+        | Command::Store { .. }
+        | Command::Addresses { .. }
+        | Command::Reengage { .. }
+        | Command::Event { .. }
+        | Command::Separate { .. }
+        | Command::Erase { .. }
+        | Command::Serve { .. } => Some(UNAVAILABLE_OVER_API),
+        _ => None,
+    }
+}
+
 fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     let root = match cli.root {
@@ -282,6 +355,50 @@ fn run() -> Result<ExitCode> {
         None => PathBuf::from(env!("CARGO_MANIFEST_DIR")),
     };
     let paths = Paths::resolve(&root);
+    let command = cli.command;
+
+    // The mode is chosen by what the caller holds (ADR-0097 §2), before anything opens a store: an
+    // API URL first (an operator token — HR and most operators), then a database URL (a prod secret,
+    // break-glass), then the offline file store.
+    let api_url = std::env::var("DOCKET_API_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let database_set = std::env::var("DOCKET_DATABASE_URL")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
+    let mode = classify(api_url.is_some(), database_set);
+
+    // `login`/`logout` manage the token cache and need neither a store nor the registry — the token
+    // IS the attribution in API mode (ADR-0097 §1). Handled first, before any backend is opened.
+    match command {
+        Some(Command::Login) => return cmd_login(),
+        Some(Command::Logout) => return cmd_logout(),
+        _ => {}
+    }
+
+    // Printing help must not require a store, so the no-command, no-tui case is answered here.
+    if !cli.tui && command.is_none() {
+        <Cli as clap::CommandFactory>::command().print_help()?;
+        println!();
+        return Ok(ExitCode::from(2));
+    }
+
+    // API mode: an authenticated HTTP client of a remote docket. It must NOT load the registry or
+    // open a store, and it does not resolve `--by` (ADR-0097 §1). One banner, on stderr.
+    if mode == Mode::Api {
+        let url = api_url.unwrap_or_default();
+        eprintln!(
+            "docket: mode = API client of {url} (operator token, no database link) [ADR-0097]"
+        );
+        if cli.tui {
+            bail!("the full-screen roster needs local or database access; {UNAVAILABLE_OVER_API}");
+        }
+        let Some(command) = command else {
+            return Ok(ExitCode::from(2));
+        };
+        return dispatch_api(command, &url);
+    }
+
     let registry = Registry::load(&paths)
         .context("loading registry/ (is --root pointing at the repository?)")?;
 
@@ -301,16 +418,6 @@ fn run() -> Result<ExitCode> {
         })
         .map(|id| registry.operator(&id).map(|o| o.id.clone()))
         .transpose()?;
-
-    // Printing help must not require a store: a database-backed CLI would
-    // otherwise open a connection just to say what the commands are. So the
-    // no-command, no-tui case is answered before the backend is built.
-    let command = cli.command;
-    if !cli.tui && command.is_none() {
-        <Cli as clap::CommandFactory>::command().print_help()?;
-        println!();
-        return Ok(ExitCode::from(2));
-    }
 
     // The store the whole command shares, built ONCE here and threaded down as a
     // `&dyn Store` (ADR-0093 §3): a `PgStore` against the cluster database when
@@ -340,6 +447,310 @@ fn run() -> Result<ExitCode> {
         operator.as_deref(),
         cli.company.as_deref(),
     )
+}
+
+/// Route one command in API mode: call the remote `/api/*` and render the reply (ADR-0097 §1).
+///
+/// No store, no registry, no `--by`. A command that needs local or database access is refused here
+/// with the reason, rather than failing obscurely against an endpoint that does not exist.
+///
+/// One arm per command, mirroring `route`; the length is the routing table, not complex logic.
+#[allow(clippy::too_many_lines)]
+fn dispatch_api(command: Command, base: &str) -> Result<ExitCode> {
+    if let Some(reason) = unavailable_over_api(&command) {
+        bail!("{reason}");
+    }
+    let client = api_client(base)?;
+    match command {
+        Command::Roster { standing } => {
+            let roster = client.roster(standing.as_deref())?;
+            print!("{}", api::render_roster(&roster));
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Status { slug } => {
+            let person = client.person(&slug)?;
+            print!("{}", api::render_status(&person));
+            Ok(if person.steps.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
+        }
+        Command::Record { slug } => {
+            let person = client.person(&slug)?;
+            print!("{}", api::render_record(&person));
+            Ok(if person.violations.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
+        }
+        Command::Next { slug } => {
+            let person = client.person(&slug)?;
+            let (text, done) = api::render_next(&person);
+            print!("{text}");
+            Ok(if done {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
+        }
+        Command::Emails { slug, only } => {
+            let all = client.emails(&slug)?;
+            let wanted: Vec<api::Message> = all
+                .into_iter()
+                .filter(|m| only.as_deref().is_none_or(|o| m.id == o))
+                .collect();
+            if wanted.is_empty() {
+                if let Some(o) = only {
+                    bail!("no message {o:?} is due for {slug}");
+                }
+                println!("{slug}: no messages due at this stage");
+                return Ok(ExitCode::SUCCESS);
+            }
+            let (text, incomplete) = api::render_emails(&wanted);
+            print!("{text}");
+            Ok(if incomplete {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            })
+        }
+        Command::Check => {
+            let check = client.check()?;
+            print!("{}", api::render_check(&check));
+            Ok(if check.errors == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
+        }
+        Command::Retention { .. } => {
+            // The `--date` flag is ignored over the API: the server evaluates retention against its
+            // own injected clock (design §retention), and there is no endpoint to pass an as-at date.
+            let retention = client.retention()?;
+            print!("{}", api::render_retention(&retention));
+            Ok(if retention.overdue.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            })
+        }
+        Command::New {
+            slug,
+            class,
+            interactive,
+            ..
+        } => cmd_api_new(&client, &slug, &class, interactive),
+        Command::Onboard { slug, force, .. } => {
+            if force {
+                eprintln!(
+                    "note: --force is not available over the API; a refusal must be resolved, not \
+                     overridden (design §8). Issuing only what is not refused."
+                );
+            }
+            Ok(report_post(client.onboard(&slug)?))
+        }
+        Command::Sign {
+            serial,
+            method,
+            on,
+            received,
+            scan,
+            r#for,
+        } => cmd_api_sign(
+            &client,
+            &serial,
+            &method,
+            on,
+            received,
+            scan.as_deref(),
+            r#for,
+        ),
+        Command::Advance { slug, force, .. } => Ok(report_post(
+            client.advance(&slug, &AdvanceRequest { force })?,
+        )),
+        // Every other command is either handled before dispatch (login/logout) or refused by
+        // `unavailable_over_api` above; reaching here means one slipped the list.
+        _ => bail!("{UNAVAILABLE_OVER_API}"),
+    }
+}
+
+/// Build the API client, reading the cached operator token (or `DOCKET_TOKEN`).
+fn api_client(base: &str) -> Result<ApiClient> {
+    let cache = token::default_cache_path()?;
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let bearer = token::for_request(&cache, now)?;
+    ApiClient::new(base, bearer)
+}
+
+/// Print a completed write, or report a refusal on stderr with exit 2 — as the CLI does locally.
+fn report_post(outcome: PostOutcome) -> ExitCode {
+    match outcome {
+        PostOutcome::Wrote(w) => {
+            print!("{}", api::render_wrote(&w));
+            ExitCode::SUCCESS
+        }
+        PostOutcome::Refused(r) => {
+            eprint!("{}", api::render_refused(&r));
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// `docket new` over the API: interactive fills the form fetched from the server; otherwise the
+/// record is opened with no answers, to be filled in later (the server writes it, then allocates).
+fn cmd_api_new(client: &ApiClient, slug: &str, class: &str, interactive: bool) -> Result<ExitCode> {
+    let answers = if interactive {
+        let form = client.form(class)?;
+        let stdin = std::io::stdin();
+        let mut input = stdin.lock();
+        let mut out = std::io::stdout();
+        interview_form(&form, &mut out, &mut input)?
+    } else {
+        BTreeMap::new()
+    };
+    Ok(report_post(client.enrol(&EnrolRequest {
+        slug: slug.to_owned(),
+        class: class.to_owned(),
+        answers,
+    })?))
+}
+
+/// Ask the questions the server's form declares, collecting answers by their dotted path.
+///
+/// The form comes from `GET /api/form/{class}`, generated from the same `registry/fields.yaml` the
+/// local interview reads, so the two cannot drift (design §form).
+fn interview_form(
+    form: &api::Form,
+    out: &mut impl Write,
+    input: &mut impl BufRead,
+) -> Result<BTreeMap<String, String>> {
+    writeln!(out, "\nOpening a record for a {}.", form.class)?;
+    let mut answers = BTreeMap::new();
+    let mut group = String::new();
+    for q in &form.questions {
+        if q.group != group {
+            group.clear();
+            group.push_str(&q.group);
+            writeln!(out, "\n-- {} --", q.group.replace('_', " "))?;
+        }
+        let label = q
+            .path
+            .rsplit('.')
+            .next()
+            .unwrap_or(&q.path)
+            .replace('_', " ");
+        if let Some(v) = console::ask(
+            out,
+            input,
+            &label,
+            &q.purpose,
+            q.required,
+            q.default.as_deref(),
+        )? {
+            answers.insert(q.path.clone(), v);
+        }
+    }
+    Ok(answers)
+}
+
+/// `docket sign` over the API: person-scoped, so it needs the slug; the scan upload is not available.
+fn cmd_api_sign(
+    client: &ApiClient,
+    serial: &str,
+    method: &str,
+    on: Option<String>,
+    received: Option<String>,
+    scan: Option<&Path>,
+    for_slug: Option<String>,
+) -> Result<ExitCode> {
+    if scan.is_some() {
+        bail!(
+            "sign --scan files the returned scan on the server's disk, which is not available over \
+             the API. Record the signature with a method that leaves its own trail, or run `sign` \
+             against the file store or the database."
+        );
+    }
+    let slug = for_slug.context(
+        "in API mode `sign` is person-scoped, so it needs the person: pass --for <slug>",
+    )?;
+    let signed_on = match on {
+        Some(d) => d,
+        None => clock::to_iso(SystemClock.today()?)?,
+    };
+    Ok(report_post(client.sign(
+        &slug,
+        &SignRequest {
+            serial: serial.to_owned(),
+            method: method.to_owned(),
+            signed_on,
+            received_on: received,
+            scan: None,
+        },
+    )?))
+}
+
+/// Sign in by OIDC device flow and cache the operator token (ADR-0097 §3).
+fn cmd_login() -> Result<ExitCode> {
+    let cfg = oidc::OidcConfig::from_env()?;
+    let http = reqwest::blocking::Client::builder()
+        .build()
+        .context("building the HTTP client for the sign-in")?;
+    let device = oidc::request_device_code(&http, &cfg)?;
+
+    println!(
+        "To sign in, open:\n  {}",
+        device
+            .verification_uri_complete
+            .as_deref()
+            .unwrap_or(&device.verification_uri)
+    );
+    println!("and enter the code:  {}", device.user_code);
+    println!("\nWaiting for you to approve the sign-in in the browser...");
+
+    // The wait between polls uses `park_timeout`, never `thread::sleep` (clippy.toml, STD-0003):
+    // the main thread is never unparked, so it waits the full interval each time.
+    let mut wait = std::time::Duration::from_secs(device.interval.max(1));
+    loop {
+        std::thread::park_timeout(wait);
+        match oidc::poll_once(&http, &cfg, &device.device_code)? {
+            oidc::PollOutcome::Pending => {}
+            oidc::PollOutcome::SlowDown => wait += std::time::Duration::from_secs(5),
+            oidc::PollOutcome::Denied => bail!("the sign-in was declined."),
+            oidc::PollOutcome::Expired => {
+                bail!("the code expired before the sign-in finished. Run `docket login` again.")
+            }
+            oidc::PollOutcome::Approved(t) => {
+                let now = time::OffsetDateTime::now_utc().unix_timestamp();
+                let cached = token::CachedToken {
+                    access_token: t.access_token,
+                    expires_at: now + t.expires_in,
+                    refresh_token: t.refresh_token,
+                };
+                let cache = token::default_cache_path()?;
+                token::store(&cache, &cached)?;
+                // The token itself is never printed — only where it was cached and when it lapses.
+                println!(
+                    "Signed in. Token cached at {} (expires in {}s).",
+                    cache.display(),
+                    t.expires_in
+                );
+                return Ok(ExitCode::SUCCESS);
+            }
+        }
+    }
+}
+
+/// Remove the cached operator token (ADR-0097 §3).
+fn cmd_logout() -> Result<ExitCode> {
+    let cache = token::default_cache_path()?;
+    if token::clear(&cache)? {
+        println!("Signed out; the cached token was removed.");
+    } else {
+        println!("No cached token to remove.");
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// docket's record store for one command: the file store, or Postgres.
@@ -489,6 +900,11 @@ fn writes(command: &Command) -> bool {
         | Command::Retention { .. }
         | Command::Record { .. }
         | Command::Roster { .. }
+        // `login`/`logout` never reach here — they are handled before a backend is opened — but the
+        // match is exhaustive on purpose, so they are named rather than defaulted. They write only
+        // the token cache, never the store.
+        | Command::Login
+        | Command::Logout
         | Command::Pack { .. } => false,
 
         // `store status` reads; `store restore` writes, and writes into a
@@ -610,6 +1026,7 @@ fn route(
             on,
             received,
             scan,
+            r#for: _,
         } => cmd_sign(
             store,
             paths,
@@ -1877,4 +2294,122 @@ fn cmd_serve(store: &dyn Store, paths: &Paths, registry: &Registry, port: u16) -
     };
     http::server::serve(&ctx, SocketAddr::from(([127, 0, 0, 1], port)))?;
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+// A test that cannot assert an expected value is not a test; the crate's expect/unwrap denial is
+// exempted inside the test module, as elsewhere in this crate.
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::{Command, Mode, classify, unavailable_over_api};
+
+    #[test]
+    fn api_url_wins_over_a_database_url() {
+        // ADR-0097 §2: the API mode is the one to reach for, so it takes precedence over the
+        // break-glass database link when both are set.
+        assert_eq!(classify(true, true), Mode::Api);
+        assert_eq!(classify(true, false), Mode::Api);
+    }
+
+    #[test]
+    fn a_database_url_alone_is_the_break_glass_mode() {
+        assert_eq!(classify(false, true), Mode::Database);
+    }
+
+    #[test]
+    fn nothing_set_is_the_offline_file_store() {
+        assert_eq!(classify(false, false), Mode::File);
+    }
+
+    #[test]
+    fn the_filesystem_bound_commands_are_refused_over_the_api() {
+        // A representative slice of the list — each needs local blobs, the filesystem layout, or the
+        // estate key, none of which the remote /api/* exposes (ADR-0097 §1).
+        for command in [
+            Command::Issue {
+                slug: "x".to_owned(),
+                code: "NDA".to_owned(),
+                date: None,
+                force: false,
+            },
+            Command::Verify {
+                serial: "s".to_owned(),
+                file: None,
+            },
+            Command::Index,
+            Command::Team,
+            Command::Serve { port: 8080 },
+            Command::Addresses {
+                slug: "x".to_owned(),
+            },
+            Command::Reengage {
+                slug: "x".to_owned(),
+                class: "intern".to_owned(),
+                date: None,
+            },
+            Command::Erase {
+                slug: "x".to_owned(),
+                confirm: false,
+                date: None,
+            },
+        ] {
+            assert!(
+                unavailable_over_api(&command).is_some(),
+                "expected a refusal for a filesystem-bound command"
+            );
+        }
+    }
+
+    #[test]
+    fn the_api_served_commands_are_available() {
+        // These map onto a served endpoint (roster/person/check/retention/emails and the writes),
+        // so they must NOT be refused up front.
+        for command in [
+            Command::Roster { standing: None },
+            Command::Status {
+                slug: "x".to_owned(),
+            },
+            Command::Record {
+                slug: "x".to_owned(),
+            },
+            Command::Next {
+                slug: "x".to_owned(),
+            },
+            Command::Check,
+            Command::Retention { date: None },
+            Command::Emails {
+                slug: "x".to_owned(),
+                only: None,
+            },
+            Command::Onboard {
+                slug: "x".to_owned(),
+                date: None,
+                force: false,
+            },
+            Command::Advance {
+                slug: "x".to_owned(),
+                force: false,
+                date: None,
+            },
+            Command::New {
+                slug: "x".to_owned(),
+                class: "intern".to_owned(),
+                date: None,
+                interactive: false,
+            },
+            Command::Sign {
+                serial: "s".to_owned(),
+                method: "wet-ink".to_owned(),
+                on: None,
+                received: None,
+                scan: None,
+                r#for: Some("x".to_owned()),
+            },
+        ] {
+            assert!(
+                unavailable_over_api(&command).is_none(),
+                "an API-served command must not be refused up front"
+            );
+        }
+    }
 }

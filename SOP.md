@@ -844,6 +844,69 @@ a signed operator token creating a person and reading the roster back through th
 
 ---
 
+## Task: log in and use docket remotely, over the API (the everyday networked path)
+
+**When:** you want the command line against a REMOTE docket — the served backend at a URL — without
+being handed the production database. This is the path for HR and most operators (ADR-0097 §1): an
+operator token, obtained by signing in, never a database secret. Prefer it over the break-glass
+Postgres task below unless you specifically need direct database access.
+
+**Preconditions:** the served backend is deployed and reachable at a URL; a Zitadel device-flow
+public client exists for the CLI in paridyum-operations, and you have its client id (see "the Zitadel
+dependency" below). You do NOT need `DOCKET_DATABASE_URL` and must not set it.
+
+Point docket at the remote and sign in once:
+
+    export DOCKET_API_URL="https://docket.paridyum.com"
+    export DOCKET_OIDC_CLIENT_ID="<the CLI device-flow client id>"   # no default; refused if unset
+    export DOCKET_OIDC_PROJECT_ID="390606436373103770"              # audiences the token (ADR-0092)
+    # DOCKET_OIDC_ISSUER defaults to https://id.paridyum.com
+    docket login
+
+`docket login` prints a URL and a short code; open the URL in a browser, enter the code, and approve.
+The CLI polls until you approve, then caches a short-lived operator token at
+`$XDG_CACHE_HOME/docket/token.json` (or `~/.cache/docket/token.json`), owner-only (0600). The token is
+never printed. Then use docket exactly as normal — the token is the attribution, so no `--by`:
+
+    docket roster
+    docket status asha-verma
+    docket new asha-verma intern            # POST /api/person; -i asks the server's form questions
+    docket onboard asha-verma               # POST /api/person/{slug}/onboard
+    docket sign PAR/NDA/2026/0001 --for asha-verma   # sign is person-scoped over the API: --for is required
+    docket advance asha-verma
+    docket logout                           # removes the cached token
+
+**Correct output:** every run prints one line to stderr first, naming the mode —
+
+    docket: mode = API client of https://docket.paridyum.com (operator token, no database link) [ADR-0097]
+
+**A service account** (one docket automating against another) skips the browser: set `DOCKET_TOKEN` to
+a supplied operator token and it is sent as-is, overriding the cache — no `docket login` (ADR-0097 §4).
+
+**What is NOT available over the API** (each needs local blobs, the filesystem layout, or the estate
+key, none of which `/api/*` exposes): `issue`, `render`, `verify`, `pack`, `index`, `team`, every
+`vault …`, every `store …`, `addresses`, `reengage`, `event`, `separate`, `erase`, `serve`, the `--tui`
+roster, and `sign --scan`. Each refuses up front with the reason. Run those against the file store or
+the break-glass database instead.
+
+**When it goes wrong:**
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `DOCKET_OIDC_CLIENT_ID is unset … there is no default` | `docket login` has no client to authenticate as | export the CLI device-flow client id from paridyum-operations |
+| `not logged in. Run `docket login` …` | no cached token and no `DOCKET_TOKEN` | `docket login`, or set `DOCKET_TOKEN` for a service account |
+| `your docket session has expired. Run `docket login` …` | the cached token lapsed (30s skew) | `docket login` again |
+| `the docket API rejected the token (401) … Run `docket login`` | the server refused the token | `docket login` again; check the issuer/project id match the backend (ADR-0092) |
+| `… it is not available over the API` | a filesystem/estate-key command in API mode | run it offline or over the database |
+| `in API mode `sign` is person-scoped … pass --for <slug>` | `sign` needs the person over the API | add `--for <slug>` |
+
+**vs the break-glass DB task below:** API mode carries a login and no database link, and runs no
+application logic locally — the server does, behind ADR-0092 auth. The break-glass Postgres task hands
+the operator the production database URL (a prod secret) and runs the application layer on the laptop.
+Reach for API mode; reach for the database only for migrations and admin the API does not expose.
+
+---
+
 ## Task: run the CLI against the cluster Postgres (break-glass)
 
 **When:** you need the command line against the SAME records the served backend (`bin/serve`) serves —

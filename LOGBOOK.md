@@ -1165,3 +1165,55 @@ tests, `docket check`).
 `unavailable_on_pg` and the lock gate written as explicit, greppable functions in the style of the
 existing `writes()`; `scripts/gates.sh` as the single un-piped gate; the throwaway Postgres and a
 seeded tenant for the CLI's real end-to-end proof.
+
+## 2026-09-14 (later still) — the CLI gains a third mode: an authenticated API client (ADR-0097)
+
+**Why.** ADR-0093 §3 said the CLI is "a break-glass client of the same database", which quietly implied
+everyone who uses the CLI holds the production database URL. ADR-0097 corrects that: most operators —
+HR included — must use docket WITHOUT the database link. So the CLI grows a third mode, an authenticated
+HTTP client of a remote docket's `/api/*`, reached with an operator token and no database secret. This
+is the console's position (ADR-0092), now available from the command line.
+
+**Mode precedence, chosen before any store opens (ADR-0097 §2).** `classify(api, database)` is a pure
+function with its own tests: `DOCKET_API_URL` set → API client; else `DOCKET_DATABASE_URL` → the
+break-glass `PgStore` (banner unchanged, still says the word "break-glass"); else the offline
+`FileStore`. One stderr banner per run names the mode. **The crucial property:** API mode does NOT load
+the `Registry` or open a store, and skips `--by`/operator resolution — the token is the attribution. So
+`run()` handles `login`/`logout` and the whole API branch BEFORE `Registry::load`/`open_backend`.
+
+**The device flow and the token cache (ADR-0097 §3, REQ-0001).** `docket login` runs the OIDC device
+authorization grant against `id.paridyum.com`: `adapters::oidc` does one round-trip each in
+`request_device_code` and `poll_once` (→ Pending/SlowDown/Denied/Expired/Approved), and the poll LOOP
+lives in `main` using `thread::park_timeout` — never `thread::sleep`, which clippy.toml bans. The token
+it returns is cached by `adapters::token` at `$XDG_CACHE_HOME/docket/token.json`, 0600, with a 30s
+expiry skew and a `DOCKET_TOKEN` env override for service accounts. The token is never printed. The
+scope carries `urn:zitadel:iam:org:project:id:{project}:aud` so the token is audienced for
+paridyum-operations and passes the audience `auth.rs` pins.
+
+**The API client (`adapters::api`).** `ApiClient` on `reqwest::blocking` (the new "blocking" feature,
+rustls kept). It mirrors the wire types rather than sharing `http::dto` — the same deliberate
+duplication ADR-0093 keeps between docket and console-docket, so a server field rename cannot silently
+retrack a client. `Authorization: Bearer <token>`; 409 → a rendered `Refused` (exit 2), 401 → an error
+hinting `docket login`, other non-2xx → the server's `{error}`. The `render_*` functions are pure
+`-> String`, unit-tested against a local `TcpListener` mock — no live backend.
+
+**Unavailable over the API, refused up front.** `unavailable_over_api` (pure, tested) names the
+commands that need local blobs, the filesystem layout, or the estate key: issue, render, verify, pack,
+index, team, vault*, store*, addresses, reengage, event, separate, erase, serve — plus `--tui` and
+`sign --scan`, handled at their call sites. `sign` over the API is person-scoped, so it gained an
+optional `--for <slug>`, required in API mode.
+
+**Verification.** `scripts/gates.sh`: fmt ok, clippy `--all-targets` zero warnings, test ok (259 lib
+tests including the new token/oidc/api suites, 5 main mode-precedence/refusal tests). `docket check`
+FAILED only on pre-existing local record data (`pre_existing_ip` placeholders in gitignored `people/`),
+which is a data state on this laptop, not a code regression — the three code gates are green.
+
+**The Zitadel dependency, flagged.** API mode needs a device-flow PUBLIC client registered for the CLI
+in paridyum-operations; its id is `DOCKET_OIDC_CLIENT_ID`, which has NO default and is refused if unset.
+That client does not exist yet — creating it is the deployment gate for this path, recorded as D-65.
+
+**Skills and tools used.** Reading `main.rs`/`http/*`/`bin/serve`/`auth.rs` before writing a line
+(governance precedes implementation); reusing the prior run's finished `token.rs` after verifying it
+against STD-0003; the compiler and clippy `-D warnings` as the guide; a local `TcpListener` as the mock
+issuer/server so every test runs with no network; `park_timeout` for the poll wait per clippy.toml;
+`scripts/gates.sh` as the single un-piped gate.
