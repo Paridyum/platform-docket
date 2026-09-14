@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::registry::Registry;
 use tool_docket::adapters::store::{self, FileStore};
@@ -70,6 +71,7 @@ impl Sandbox {
             let doc = by_code.get(*code).expect("declared");
             issue::one(
                 &FileStore::new(&self.paths),
+                &FileBlobs::new(&self.paths),
                 &self.paths,
                 &reg,
                 &person,
@@ -115,7 +117,7 @@ fn sign_it(sb: &Sandbox, code: &str, method: Method, on: &str) -> anyhow::Result
     };
     sign::record(
         &FileStore::new(&sb.paths),
-        &sb.paths,
+        &FileBlobs::new(&sb.paths),
         &registry(),
         &serial,
         method,
@@ -177,7 +179,7 @@ fn wet_ink_without_a_scan_is_refused() {
     let serial = sb.serial_of("NDA");
     let err = sign::record(
         &FileStore::new(&sb.paths),
-        &sb.paths,
+        &FileBlobs::new(&sb.paths),
         &registry(),
         &serial,
         Method::WetInk,
@@ -213,7 +215,7 @@ fn a_document_cannot_be_signed_before_it_was_issued() {
     let scan = sb.scan("s.pdf");
     let err = sign::record(
         &FileStore::new(&sb.paths),
-        &sb.paths,
+        &FileBlobs::new(&sb.paths),
         &registry(),
         &serial,
         Method::WetInk,
@@ -240,7 +242,7 @@ fn the_received_date_cannot_precede_the_signing_date() {
     assert!(
         sign::record(
             &FileStore::new(&sb.paths),
-            &sb.paths,
+            &FileBlobs::new(&sb.paths),
             &registry(),
             &serial,
             Method::WetInk,
@@ -278,7 +280,7 @@ fn signing_an_unissued_serial_is_refused() {
     assert!(
         sign::record(
             &FileStore::new(&sb.paths),
-            &sb.paths,
+            &FileBlobs::new(&sb.paths),
             &registry(),
             "PAR/NDA/1999/0001",
             Method::AadhaarEsign,
@@ -477,8 +479,13 @@ fn check_detects_a_tampered_signature_ledger() {
     let text = std::fs::read_to_string(&path).expect("read");
     std::fs::write(&path, text.replace("2026-08-25", "2026-08-01")).expect("write");
 
-    let findings =
-        check::run(&FileStore::new(&sb.paths), &sb.paths, &registry()).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &registry(),
+    )
+    .expect("check runs");
     assert!(
         findings
             .items
@@ -501,8 +508,13 @@ fn check_detects_a_missing_scan() {
     let rel = s.record.scan_path.as_deref().expect("path");
     std::fs::remove_file(sb.paths.store.join(rel)).expect("remove");
 
-    let findings =
-        check::run(&FileStore::new(&sb.paths), &sb.paths, &registry()).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &registry(),
+    )
+    .expect("check runs");
     assert!(
         findings
             .items

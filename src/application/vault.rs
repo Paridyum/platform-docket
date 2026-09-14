@@ -1,5 +1,6 @@
 //! The encrypted archive: one key per person, so erasure has a mechanism.
 
+use crate::adapters::blobs::Blobs;
 use crate::adapters::store::Store;
 use crate::adapters::{clock, crypt};
 use crate::config::Paths;
@@ -130,6 +131,7 @@ pub struct Sealed {
 /// Fails if the register cannot be read, `age` is unavailable, or a document is missing.
 pub fn seal(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     slug: &str,
     company: Option<&str>,
@@ -143,19 +145,28 @@ pub fn seal(
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let mut out = Sealed::default();
-    for entry in store.register()? {
-        if entry.person_id != who.person_id {
-            continue;
-        }
-        let source = paths.store.join(&entry.pdf_path);
-        if !source.exists() {
+    // The plaintext to be sealed now comes from the blob store (design §11): the key is the register's
+    // `pdf_path`, so a vault seals the same bytes whether the store is local files or Garage. The
+    // sealed `.age` object stays on `Paths` — it is the ciphertext/erasure layer, and its key must be
+    // local for `shred` to destroy it (DECISION-DEBT notes moving it to the bucket).
+    let register = store.register()?;
+    let mine: std::collections::BTreeSet<&str> = register
+        .iter()
+        .filter(|e| e.person_id == who.person_id)
+        .map(|e| e.serial.as_str())
+        .collect();
+    for entry in register.iter().filter(|e| e.person_id == who.person_id) {
+        if !blobs.exists(&entry.pdf_path)? {
             bail!(
-                "{} is registered but its file is missing at {}",
+                "{} is registered but its bytes are missing from the blob store (key {})",
                 entry.serial,
-                source.display()
+                entry.pdf_path
             );
         }
-        seal_one(&source, &dir, &recipient, &mut out)?;
+        let bytes = blobs
+            .get(&entry.pdf_path)
+            .with_context(|| format!("{}: reading the issued PDF to seal", entry.serial))?;
+        seal_blob(&entry.pdf_path, &bytes, &dir, &recipient, &mut out)?;
     }
 
     // THE SIGNED SCANS TOO, and they are the ones that matter most. `sign.rs` says it: "wet ink
@@ -163,32 +174,35 @@ pub fn seal(
     // person in their pack, so losing Paridyum's copy is recoverable from them. A returned scan
     // is the opposite — they signed it and gave it back, and Paridyum holds the only copy.
     //
-    // They were not sealed at all until this: not in the vault, not in the register bundle, and
-    // therefore in nothing that ever left the laptop.
-    let scans = paths.scans_dir(who.person_id.as_str());
-    if let Ok(entries) = fs::read_dir(&scans) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                seal_one(&path, &dir, &recipient, &mut out)?;
-            }
+    // The scans are found through the signature ledger (their `scan_path` key), not a directory
+    // listing, because the blob port has no listing and the ledger is the authoritative record of
+    // which scans exist.
+    for sig in store.signatures()? {
+        if !mine.contains(sig.serial.as_str()) {
+            continue;
+        }
+        if let Some(key) = sig.scan_path.as_deref() {
+            let bytes = blobs
+                .get(key)
+                .with_context(|| format!("{}: reading the scan to seal", sig.serial))?;
+            seal_blob(key, &bytes, &dir, &recipient, &mut out)?;
         }
     }
     Ok(out)
 }
 
-/// Encrypt one file into a person's vault, skipping it if already there.
-fn seal_one(source: &Path, dir: &Path, recipient: &str, out: &mut Sealed) -> Result<()> {
-    let Some(name) = source.file_name().and_then(|n| n.to_str()) else {
-        return Ok(());
-    };
+/// Encrypt one blob's bytes into a person's vault, skipping it if already there.
+///
+/// `key` is the blob key; only its file-name component names the `.age` object, so the vault keeps
+/// the flat shape it always had.
+fn seal_blob(key: &str, plain: &[u8], dir: &Path, recipient: &str, out: &mut Sealed) -> Result<()> {
+    let name = key.rsplit('/').next().unwrap_or(key);
     let target = dir.join(format!("{name}.age"));
     if target.exists() {
         out.skipped += 1;
         return Ok(());
     }
-    let plain = fs::read(source).with_context(|| format!("reading {}", source.display()))?;
-    let sealed = crypt::encrypt(recipient, &plain)?;
+    let sealed = crypt::encrypt(recipient, plain)?;
     fs::write(&target, sealed).with_context(|| format!("writing {}", target.display()))?;
     out.written.push(format!("{name}.age"));
     Ok(())

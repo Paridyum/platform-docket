@@ -26,6 +26,7 @@ use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::path::Path;
 use tool_docket::adapters::auth::{OperatorVerifier, keys_from_jwks};
+use tool_docket::adapters::blobs;
 use tool_docket::adapters::clock::SystemClock;
 use tool_docket::adapters::http::router::Context as RouterContext;
 use tool_docket::adapters::http::server;
@@ -87,15 +88,20 @@ fn main() -> Result<()> {
     let verifier = OperatorVerifier::new(keys, issuer, audience);
     let registry = Registry::load(&Paths::resolve(Path::new(&root)))
         .context("loading registry/ (is DOCKET_ROOT pointing at the repository?)")?;
-    // Blobs (issued PDFs, packs, scans, generated indexes, templates) still live under the root
-    // (design §4); records go through the PgStore. The served instance shares the RECORD of an
-    // issuance immediately; the PDF bytes remain host-local until the blob store is decided (§8).
+    // The served backend's blob store is Garage/S3 (design §11, ADR-0094), the whole reason a
+    // document rendered by `onboard` over the API is now durable across a pod restart: the bytes go to
+    // the bucket, not the ephemeral pod filesystem. Keys are scoped by tenant. The async S3 client is
+    // driven on the same runtime the PgStore uses. `paths` remains for the remaining filesystem
+    // artifacts (generated indexes, templates).
     let paths = Paths::resolve(Path::new(&root));
     let store = PgStore::new(pool, tenant, runtime.handle().clone());
+    let blobs = blobs::open(&paths, &tenant.to_string(), Some(runtime.handle().clone()))
+        .context("opening the blob store (DOCKET_S3_* configured?)")?;
     let clock = SystemClock;
 
     let ctx = RouterContext {
         store: &store,
+        blobs: blobs.as_ref(),
         paths: &paths,
         registry: &registry,
         // The verifier's presence is exactly what permits a routable bind (design §5, server.rs).

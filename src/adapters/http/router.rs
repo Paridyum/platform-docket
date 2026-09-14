@@ -5,6 +5,7 @@
 //! `if` belongs in `application::` — see ANTI-0004 and §2 of the design.
 
 use crate::adapters::auth::OperatorVerifier;
+use crate::adapters::blobs::Blobs;
 use crate::adapters::clock::Clock;
 use crate::adapters::http::dto;
 use crate::adapters::http::operator;
@@ -24,7 +25,12 @@ pub struct Context<'a> {
     /// The record store — Postgres on the served backend, files on the CLI (ADR-0093, the port). The
     /// four sealed chains and the person document reach it through this; blobs still go via `paths`.
     pub store: &'a dyn Store,
-    /// Where the BLOBS live: issued PDFs, packs, scans, generated indexes, templates (design §4).
+    /// The BLOB store — Garage/S3 on the served backend, files on the CLI (design §11, ADR-0094).
+    /// Document BYTES (issued PDFs, packs, scans) reach it through this port; the register records the
+    /// blob KEY. Generated indexes, templates and `.gitignore` reads still go via `paths`.
+    pub blobs: &'a dyn Blobs,
+    /// Where the remaining filesystem artifacts live: packs' output dir, generated indexes, templates
+    /// (design §4). Document bytes moved to `blobs` (§11).
     pub paths: &'a Paths,
     /// The registry, loaded once. Nothing here writes to it (§8).
     pub registry: &'a Registry,
@@ -259,7 +265,7 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
 }
 
 fn check_handler(ctx: &Context<'_>) -> Result<Response> {
-    let findings = check::run(ctx.store, ctx.paths, ctx.registry)?;
+    let findings = check::run(ctx.store, ctx.blobs, ctx.paths, ctx.registry)?;
     Ok(json(&dto::Check::from(&findings)))
 }
 
@@ -429,7 +435,16 @@ fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
         let Some(doc) = by_code.get(code.as_str()) else {
             anyhow::bail!("{code}: declared by a stage but not by documents");
         };
-        let entry = issue::one(ctx.store, ctx.paths, ctx.registry, &person, doc, today, by)?;
+        let entry = issue::one(
+            ctx.store,
+            ctx.blobs,
+            ctx.paths,
+            ctx.registry,
+            &person,
+            doc,
+            today,
+            by,
+        )?;
         issued.push(dto::Document {
             code: entry.code.clone(),
             serial: entry.serial.clone(),
@@ -479,7 +494,7 @@ fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response
 
     let signed = sign::record(
         ctx.store,
-        ctx.paths,
+        ctx.blobs,
         ctx.registry,
         &ask.serial,
         method,

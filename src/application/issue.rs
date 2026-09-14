@@ -1,6 +1,7 @@
 //! Producing a document, allocating its serial and recording it.
 
-use crate::adapters::store::{self, Store};
+use crate::adapters::blobs::Blobs;
+use crate::adapters::store::Store;
 use crate::adapters::{clock, registry::Registry, typeset};
 use crate::config::Paths;
 use crate::domain::definitions::Definitions;
@@ -304,6 +305,7 @@ fn refuse_if_misrouted(person: &Person, document: &Document, signatories: &[Stri
 /// typesetting fails, or the register cannot be written.
 pub fn one(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     person: &Person,
@@ -311,7 +313,9 @@ pub fn one(
     date: time::Date,
     by: &str,
 ) -> Result<Entry> {
-    one_with(store, paths, registry, person, document, date, None, by)
+    one_with(
+        store, blobs, paths, registry, person, document, date, None, by,
+    )
 }
 
 /// Issue one document, with extra definitions only that document needs.
@@ -322,8 +326,13 @@ pub fn one(
 ///
 /// # Errors
 /// As `one`.
+// One over clippy's cap: the record store, the blob store, the paths, the registry, and the four
+// independent facts of one issuance. Each is a distinct collaborator or input, not a field of a
+// missing struct.
+#[allow(clippy::too_many_arguments)]
 pub fn one_with(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     person: &Person,
@@ -426,10 +435,14 @@ pub fn one_with(
 
     let bytes = fs::read(&pdf).with_context(|| format!("reading {}", pdf.display()))?;
     let file_name = format!("{}-{}.pdf", document.code, serial.file_stem());
-    // Named by the PERSON identifier, not the slug: this directory becomes a
-    // cloud folder, and a folder named after a person discloses who Paridyum
-    // engages to anyone who can read the listing (ADR-0051).
-    let stored = store::keep_pdf(paths, who.person_id.as_str(), &file_name, &pdf)?;
+    // The blob KEY, named by the PERSON identifier, not the slug: this prefix becomes a bucket
+    // folder (or a cloud folder on the file store), and a folder named after a person discloses who
+    // Paridyum engages to anyone who can read the listing (ADR-0051). The key is what the register
+    // records as `pdf_path`, and it is frozen the first time it is written (design §11).
+    let stored = format!("issued/{}/{file_name}", who.person_id.as_str());
+    blobs
+        .put(&stored, &bytes)
+        .with_context(|| format!("storing the issued PDF at {stored}"))?;
 
     // Build the entry UNSEALED and hand it to the port: the seal lives behind `append_register`,
     // where the Postgres store makes read-tail-seal-insert one atomic, fork-proof transaction and

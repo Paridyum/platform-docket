@@ -1,5 +1,6 @@
 //! Validating the registries, the templates and the register.
 
+use crate::adapters::blobs::Blobs;
 use crate::adapters::registry::Registry;
 use crate::adapters::store::Store;
 use crate::config::Paths;
@@ -142,7 +143,12 @@ fn vault(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Result<(
 /// Fails only when a file cannot be read; a check that FINDS a problem
 /// reports it in `Findings` rather than returning an error, so one bad
 /// document does not hide the rest.
-pub fn run(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<Findings> {
+pub fn run(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    registry: &Registry,
+) -> Result<Findings> {
     let mut items: Vec<Finding> = Vec::new();
     let by_code = registry.lifecycle.by_code()?;
 
@@ -154,7 +160,7 @@ pub fn run(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<Find
     catalogue(&mut items, registry);
     communications(&mut items, registry)?;
     people(&mut items, store, paths, registry)?;
-    let entries = register(&mut items, store, paths)?;
+    let entries = register(&mut items, store, blobs)?;
     archive_index(&mut items, store, paths, registry)?;
     team_export(&mut items, paths)?;
     vault(&mut items, store, paths)?;
@@ -586,15 +592,18 @@ fn class_templates_are_not_ignored(
 }
 
 /// The chain is unbroken and every issued PDF still matches its hash.
-fn register(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Result<usize> {
+fn register(items: &mut Vec<Finding>, store: &dyn Store, blobs: &dyn Blobs) -> Result<usize> {
     let entries = store.register()?;
     for fault in verify_chain(&entries)? {
         err(items, fault.to_string());
     }
     for e in &entries {
-        let pdf = paths.store.join(&e.pdf_path);
-        if pdf.exists() {
-            let bytes = fs::read(&pdf).with_context(|| format!("reading {}", pdf.display()))?;
+        // The stored bytes are read back through the blob port (design §11) and re-hashed: the
+        // seal-preservation invariant, checked rather than assumed, against files or Garage alike.
+        if blobs.exists(&e.pdf_path)? {
+            let bytes = blobs
+                .get(&e.pdf_path)
+                .with_context(|| format!("{}: reading the stored PDF", e.serial))?;
             if sha256(&bytes) != e.pdf_sha256 {
                 err(
                     items,

@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::registry::Registry;
 use tool_docket::adapters::store::{self, FileStore};
@@ -380,8 +381,15 @@ fn erasure_deletes_the_record_but_keeps_the_identifier() {
     )
     .expect("records");
 
-    let erased = personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "t", date(), "rohan")
-        .expect("erases");
+    let erased = personnel::erase(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        "t",
+        date(),
+        "rohan",
+    )
+    .expect("erases");
     assert_eq!(erased.standing, Standing::Erased);
     assert_eq!(
         erased.person_id, created.person_id,
@@ -419,7 +427,15 @@ fn an_erased_identifier_is_never_reissued() {
         "rohan",
     )
     .expect("creates");
-    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        "a",
+        date(),
+        "rohan",
+    )
+    .expect("erases");
     let next = personnel::create(
         &FileStore::new(&sb.paths),
         &sb.paths,
@@ -475,9 +491,23 @@ fn every_chain_still_verifies_after_an_erasure() {
         date(),
     )
     .expect("records");
-    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        "a",
+        date(),
+        "rohan",
+    )
+    .expect("erases");
 
-    let findings = check::run(&FileStore::new(&sb.paths), &sb.paths, &reg).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &reg,
+    )
+    .expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -504,7 +534,15 @@ fn an_erased_person_stays_on_the_roster_as_a_tombstone() {
         "rohan",
     )
     .expect("creates");
-    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        "a",
+        date(),
+        "rohan",
+    )
+    .expect("erases");
 
     let lines = roster::build(&FileStore::new(&sb.paths), &reg).expect("roster");
     assert_eq!(lines.len(), 1);
@@ -527,7 +565,13 @@ fn a_record_created_by_hand_is_reported_rather_than_trusted() {
         sb.paths.person("smuggled"),
     )
     .expect("copy");
-    let findings = check::run(&FileStore::new(&sb.paths), &sb.paths, &reg).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &reg,
+    )
+    .expect("check runs");
     assert!(
         findings
             .items
@@ -773,7 +817,13 @@ fn the_checked_in_catalogue_is_internally_consistent() {
     // Empty store: repository validity must not depend on gitignored records.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&paths),
+        &FileBlobs::new(&paths),
+        &paths,
+        &registry(),
+    )
+    .expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -826,6 +876,7 @@ fn the_pack_groups_documents_by_what_must_be_done_with_them() {
         let doc = by_code.get(code).expect("declared");
         tool_docket::application::issue::one(
             &FileStore::new(&sb.paths),
+            &FileBlobs::new(&sb.paths),
             &sb.paths,
             &reg,
             &person,
@@ -884,6 +935,7 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
         .expect("declared");
     tool_docket::application::issue::one(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -897,6 +949,7 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
     let out = sb.dir.path().join("out");
     let p = tool_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         "t",
@@ -946,6 +999,7 @@ fn packing_a_person_with_nothing_issued_is_refused() {
     let out = sb.dir.path().join("out");
     let err = tool_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         "t",
@@ -988,6 +1042,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
         .expect("declared");
     tool_docket::application::issue::one(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -1000,6 +1055,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
     let out = sb.dir.path().join("out");
     let first = tool_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         "t",
@@ -1014,6 +1070,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
 
     let again = tool_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         "t",
@@ -1329,7 +1386,15 @@ fn next_says_nothing_remains_for_an_erased_person() {
         "rohan",
     )
     .expect("creates");
-    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "t", date(), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        "t",
+        date(),
+        "rohan",
+    )
+    .expect("erases");
     let steps = tool_docket::application::next::steps(
         &FileStore::new(&sb.paths),
         &sb.paths,

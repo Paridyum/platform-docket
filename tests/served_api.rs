@@ -13,6 +13,7 @@ use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use tool_docket::adapters::auth::OperatorVerifier;
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::{FixedClock, parse_iso};
 use tool_docket::adapters::http::request;
 use tool_docket::adapters::http::router::{self, Context};
@@ -101,8 +102,10 @@ fn an_operator_creates_and_lists_a_person_through_the_real_router() {
         .expect("seed tenant");
 
     let store = PgStore::new(pool, tenant, runtime.handle().clone());
+    let blobs = FileBlobs::new(&paths);
     let ctx = Context {
         store: &store,
+        blobs: &blobs,
         paths: &paths,
         registry: &registry,
         verifier: Some(&verifier),

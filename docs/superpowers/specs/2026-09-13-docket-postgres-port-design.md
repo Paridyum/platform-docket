@@ -283,8 +283,49 @@ Each step compiles, tests green, and is useful or safe on its own.
 | CLI/served parity | the same enrolment answers produce the same record whether written by CLI or over HTTP |
 | Erase | the event chain verifies from the new genesis; the identifier tombstone survives |
 
-## 10. Out of scope
+## 10. Out of scope (at the time this was written)
 
-The blob/document store (S3 vs Sync vs filesystem — ADR-0068 §6), the console's
-own OIDC design (step 6, its own document), the Helm chart and CI (step 7), and
-any tenant-facing use (C-0008 makes that a product, not this internal platform).
+The console's own OIDC design (step 6, its own document), the Helm chart and CI
+(step 7), and any tenant-facing use (C-0008 makes that a product, not this
+internal platform). The blob/document store was open here (ADR-0068 §6); it has
+since been decided — see §11.
+
+## 11. The blob port (added 2026-09-14 — ADR-0094 decided the store)
+
+§4 moved *records* to Postgres and deliberately left *blobs* — issued PDFs, packs,
+signed scans, the generated index/manifest — on `Paths`/`fs::`. That was correct
+as an interim, but it has a sharp edge once docket is **served**: a served pod's
+filesystem is ephemeral, so a document rendered by `onboard` over the API is lost
+when the pod restarts. ADR-0094 chose the destination (Garage, in-cluster S3), so
+the interim ends here.
+
+**A second port, exactly parallel to the `Store` port.** A synchronous `Blobs`
+trait — `put(key, bytes) -> ()`, `get(key) -> bytes`, `exists(key) -> bool`,
+`delete(key)` (for erase) — with two implementations: `FileBlobs` (the current
+`fs::` behaviour behind `Paths`, for the CLI's offline/break-glass path) and
+`S3Blobs` (Garage, via the same `reqwest`/rustls already present, or an S3 client
+that stays inside ADR-0005; driven by the shared runtime with `block_on` like
+`PgStore`). Selected the same way the store is: an S3 endpoint configured (the
+`docket-s3` secret: endpoint/bucket/key) → `S3Blobs`; else `FileBlobs`.
+
+**What moves onto it, and what does not.** The record that a document was issued —
+its serial, digest, path — stays in the register chain (Postgres) untouched; the
+port only moves the **bytes**. `store::keep_pdf` and the read-back of an issued PDF
+go through `Blobs`; `application::pack` assembles into it; `sign --scan` uploads a
+scan through it; `application::vault` seals against it. The `pdf_path` recorded in
+the register becomes the blob **key** (stable, opaque) rather than a filesystem
+path — and because that key is inside an already-sealed chain entry, the key
+scheme is frozen the first time it is written (a later reshuffle would orphan every
+historical reference), exactly the discipline the register already imposes.
+
+**Invariants.** A document's bytes verify against the register's stored
+`pdf_sha256` after a round trip through the blob store (the blob analogue of the
+seal-preservation gate — proven by test, not assumed). Erase deletes the blob as
+well as destroying the key (ADR-0069), so `Blobs::delete` is real, not a tombstone.
+Blob reads/writes are tenant-scoped by key prefix (the tenant/person-id path already
+in `pdf_path`), so one tenant's bucket keys never collide with another's.
+
+**Sequencing.** `keep_pdf` + issued-PDF read first (that is what makes served
+`onboard` durable, the whole reason this is not deferred further); then pack, then
+scans, then vault; erase's blob delete last, with the reseal (§6). Each step keeps
+the CLI green on `FileBlobs` and adds `S3Blobs` behind the same trait.

@@ -1,8 +1,8 @@
 //! Recording that an issued document came back executed.
 
+use crate::adapters::blobs::Blobs;
 use crate::adapters::store::Store;
 use crate::adapters::{clock, registry::Registry};
-use crate::config::Paths;
 use crate::domain::chain::sha256;
 use crate::domain::event::Kind;
 use crate::domain::register::Entry;
@@ -39,7 +39,7 @@ pub struct Signed {
 #[allow(clippy::too_many_arguments)]
 pub fn record(
     store: &dyn Store,
-    paths: &Paths,
+    blobs: &dyn Blobs,
     registry: &Registry,
     serial: &str,
     method: Method,
@@ -90,16 +90,18 @@ pub fn record(
             }
             let bytes = fs::read(src).with_context(|| format!("reading {}", src.display()))?;
             let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("pdf");
-            let dir = paths.scans_dir(entry.person_id.as_str());
-            fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-            let dest = dir.join(format!("{}-signed.{ext}", serial.replace('/', "-")));
-            fs::copy(src, &dest).with_context(|| format!("copying to {}", dest.display()))?;
-            let rel = dest
-                .strip_prefix(&paths.store)
-                .unwrap_or(&dest)
-                .to_string_lossy()
-                .into_owned();
-            (Some(sha256(&bytes)), Some(rel))
+            // The scan goes through the blob port (design §11): its KEY, scoped by the person id, is
+            // what the signature record stores as `scan_path`. The scan is the evidence a wet-ink
+            // signature leaves, so it must be as durable as the register that names it.
+            let key = format!(
+                "scans/{}/{}-signed.{ext}",
+                entry.person_id.as_str(),
+                serial.replace('/', "-")
+            );
+            blobs
+                .put(&key, &bytes)
+                .with_context(|| format!("storing the scan at {key}"))?;
+            (Some(sha256(&bytes)), Some(key))
         }
         None => (None, None),
     };

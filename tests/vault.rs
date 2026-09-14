@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::store::{self, FileStore};
 use tool_docket::adapters::{crypt, registry::Registry};
@@ -105,6 +106,7 @@ impl Sandbox {
             .expect("NDO is declared");
         issue::one(
             &FileStore::new(&self.paths),
+            &FileBlobs::new(&self.paths),
             &self.paths,
             &reg,
             &person,
@@ -129,6 +131,7 @@ fn sealing_is_idempotent() {
 
     let first = vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "seal-twice",
         None,
@@ -140,6 +143,7 @@ fn sealing_is_idempotent() {
 
     let second = vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "seal-twice",
         None,
@@ -159,6 +163,7 @@ fn a_sealed_document_is_ciphertext_and_opens_back_to_the_original() {
     let who = sb.with_document("round-trip");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "round-trip",
         None,
@@ -218,6 +223,7 @@ fn erasure_destroys_the_vault_and_leaves_a_tombstone() {
     let who = sb.with_document("to-erase");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "to-erase",
         None,
@@ -236,6 +242,7 @@ fn erasure_destroys_the_vault_and_leaves_a_tombstone() {
 
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "to-erase",
         d("2026-09-07"),
@@ -290,6 +297,7 @@ fn an_erased_persons_document_still_verifies_from_their_own_copy() {
 
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "still-provable",
         None,
@@ -298,6 +306,7 @@ fn an_erased_persons_document_still_verifies_from_their_own_copy() {
     .expect("seals");
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "still-provable",
         d("2026-09-07"),
@@ -306,8 +315,13 @@ fn an_erased_persons_document_still_verifies_from_their_own_copy() {
     .expect("erases");
 
     let register = store::register(&sb.paths).expect("the register survives erasure");
-    let outcome = verify::verify(&sb.paths, &register, &entry.serial, Some(&theirs))
-        .expect("verification runs");
+    let outcome = verify::verify(
+        &FileBlobs::new(&sb.paths),
+        &register,
+        &entry.serial,
+        Some(&theirs),
+    )
+    .expect("verification runs");
     assert!(
         outcome.matches(),
         "an erased person can still prove what they were issued"
@@ -325,6 +339,7 @@ fn opening_a_shredded_vault_says_why_rather_than_failing_to_decrypt() {
     sb.with_document("shredded");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "shredded",
         None,
@@ -333,6 +348,7 @@ fn opening_a_shredded_vault_says_why_rather_than_failing_to_decrypt() {
     .expect("seals");
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "shredded",
         d("2026-09-07"),
@@ -444,6 +460,7 @@ fn the_backup_never_carries_the_keystore() {
     sb.with_document("no-keys");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "no-keys",
         None,
@@ -498,7 +515,7 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
     std::fs::write(&scan, b"a scanned signed copy").expect("scan written");
     sign::record(
         &FileStore::new(&sb.paths),
-        &sb.paths,
+        &FileBlobs::new(&sb.paths),
         &registry(),
         &entry.serial,
         Method::WetInk,
@@ -521,6 +538,7 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
 
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "with-scan",
         None,
@@ -536,6 +554,7 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
 
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "with-scan",
         d("2026-09-07"),
@@ -569,6 +588,7 @@ fn never_sealed_is_not_mistaken_for_shredded() {
 
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "not-yet",
         None,
@@ -583,6 +603,7 @@ fn never_sealed_is_not_mistaken_for_shredded() {
 
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "not-yet",
         d("2026-09-07"),
@@ -609,6 +630,7 @@ fn an_escrow_inside_the_store_is_refused() {
     sb.with_document("escrowed");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "escrowed",
         None,
@@ -651,6 +673,7 @@ fn a_shredding_after_an_escrow_is_reported_as_incomplete() {
     sb.with_document("shred-after-escrow");
     vault::seal(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "shred-after-escrow",
         None,
@@ -659,6 +682,7 @@ fn a_shredding_after_an_escrow_is_reported_as_incomplete() {
     .expect("seals");
     personnel::erase(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         "shred-after-escrow",
         d("2026-09-07"),

@@ -4,6 +4,73 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-14 (later still again) — the blob port: document bytes move to Garage (ADR-0094, design §11)
+
+The `Store` port moved docket's *records* to Postgres and deliberately left the *bytes* — issued PDFs,
+packs, signed scans, the plaintext a vault seals — on the filesystem. That was the right interim, but
+it has a sharp edge now that docket is served: a served pod's filesystem is ephemeral, so a document
+rendered by `onboard` over the API is lost when the pod restarts. ADR-0094 chose the destination
+(Garage, in-cluster S3), so this entry ends the interim with a **second port, exactly parallel to the
+record port**.
+
+**The `Blobs` trait** (`adapters::blobs`): synchronous `put(key,bytes)`, `get(key)->bytes`,
+`exists(key)->bool`, `delete(key)`, `Sync` supertrait so a `&dyn Blobs` is shared across the served
+backend's per-request threads. Two impls. `FileBlobs` is the behaviour docket always had, now behind
+the port: a key maps to `store/<key>`, so `store::keep_pdf`'s filesystem logic moved here (and was
+deleted from `store.rs`) and every historical `pdf_path` still resolves — the CLI's offline/break-glass
+path is unchanged, proven by the existing suite. `S3Blobs` is Garage, selected the same way the store
+is: `DOCKET_S3_ENDPOINT` + `DOCKET_S3_BUCKET` present → `S3Blobs`, else `FileBlobs`. Keys are prefixed
+with the tenant id before they reach the bucket (the tenant-scoping invariant), and that prefix is an
+addressing detail of the S3 layer — it is NOT part of the `pdf_path` recorded in the register, so
+already-sealed keys are untouched.
+
+**The S3 client stays inside ADR-0005.** `rusty-s3` (BSD-2-Clause) is a pure `SigV4` signer with no HTTP
+or TLS of its own — it produces a presigned URL, and the crate's existing `reqwest` (rustls) sends it.
+No openssl, no second TLS stack. The signer is async only in that reqwest is, so — like `PgStore` —
+`S3Blobs` drives each request to completion on the shared tokio runtime with `block_on`; the callers
+are blocking threads (thread-per-request server, synchronous CLI), never inside the runtime, so this is
+the sanctioned bridge, not a nested-runtime hazard. `cargo deny check licenses` passed with NO change to
+`deny.toml`: rusty-s3 and its new transitive deps (jiff `Unlicense OR MIT`, instant-xml, md-5, zeroize,
+hmac) all resolve to licences already on the allow list, unlike `webpki-roots` earlier which needed one
+added. Recorded here rather than left implicit.
+
+**Threaded in the order §11 sets, each step keeping the suite green.** `keep_pdf` + the issued-PDF
+read-back first (that is what makes served `onboard` durable, the whole reason this is not deferred
+again): the issuer computes the key `issued/<person_id>/<file>` and `Blobs::put`s the bytes; the key is
+what the register records as `pdf_path`, frozen the first time it is written. Then `application::pack`
+(assembles the pack by `Blobs::get`ting each entry's bytes rather than `fs::copy`ing a path). Then
+`sign --scan` (the scan uploads via `Blobs::put` under `scans/<person_id>/…`, and that key is the
+signature record's `scan_path`). Then `application::vault` seal (reads the plaintext to encrypt through
+`Blobs::get`, finding scans through the signature ledger's `scan_path` because the port has no listing).
+Then erase's blob `delete`, alongside the reseal (§6): it deletes each `pdf_path` and `scan_path` for
+the person through the port — `Blobs::delete` is a real, idempotent delete, not a tombstone (ADR-0069) —
+then tidies the now-empty local dirs. `verify` and `check` also read the stored bytes back through the
+port, so the served backend's `verify`/`check` are durable too. The register chain is untouched
+throughout: serial and digest stay in Postgres; only the bytes moved.
+
+**Wired at both entry points.** `main::run` builds the blob store once (sharing the Pg runtime when
+there is one, else building a runtime kept alive for the command) and threads `&dyn Blobs` through
+`dispatch` → `route`/`route_person` → each handler; `bin/serve` and the loopback `docket serve` build it
+into the `router::Context`, so the served backend runs on `S3Blobs` and the CLI on `FileBlobs` unless
+S3 is configured.
+
+**Invariants proven by test, not assumed.** `adapters::blobs` unit tests: a document's bytes verify
+against the recorded SHA-256 after a round trip through **both** `FileBlobs` and `S3Blobs` (the blob
+analogue of seal-preservation); `Blobs::delete` actually removes the object and is idempotent; and the
+S3 object lands under the tenant-scoped path `/<bucket>/<tenant>/<key>`, proving prefix scoping. The
+S3 test runs against a minimal in-memory S3 over a real `TcpListener` — no Garage required for
+`cargo test`, exactly as instructed (Garage is in-cluster and not reachable from here).
+
+**Deferred, deliberately.** Migrating already-issued filesystem PDFs into Garage is a one-time DATA
+move, not a code change (D-65). Sealed vault `.age` objects and per-person keys stay on `Paths` for now
+— the key must be locally destroyable for `shred` to be real erasure (D-66).
+
+**Skills and tools used.** Reading ADR-0094, design §11 and the whole `store.rs`/`pg.rs` port pattern
+before writing a line (governance precedes implementation); mirroring `PgStore`'s `block_on`-on-a-shared-
+runtime bridge rather than inventing one; `cargo deny check licenses` before assuming the new dep was
+free; the compiler as the guide through the caller signatures; an in-memory `TcpListener` mock so the
+gate needs no Garage; `scripts/gates.sh` as the single un-piped gate.
+
 ## 2026-09-14 — the deployment surface for the served backend (ADR-0093 §3)
 
 ADR-0093 makes docket a served, staff-authenticated platform and reclassifies it: the served

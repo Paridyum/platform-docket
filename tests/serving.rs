@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::{FixedClock, parse_iso};
 use tool_docket::adapters::http::request;
 use tool_docket::adapters::http::router::{self, Context};
@@ -67,8 +68,10 @@ fn call(sandbox: &Sandbox, registry: &Registry, raw: &str) -> (u16, serde_json::
     // header (no verifier) — the loopback/break-glass auth path. The token path is covered by the
     // operator-verifier unit tests and tests/served_api.rs.
     let store = FileStore::new(&sandbox.paths);
+    let blobs = FileBlobs::new(&sandbox.paths);
     let ctx = Context {
         store: &store,
+        blobs: &blobs,
         paths: &sandbox.paths,
         registry,
         verifier: None,
@@ -275,9 +278,13 @@ fn check_reports_the_same_findings_the_cli_would() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let expected =
-        tool_docket::application::check::run(&FileStore::new(&sandbox.paths), &sandbox.paths, &reg)
-            .expect("check");
+    let expected = tool_docket::application::check::run(
+        &FileStore::new(&sandbox.paths),
+        &FileBlobs::new(&sandbox.paths),
+        &sandbox.paths,
+        &reg,
+    )
+    .expect("check");
     let (status, body) = get(&sandbox, &reg, "/api/check");
     assert_eq!(status, 200);
     assert_eq!(body["errors"], expected.errors());

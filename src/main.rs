@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use tool_docket::adapters::api::{
     self, AdvanceRequest, ApiClient, EnrolRequest, PostOutcome, SignRequest,
 };
+use tool_docket::adapters::blobs::{self, Blobs};
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
 use tool_docket::adapters::console;
 use tool_docket::adapters::http;
@@ -425,6 +426,29 @@ fn run() -> Result<ExitCode> {
     // stderr which one, so an operator knows whether they are hitting the cluster.
     let backend = open_backend(&paths)?;
 
+    // The blob store, chosen the same way the record store is (design §11): Garage/S3 when the
+    // DOCKET_S3_* config is present, the filesystem under `store/` otherwise. The async S3 client is
+    // driven on a tokio runtime — the Postgres backend's when there is one, else a runtime built here
+    // and kept alive for the whole command (like `open_backend` keeps the Pg runtime). Keys are
+    // scoped by the tenant when one is set (the break-glass client); unscoped offline.
+    let blob_tenant = std::env::var("DOCKET_TENANT_ID").ok().unwrap_or_default();
+    // Bound for the whole command: the runtime must outlive the blob store that drives the S3 client
+    // on it, so it drops last (declared before `blobs`, dropped after it).
+    let blob_runtime = if blobs::s3_configured() && backend.runtime_handle().is_none() {
+        Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .context("building the tokio runtime for the S3 blob store")?,
+        )
+    } else {
+        None
+    };
+    let blob_handle = backend
+        .runtime_handle()
+        .or_else(|| blob_runtime.as_ref().map(|r| r.handle().clone()));
+    let blobs = blobs::open(&paths, &blob_tenant, blob_handle)?;
+
     // `--tui` wins, with or without a subcommand. It writes nothing, so it needs
     // no operator, but it reads through the same store as everything else.
     if cli.tui {
@@ -442,6 +466,7 @@ fn run() -> Result<ExitCode> {
     dispatch(
         command,
         &backend,
+        blobs.as_ref(),
         &paths,
         &registry,
         operator.as_deref(),
@@ -782,6 +807,17 @@ impl Backend<'_> {
     const fn is_pg(&self) -> bool {
         matches!(self, Backend::Pg { .. })
     }
+
+    /// A handle onto this backend's runtime, when it has one (Postgres). The blob store's async S3
+    /// client is driven on it, sharing the one runtime the command already owns.
+    fn runtime_handle(&self) -> Option<tokio::runtime::Handle> {
+        match self {
+            Backend::Pg {
+                _runtime: runtime, ..
+            } => Some(runtime.handle().clone()),
+            Backend::File(_) => None,
+        }
+    }
 }
 
 /// Build the store the whole command shares, choosing the backend by environment.
@@ -942,6 +978,7 @@ fn writes(command: &Command) -> bool {
 fn dispatch(
     command: Command,
     backend: &Backend<'_>,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
@@ -971,6 +1008,7 @@ fn dispatch(
     route(
         command,
         backend.as_store(),
+        blobs,
         paths,
         registry,
         operator,
@@ -984,6 +1022,7 @@ fn dispatch(
 fn route(
     command: Command,
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
@@ -994,6 +1033,7 @@ fn route(
         Command::Status { slug } => cmd_status(store, registry, &slug, company),
         Command::Onboard { slug, date, force } => cmd_onboard(
             store,
+            blobs,
             paths,
             registry,
             &slug,
@@ -1009,6 +1049,7 @@ fn route(
             force,
         } => cmd_issue(
             store,
+            blobs,
             paths,
             registry,
             &slug,
@@ -1018,8 +1059,8 @@ fn route(
             operator,
         ),
         Command::Render { slug, code } => cmd_render(store, paths, registry, &slug, &code),
-        Command::Verify { serial, file } => cmd_verify(store, paths, &serial, file.as_deref()),
-        Command::Check => cmd_check(store, paths, registry),
+        Command::Verify { serial, file } => cmd_verify(store, blobs, &serial, file.as_deref()),
+        Command::Check => cmd_check(store, blobs, paths, registry),
         Command::Sign {
             serial,
             method,
@@ -1029,7 +1070,7 @@ fn route(
             r#for: _,
         } => cmd_sign(
             store,
-            paths,
+            blobs,
             registry,
             &serial,
             &method,
@@ -1049,6 +1090,7 @@ fn route(
         ),
         Command::Pack { slug, out, date } => cmd_pack(
             store,
+            blobs,
             paths,
             registry,
             &slug,
@@ -1063,10 +1105,10 @@ fn route(
         Command::Index => cmd_index(store, paths, registry),
         Command::Team => cmd_team(paths, registry),
         Command::Addresses { slug } => cmd_addresses(store, &slug, company),
-        Command::Vault { what } => cmd_vault(store, paths, &what),
+        Command::Vault { what } => cmd_vault(store, blobs, paths, &what),
         Command::Store { what } => cmd_store(paths, &what),
         Command::Retention { date } => cmd_retention(store, registry, date.as_deref()),
-        other => route_person(other, store, paths, registry, operator, company),
+        other => route_person(other, store, blobs, paths, registry, operator, company),
     }
 }
 
@@ -1079,6 +1121,7 @@ fn route(
 fn route_person(
     command: Command,
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
@@ -1111,7 +1154,7 @@ fn route_person(
             operator,
         ),
         Command::Record { slug } => cmd_record(store, registry, &slug, company),
-        Command::Serve { port } => cmd_serve(store, paths, registry, port),
+        Command::Serve { port } => cmd_serve(store, blobs, paths, registry, port),
         Command::Roster { standing } => cmd_roster(store, registry, standing.as_deref()),
         Command::Event {
             slug,
@@ -1131,7 +1174,15 @@ fn route_person(
             slug,
             confirm,
             date,
-        } => cmd_erase(store, paths, &slug, confirm, date.as_deref(), operator),
+        } => cmd_erase(
+            store,
+            blobs,
+            paths,
+            &slug,
+            confirm,
+            date.as_deref(),
+            operator,
+        ),
         // `route` handles every other variant and delegates here; a command
         // reaching this arm means the split above lost one.
         other => unreachable_command(&other),
@@ -1266,8 +1317,12 @@ fn report_refusals(refusals: &[String], slug: &str) {
     );
 }
 
+// One over clippy's cap now that the blob store is threaded (design §11): each argument is a
+// distinct collaborator or a field clap parsed from the command.
+#[allow(clippy::too_many_arguments)]
 fn cmd_onboard(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -1313,7 +1368,7 @@ fn cmd_onboard(
         let Some(doc) = by_code.get(code.as_str()) else {
             bail!("{code}: declared by a stage but not by documents");
         };
-        let entry = issue::one(store, paths, registry, &person, doc, when, by)?;
+        let entry = issue::one(store, blobs, paths, registry, &person, doc, when, by)?;
         println!("  {code}  {:<22} {}", entry.serial, entry.pdf_path);
     }
     println!(
@@ -1324,8 +1379,10 @@ fn cmd_onboard(
     Ok(ExitCode::SUCCESS)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_issue(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -1355,6 +1412,7 @@ fn cmd_issue(
     }
     let entry = issue::one(
         store,
+        blobs,
         paths,
         registry,
         &person,
@@ -1406,12 +1464,12 @@ fn cmd_render(
 
 fn cmd_verify(
     store: &dyn Store,
-    paths: &Paths,
+    blobs: &dyn Blobs,
     serial: &str,
     file: Option<&Path>,
 ) -> Result<ExitCode> {
     let register = store.register()?;
-    let outcome = verify::verify(paths, &register, serial, file)?;
+    let outcome = verify::verify(blobs, &register, serial, file)?;
     println!("serial     {}", outcome.serial);
     println!("document   {}", outcome.title);
     println!("issued_on  {}", outcome.issued_on);
@@ -1436,7 +1494,7 @@ fn cmd_verify(
 #[allow(clippy::too_many_arguments)]
 fn cmd_sign(
     store: &dyn Store,
-    paths: &Paths,
+    blobs: &dyn Blobs,
     registry: &Registry,
     serial: &str,
     method: &str,
@@ -1453,7 +1511,7 @@ fn cmd_sign(
     };
     let s = sign::record(
         store,
-        paths,
+        blobs,
         registry,
         serial,
         Method::parse(method)?,
@@ -1511,8 +1569,10 @@ fn cmd_advance(
     Ok(ExitCode::from(2))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_pack(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -1525,6 +1585,7 @@ fn cmd_pack(
     let target = out.map_or_else(|| pack::default_out(paths), Path::to_path_buf);
     let p = pack::assemble(
         store,
+        blobs,
         paths,
         registry,
         slug,
@@ -1817,7 +1878,12 @@ fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
     }
 }
 
-fn cmd_vault(store: &dyn Store, paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
+fn cmd_vault(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    what: &VaultCmd,
+) -> Result<ExitCode> {
     match what {
         VaultCmd::Seal { slug } => {
             // Resolved here, at the one place that knows a key is needed, rather than deep
@@ -1825,7 +1891,7 @@ fn cmd_vault(store: &dyn Store, paths: &Paths, what: &VaultCmd) -> Result<ExitCo
             let estate = tool_docket::adapters::crypt::estate_identity()?;
             // `vault seal` has no company of its own: it seals everything issued to a
             // PERSON, and a person is one archive across companies (ADR-0077 D2).
-            let out = vault::seal(store, paths, slug, None, &estate)?;
+            let out = vault::seal(store, blobs, paths, slug, None, &estate)?;
             for name in &out.written {
                 println!("  sealed   {name}");
             }
@@ -1963,8 +2029,13 @@ fn cmd_retention(store: &dyn Store, registry: &Registry, date: Option<&str>) -> 
     Ok(ExitCode::from(1))
 }
 
-fn cmd_check(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<ExitCode> {
-    let findings = check::run(store, paths, registry)?;
+fn cmd_check(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    registry: &Registry,
+) -> Result<ExitCode> {
+    let findings = check::run(store, blobs, paths, registry)?;
     for f in &findings.items {
         if f.blocking {
             eprintln!("ERROR  {}", f.message);
@@ -2243,6 +2314,7 @@ fn cmd_separate(
 
 fn cmd_erase(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     slug: &str,
     confirm: bool,
@@ -2263,7 +2335,7 @@ fn cmd_erase(
         .person(slug)
         .ok()
         .and_then(|p| p.string("access.cloud_folder").map(ToOwned::to_owned));
-    let record = personnel::erase(store, paths, slug, resolve_date(date)?, by)?;
+    let record = personnel::erase(store, blobs, paths, slug, resolve_date(date)?, by)?;
     println!(
         "{} erased on {}",
         record.person_id, record.standing_changed_on
@@ -2283,10 +2355,17 @@ fn cmd_erase(
 /// the authentication and the operating system is the identity (ADR-0054). The routable, token-
 /// authenticated backend is `bin/serve` (ADR-0093). Writes are attributed from the `X-Docket-Operator`
 /// header here because there is no verifier to bind a token to (design §5).
-fn cmd_serve(store: &dyn Store, paths: &Paths, registry: &Registry, port: u16) -> Result<ExitCode> {
+fn cmd_serve(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    registry: &Registry,
+    port: u16,
+) -> Result<ExitCode> {
     let clock = SystemClock;
     let ctx = http::router::Context {
         store,
+        blobs,
         paths,
         registry,
         verifier: None,

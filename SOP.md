@@ -803,6 +803,15 @@ RUN-0004 — never read from a file here).
     DOCKET_BIND           listen address (default 0.0.0.0:8080)
     DOCKET_ROOT           where registry/ lives (default: the current directory)
 
+    # The blob store — Garage/S3 (ADR-0094, design §11). REQUIRED for the served backend so document
+    # bytes survive a pod restart; matches the `docket-s3` secret's keys. Absent → filesystem (the
+    # pod's ephemeral disk, which is exactly what this exists to stop relying on).
+    DOCKET_S3_ENDPOINT          the Garage S3 endpoint URL (presence selects S3 over files)
+    DOCKET_S3_BUCKET            the bucket holding docket's documents
+    DOCKET_S3_ACCESS_KEY_ID     the access key id
+    DOCKET_S3_SECRET_ACCESS_KEY the secret access key
+    DOCKET_S3_REGION            the region name (default: garage)
+
     cargo run --bin serve      # or the built `serve` binary in the deploy image
 
 It fetches the control-plane JWKS once at startup (off the request path), opens the Postgres pool,
@@ -831,12 +840,19 @@ curl -H 'Authorization: Bearer <operator-token>' http://<host>:8080/api/roster
 Reads and writes, refusal semantics (409 is a refusal, not a failure), and the contract are identical
 to the loopback task above — it is the same router.
 
+**The blob store makes served issuance durable (ADR-0094, design §11).** With `DOCKET_S3_*` set, a
+document rendered by `onboard`/`issue` over the API is written to Garage, not the pod's ephemeral disk,
+so it survives a restart; `verify`, `pack` and `check` read those bytes back through the same port. The
+register records the blob KEY (`pdf_path`), unchanged. Keys are scoped by the tenant prefix in the
+bucket, so tenants never collide. If `DOCKET_S3_*` is unset the backend falls back to the filesystem —
+acceptable only for a throwaway/dev instance, never for one holding documents that must persist.
+
 **Known limits, recorded as debt:** erasing on the Postgres store is not yet possible — it needs a
 cross-repo migration 0007 (D-60), so honour an erasure through the break-glass CLI on the file store;
 `advance` (stage change) still edits the person body on disk, so it is not yet wired for the served
-Postgres path (D-62); and issued PDF bytes stay on the host that rendered them until the blob store is
-decided — the served backend shares the register RECORD of an issuance immediately, not the file
-(design §8).
+Postgres path (D-62); documents issued BEFORE the Garage cutover still live on their issuing host and
+need a one-time data copy into the bucket (D-65); and sealed vault `.age` objects/keys stay on the
+filesystem for now (D-66).
 
 **The integration test that proves it:** `tests/served_api.rs`, run with `DOCKET_DATABASE_URL` set —
 a signed operator token creating a person and reading the roster back through the real router, plus the

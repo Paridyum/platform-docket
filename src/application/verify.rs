@@ -1,6 +1,6 @@
 //! Checking that a PDF is the document a serial was issued for.
 
-use crate::config::Paths;
+use crate::adapters::blobs::Blobs;
 use crate::domain::register::{Entry, sha256};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -43,7 +43,7 @@ impl Outcome {
 /// # Errors
 /// Fails if the serial is not registered or the file cannot be read.
 pub fn verify(
-    paths: &Paths,
+    blobs: &dyn Blobs,
     register: &[Entry],
     serial: &str,
     file: Option<&Path>,
@@ -51,11 +51,24 @@ pub fn verify(
     let Some(entry) = register.iter().find(|e| e.serial == serial) else {
         bail!("{serial} is not in the register");
     };
-    let path = file.map_or_else(|| paths.store.join(&entry.pdf_path), Path::to_path_buf);
-    if !path.exists() {
-        bail!("no such file: {}", path.display());
-    }
-    let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    // A file presented by the person is read from disk; otherwise the stored copy is read back
+    // through the blob port (design §11), so `verify` works against the served backend's Garage
+    // store the same as against local files. The reported `path` is the file, or the blob key.
+    let (bytes, path) = if let Some(f) = file {
+        if !f.exists() {
+            bail!("no such file: {}", f.display());
+        }
+        let bytes = fs::read(f).with_context(|| format!("reading {}", f.display()))?;
+        (bytes, f.to_path_buf())
+    } else {
+        if !blobs.exists(&entry.pdf_path)? {
+            bail!("no stored copy of {serial} in the blob store");
+        }
+        let bytes = blobs
+            .get(&entry.pdf_path)
+            .with_context(|| format!("reading the stored copy of {serial}"))?;
+        (bytes, PathBuf::from(&entry.pdf_path))
+    };
     Ok(Outcome {
         code: crate::domain::serial::verification_code(
             &entry.serial,

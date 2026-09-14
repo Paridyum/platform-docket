@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod blobs;
 pub mod clock;
 pub mod console;
 pub mod crypt;

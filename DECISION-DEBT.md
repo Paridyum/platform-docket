@@ -1170,3 +1170,32 @@ Three things ADR-0097's first slice deliberately does not do:
   a `POST /api/form/{class}/validate` preflight.
 
 **Reopens when:** any of the three is scheduled. None blocks the everyday API path.
+
+## D-67 — Already-issued filesystem PDFs are not migrated into Garage  (OPEN, data move)
+
+The blob port (D-66) makes new issuances land in Garage on the served backend, but every PDF, pack and
+scan issued BEFORE the cutover still lives only on whatever filesystem issued it (a break-glass CLI
+host, or an earlier served pod's ephemeral disk if any survived). Their register entries already record
+the blob KEY (`pdf_path`) unchanged, so a served `verify`/`pack`/`vault seal` over Garage will report
+those bytes missing until they are copied in.
+
+This is a one-time DATA move, deliberately separate from the code change (governance precedes
+implementation; a data migration is its own reviewed step): enumerate each register entry's `pdf_path`
+and each signature's `scan_path`, read the bytes from the source filesystem, and `Blobs::put` them into
+the tenant-scoped bucket under the SAME key. It needs a source host that still has the files and the
+Garage credentials; it is not runnable from this repo's test loop. **Reopens when:** Garage is deployed
+(ADR-0094) and a host holding the historical `store/` is available to run the copy. Until then, the
+break-glass CLI on that host (FileBlobs) still reads them; only the served backend cannot.
+
+## D-68 — Sealed vault objects and keys stay on `Paths`, not in the blob store  (OPEN, low risk)
+
+The blob port moved the PLAINTEXT bytes (issued PDFs, packs, scans) to Garage, and `vault seal` now
+reads them back through it to encrypt. But the sealed `.age` vault objects and the per-person age keys
+still live on the filesystem under `store/vault/` and `store/keys/`, via `Paths`/`fs::` directly. Two
+reasons this was left: the key MUST be destroyable locally for `shred` to be real erasure (ADR-0069),
+and ADR-0094 §2 says ciphertext is what may sit in the bucket — which is exactly what a `.age` object
+is, so moving them is defensible but is a design step, not a mechanical one. Consequence: on the served
+backend a vault sealed on one host is not visible on another until this is addressed; today `vault seal`
+is a break-glass CLI operation, so the exposure is small. **Reopens when:** vault sealing is offered on
+the served backend, or the estate decides `.age` objects belong in Garage (encrypt-before-bucket flow,
+ADR-0094 §2), whichever is first.

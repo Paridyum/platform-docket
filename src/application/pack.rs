@@ -1,5 +1,6 @@
 //! Assembling a person's documents into a folder they can be handed.
 
+use crate::adapters::blobs::Blobs;
 use crate::adapters::registry::Registry;
 use crate::adapters::store::Store;
 use crate::config::Paths;
@@ -164,8 +165,12 @@ pub fn grouped(
 ///
 /// # Errors
 /// Fails if the person has no issued documents, or the pack cannot be written.
+// One over clippy's cap now that the blob store is a parameter (design §11): store, blobs, paths,
+// registry, and the facts of one pack. Each is a distinct collaborator, not a field of a struct.
+#[allow(clippy::too_many_arguments)]
 pub fn assemble(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -188,7 +193,7 @@ pub fn assemble(
 
     // The cover sheet needs the contents, so it is issued after grouping and
     // before the files are placed.
-    let cover = issue_cover(store, paths, registry, slug, &buckets, date, by)?;
+    let cover = issue_cover(store, blobs, paths, registry, slug, &buckets, date, by)?;
 
     let mut files = Vec::new();
     for (action, entries) in &buckets {
@@ -198,14 +203,17 @@ pub fn assemble(
         let dir = root.join(action.folder());
         fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
         for (i, e) in entries.iter().enumerate() {
-            let src = paths.store.join(&e.pdf_path);
-            if !src.exists() {
+            // The bytes come from the blob store (design §11), not a filesystem path, so a pack
+            // assembles the same whether the store is local files or Garage.
+            if !blobs.exists(&e.pdf_path)? {
                 bail!("{}: issued PDF is missing from the store", e.serial);
             }
+            let bytes = blobs
+                .get(&e.pdf_path)
+                .with_context(|| format!("{}: reading the issued PDF", e.serial))?;
             let name = file_name(i + 1, &e.title);
             let dest = dir.join(&name);
-            fs::copy(&src, &dest).with_context(|| format!("copying to {}", dest.display()))?;
-            let bytes = fs::read(&dest).with_context(|| format!("reading {}", dest.display()))?;
+            fs::write(&dest, &bytes).with_context(|| format!("writing {}", dest.display()))?;
             files.push(Placed {
                 relative: format!("{}/{name}", action.folder()),
                 serial: e.serial.clone(),
@@ -215,11 +223,12 @@ pub fn assemble(
     }
 
     // Cover sheet at the top, named so it sorts first in any file browser.
-    let cover_src = paths.store.join(&cover.pdf_path);
+    let cover_bytes = blobs
+        .get(&cover.pdf_path)
+        .context("reading the cover sheet from the blob store")?;
     let cover_dest = root.join("00_Read_Me_First.pdf");
-    fs::copy(&cover_src, &cover_dest)
-        .with_context(|| format!("copying to {}", cover_dest.display()))?;
-    let cover_bytes = fs::read(&cover_dest).context("reading the cover sheet")?;
+    fs::write(&cover_dest, &cover_bytes)
+        .with_context(|| format!("writing {}", cover_dest.display()))?;
     files.insert(
         0,
         Placed {
@@ -246,6 +255,7 @@ pub fn assemble(
 /// Issue the cover sheet, with the pack contents rendered into it.
 fn issue_cover(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -284,6 +294,7 @@ fn issue_cover(
 
     crate::application::issue::one_with(
         store,
+        blobs,
         paths,
         registry,
         &person,

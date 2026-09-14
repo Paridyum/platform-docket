@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::registry::Registry;
 use tool_docket::adapters::store::{self, FileStore};
@@ -98,6 +99,7 @@ fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> tool_docket::domain::
     let doc = by_code.get(code).expect("known code");
     issue::one(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         person,
@@ -142,7 +144,13 @@ fn the_checked_in_registry_is_valid() {
     // whichever records happen to be on this machine.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&paths),
+        &FileBlobs::new(&paths),
+        &paths,
+        &registry(),
+    )
+    .expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -180,6 +188,7 @@ fn onboarding_issues_the_whole_preboarding_pack() {
         let doc = by_code.get(code.as_str()).expect("declared");
         issue::one(
             &FileStore::new(&sb.paths),
+            &FileBlobs::new(&sb.paths),
             &sb.paths,
             &reg,
             &person,
@@ -255,14 +264,21 @@ fn verify_matches_the_issued_document_and_rejects_a_modified_one() {
     let entry = issue_one(&sb, &p, "NDA");
     let register = store::register(&sb.paths).expect("register");
 
-    let ok = verify::verify(&sb.paths, &register, &entry.serial, None).expect("verifies");
+    let ok = verify::verify(&FileBlobs::new(&sb.paths), &register, &entry.serial, None)
+        .expect("verifies");
     assert!(ok.matches(), "the stored document must verify");
 
     let forged = sb.dir.path().join("forged.pdf");
     let mut bytes = std::fs::read(sb.paths.store.join(&entry.pdf_path)).expect("read pdf");
     bytes.push(b'x');
     std::fs::write(&forged, bytes).expect("write forged");
-    let bad = verify::verify(&sb.paths, &register, &entry.serial, Some(&forged)).expect("verifies");
+    let bad = verify::verify(
+        &FileBlobs::new(&sb.paths),
+        &register,
+        &entry.serial,
+        Some(&forged),
+    )
+    .expect("verifies");
     assert!(!bad.matches(), "a modified PDF must not verify");
 }
 
@@ -270,7 +286,15 @@ fn verify_matches_the_issued_document_and_rejects_a_modified_one() {
 fn an_unknown_serial_is_an_error_not_a_pass() {
     let sb = Sandbox::new();
     let register = store::register(&sb.paths).expect("register");
-    assert!(verify::verify(&sb.paths, &register, "PAR/NDA/1999/0001", None).is_err());
+    assert!(
+        verify::verify(
+            &FileBlobs::new(&sb.paths),
+            &register,
+            "PAR/NDA/1999/0001",
+            None
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -366,7 +390,13 @@ fn no_template_restates_a_fact_the_registry_owns() {
     // in eleven files before this system existed.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
+    let findings = check::run(
+        &FileStore::new(&paths),
+        &FileBlobs::new(&paths),
+        &paths,
+        &registry(),
+    )
+    .expect("check runs");
     let hardcoded: Vec<&str> = findings
         .items
         .iter()

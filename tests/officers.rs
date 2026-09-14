@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 
+use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::parse_iso;
 use tool_docket::adapters::registry::Registry;
 use tool_docket::adapters::store::{self, FileStore};
@@ -132,6 +133,7 @@ fn issuing_an_internship_document_to_an_officer_is_refused() {
 
     let err = issue::one(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -193,6 +195,7 @@ fn the_subject_is_substituted_out_rather_than_signing_their_own_document() {
     let by_code = reg.lifecycle.by_code().expect("codes");
     let entry = issue::one(
         &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -286,6 +289,7 @@ fn the_officer_documents_typeset_and_name_the_director() {
         let doc = by_code.get(code).expect("declared");
         let issued = issue::one(
             &FileStore::new(&sb.paths),
+            &FileBlobs::new(&sb.paths),
             &sb.paths,
             &reg,
             &person,

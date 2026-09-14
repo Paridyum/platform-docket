@@ -291,28 +291,9 @@ pub fn append(paths: &Paths, entry: &Entry) -> Result<()> {
     Ok(())
 }
 
-/// Move a rendered PDF into the store, returning its path relative to it.
-///
-/// # Errors
-/// Fails if the destination cannot be created or the copy fails.
-pub fn keep_pdf(
-    paths: &Paths,
-    slug: &str,
-    file_name: &str,
-    source: &std::path::Path,
-) -> Result<String> {
-    let dir = paths.issued_dir(slug);
-    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    let dest = dir.join(file_name);
-    fs::copy(source, &dest)
-        .with_context(|| format!("copying {} to {}", source.display(), dest.display()))?;
-    let relative = dest
-        .strip_prefix(&paths.store)
-        .unwrap_or(&dest)
-        .to_string_lossy()
-        .into_owned();
-    Ok(relative)
-}
+// `keep_pdf` moved to the blob port (`adapters::blobs::FileBlobs`): storing the issued PDF is a blob
+// operation, and behind the port the issuer writes the bytes with `Blobs::put(key, bytes)` where the
+// key is the register's `pdf_path` (design §11).
 
 /// Read a hash-chained JSONL file, in order.
 ///

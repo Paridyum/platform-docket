@@ -1,5 +1,6 @@
 //! Creating, describing and retiring a person's record.
 
+use crate::adapters::blobs::Blobs;
 use crate::adapters::store::Store;
 use crate::adapters::{clock, registry::Registry};
 use crate::config::Paths;
@@ -677,6 +678,7 @@ pub fn separate(store: &dyn Store, slug: &str, date: time::Date, by: &str) -> Re
 /// Fails if the person is unknown, or the store cannot be rewritten.
 pub fn erase(
     store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
     slug: &str,
     date: time::Date,
@@ -702,13 +704,38 @@ pub fn erase(
             .with_context(|| format!("deleting {}", record_file.display()))?;
     }
 
-    // The plaintext copies too. They are the same personal data as the vault held, and leaving
-    // them would make the shredding decorative.
+    // The plaintext copies too, THROUGH THE BLOB PORT (design §11): the issued PDFs and the signed
+    // scans. They are the same personal data as the vault held, and leaving them would make the
+    // shredding decorative. `Blobs::delete` is a real delete, not a tombstone (ADR-0069), and it is
+    // idempotent, so a missing blob does not fail the erasure.
     //
-    // BOTH DIRECTORIES, and the scans are the ones that matter. `sign.rs`: "wet ink leaves no
-    // trail of its own, so the scan IS the evidence." Deleting the issued PDFs and leaving the
-    // signed scans would erase the copies the person already holds and keep the one they do
-    // not — the exact inverse of what erasure is for.
+    // BOTH KINDS, and the scans are the ones that matter. `sign.rs`: "wet ink leaves no trail of its
+    // own, so the scan IS the evidence." Deleting the issued PDFs and leaving the signed scans would
+    // erase the copies the person already holds and keep the one they do not — the exact inverse of
+    // what erasure is for. The keys come from the register and signature ledgers, the authoritative
+    // record of which blobs exist (the port has no listing).
+    let register = store.register()?;
+    let mine: std::collections::BTreeSet<&str> = register
+        .iter()
+        .filter(|e| e.person_id == person_id)
+        .map(|e| e.serial.as_str())
+        .collect();
+    for entry in register.iter().filter(|e| e.person_id == person_id) {
+        blobs
+            .delete(&entry.pdf_path)
+            .with_context(|| format!("erasing the issued PDF for {}", entry.serial))?;
+    }
+    for sig in store.signatures()? {
+        if let Some(key) = sig.scan_path.as_deref()
+            && mine.contains(sig.serial.as_str())
+        {
+            blobs
+                .delete(key)
+                .with_context(|| format!("erasing the scan for {}", sig.serial))?;
+        }
+    }
+    // Tidy the now-empty local directories on the file store (a no-op when the bytes were in the
+    // bucket): the per-key deletes above are the load-bearing erasure; this only removes the husks.
     for dir in [
         paths.store.join("issued").join(person_id.as_str()),
         paths.scans_dir(person_id.as_str()),
