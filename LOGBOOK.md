@@ -4,6 +4,32 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-15 — the served backend reads config from the tenant's rows (ADR-0099 stage 3, cutover)
+
+The seed put each tenant's configuration in the 0008 tables; this makes the served backend READ it.
+`Registry::from_db(read)` assembles the registry from the config rows — reusing the exact wrapper
+types `load` deserialises from YAML, because 0008 stores each entry as the shape those types expect —
+or returns `None` when a tenant has no rows, in which case the dispatcher falls back to the git
+registry. That fallback is the one line that turns the git registry from the source of truth into a
+seed: a seeded tenant is served from its own rows, an unseeded one (only Paridyum, until stage 3's
+seed runs on the cluster) from git. The store factory (`PgTenantStores::build`) now returns the
+config alongside the store and blobs, all built per request from the token's tenant.
+
+**The gap the cutover surfaced, and the migration it needed.** `lifecycle.yaml` carries TWO
+correlated lists — `documents` and `stages` — and 0008 stored only the documents (a stage has no
+`code`, the key that table is built on). Rebuilding a `Lifecycle` needs both, so `from_db` failed on
+Paridyum's own seeded config until platform-tenancy migration **0009** added `docket_lifecycle_stages`
+and the seed learned to fill it. The lesson worth keeping: decomposing a config file per-record works
+for independent entries (companies, operators, fields) and breaks for a file whose top-level lists
+refer to each other — `lifecycle` needed two tables, not one.
+
+Proven on a non-superuser PG17: `from_db` returns `None` for an unseeded tenant and assembles the
+types for a seeded one (unit-tested with a fake reader; the DB reader covered by the factory test),
+and Paridyum's 121 seeded rows (companies, operators, signatories, fields, classes, 26 documents, 5
+stages, messages, retention) round-trip. `team` stays git/absent — it is public-page content, not
+backend config, and 0008/0009 give it no table. Stages 4 (onboarding) and 5 (the web-docket console)
+remain; this completes the backend half of the promotion.
+
 ## 2026-09-15 — seeding Paridyum's config into its tenant rows (ADR-0099 stage 3, the data move)
 
 Migration 0008 gave docket's configuration per-tenant tables; this fills Paridyum's. `scripts/seed-

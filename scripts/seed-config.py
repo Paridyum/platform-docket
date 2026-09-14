@@ -39,6 +39,7 @@ SOURCES = [
     ("fields.yaml", "fields", "docket_field_defs"),
     ("person-classes.yaml", "classes", "docket_person_classes"),
     ("lifecycle.yaml", "documents", "docket_lifecycle"),
+    ("lifecycle.yaml", "stages", "docket_lifecycle_stages"),
     ("communications.yaml", "messages", "docket_communications"),
     ("retention.yaml", "classes", "docket_retention"),
 ]

@@ -12,8 +12,9 @@
 //! is refused, never silently widened. They are set LOCAL to the transaction, so a pooled
 //! connection cannot carry one request's identity into the next.
 
-use crate::adapters::blobs::{self, Blobs};
-use crate::adapters::http::server::TenantStores;
+use crate::adapters::blobs;
+use crate::adapters::http::server::{RequestStores, TenantStores};
+use crate::adapters::registry::Registry;
 use crate::adapters::store::Store;
 use crate::config::Paths;
 use crate::domain::chain::{Chained, seal, verify};
@@ -470,12 +471,32 @@ impl PgTenantStores {
     }
 }
 
+/// Read every `record` in a tenant's config table (ADR-0099), under its operator RLS context. The
+/// table name comes from `Registry::from_db`'s fixed constants, never caller input, so the `format!`
+/// carries no injection — the same property the chain reads above rely on.
+async fn read_config(pool: &PgPool, tenant: Uuid, table: &str) -> Result<Vec<serde_json::Value>> {
+    let sql = format!("SELECT record FROM {table} ORDER BY id");
+    let mut tx = pool.begin().await.context("beginning a transaction")?;
+    enter(&mut tx, tenant).await?;
+    let rows: Vec<(sqlx::types::Json<serde_json::Value>,)> = sqlx::query_as(&sql)
+        .fetch_all(&mut *tx)
+        .await
+        .with_context(|| format!("reading config table {table}"))?;
+    tx.commit().await.context("committing")?;
+    Ok(rows.into_iter().map(|(json,)| json.0).collect())
+}
+
 impl TenantStores for PgTenantStores {
-    fn build(&self, tenant: Uuid) -> Result<(Box<dyn Store>, Box<dyn Blobs + '_>)> {
+    fn build(&self, tenant: Uuid) -> Result<RequestStores<'_>> {
         let store = PgStore::new(self.pool.clone(), tenant, self.handle.clone());
         let blobs = blobs::open(&self.paths, &tenant.to_string(), Some(self.handle.clone()))
             .context("opening the blob store (DOCKET_S3_* configured?)")?;
-        Ok((Box::new(store), blobs))
+        // The tenant's configuration from its 0008 rows, or `None` when it has none yet — the served
+        // dispatcher then falls back to the git registry until it is seeded (ADR-0099).
+        let config =
+            Registry::from_db(|table| self.handle.block_on(read_config(&self.pool, tenant, table)))
+                .context("loading the tenant's configuration")?;
+        Ok((Box::new(store), blobs, config))
     }
 }
 
@@ -503,7 +524,10 @@ mod tests {
         // A fresh tenant that never had a row: the factory builds a store bound to it, and a read
         // returns empty rather than another tenant's data — the store is tenant-scoped.
         let tenant = Uuid::new_v4();
-        let (store, _blobs) = factory.build(tenant).expect("build a store for the tenant");
+        let (store, _blobs, config) = factory.build(tenant).expect("build a store for the tenant");
         assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
+        // A fresh tenant has no config rows, so the factory returns None and the dispatcher would
+        // fall back to the git registry.
+        assert!(config.is_none(), "an unseeded tenant has no config");
     }
 }

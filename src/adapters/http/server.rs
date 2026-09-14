@@ -21,18 +21,26 @@ use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// What one request resolves to before it is routed: its record store, its blob store, and the
+/// tenant's configuration (`Some` when seeded, `None` to fall back to the git registry). The blob
+/// store may borrow the factory, hence the lifetime.
+pub type RequestStores<'a> = (Box<dyn Store>, Box<dyn Blobs + 'a>, Option<Registry>);
+
 /// Builds the tenant-scoped record and blob stores for one request. The served, multi-tenant path
 /// holds one of these (ADR-0099): the tenant comes from the operator token, so the store cannot be
 /// built once at startup as it was single-tenant. The served binary implements it over the Postgres
 /// pool and Garage; the CLI/loopback path uses a fixed store and never needs it.
 pub trait TenantStores: Sync {
-    /// The record and blob stores for `tenant`, for the life of one request. The record store owns
-    /// its handles; the blob store may borrow the factory (a filesystem blob store references its
-    /// paths — `blobs::open`), so it is tied to `&self`, which outlives every request in the loop.
+    /// The record store, blob store, and per-tenant configuration for `tenant`, for the life of one
+    /// request. The record store owns its handles; the blob store may borrow the factory (a
+    /// filesystem blob store references its paths — `blobs::open`), so it is tied to `&self`, which
+    /// outlives every request in the loop. The config is `Some` when the tenant has been seeded
+    /// (ADR-0099), and `None` when it has not — the dispatcher then falls back to the git registry.
     ///
     /// # Errors
-    /// Fails if the stores cannot be opened (a bad pool or missing S3 configuration).
-    fn build(&self, tenant: Uuid) -> Result<(Box<dyn Store>, Box<dyn Blobs + '_>)>;
+    /// Fails if the stores cannot be opened (a bad pool or missing S3 configuration) or the config
+    /// cannot be read.
+    fn build(&self, tenant: Uuid) -> Result<RequestStores<'_>>;
 }
 
 /// How a request's record/blob stores are obtained.
@@ -200,8 +208,8 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                 Ok(op) => op.tenant,
                 Err(e) => return Response::error(401, &format!("{e:#}")),
             };
-            let (store, blobs) = match stores.build(tenant) {
-                Ok(pair) => pair,
+            let (store, blobs, config) = match stores.build(tenant) {
+                Ok(built) => built,
                 Err(e) => {
                     return Response::error(
                         500,
@@ -209,11 +217,14 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                     );
                 }
             };
+            // The tenant's own config if it is seeded (ADR-0099), else the git registry as a fallback
+            // until it is — the line that makes the git registry a seed, not the source of truth.
+            let registry = config.as_ref().unwrap_or(s.registry);
             let ctx = Context {
                 store: store.as_ref(),
                 blobs: blobs.as_ref(),
                 paths: s.paths,
-                registry: s.registry,
+                registry,
                 verifier: s.verifier,
                 clock: s.clock,
             };
@@ -316,8 +327,10 @@ mod tests {
     /// backend builds a store per request and routes through it.
     struct FakeStores;
     impl TenantStores for FakeStores {
-        fn build(&self, _tenant: Uuid) -> Result<(Box<dyn Store>, Box<dyn Blobs + '_>)> {
-            Ok((Box::new(NullStore), Box::new(NullBlobs)))
+        fn build(&self, _tenant: Uuid) -> Result<RequestStores<'_>> {
+            // No config: the dispatcher falls back to the git registry, which is what these tests
+            // route against (GET /api/operators reads it).
+            Ok((Box::new(NullStore), Box::new(NullBlobs), None))
         }
     }
 

@@ -219,6 +219,86 @@ impl Registry {
         })
     }
 
+    /// Assemble the registry from a tenant's per-tenant config rows (ADR-0099), or `None` if that
+    /// tenant has no rows yet — in which case the caller falls back to the git registry until it is
+    /// seeded (`scripts/seed-config.py`). `read(table)` returns the `record` jsonb of every row in a
+    /// config table; the same wrapper types `load` deserialises from YAML deserialise the DB records,
+    /// because migration 0008 stores each entry verbatim as the shape those types expect.
+    ///
+    /// `team` is absent — 0008 has no `docket_team` table, because team is public-page content, not
+    /// backend configuration — so it is empty here; nothing the served backend does reads it.
+    ///
+    /// # Errors
+    /// Fails if a table cannot be read or a record does not deserialise into its type.
+    pub fn from_db<F>(read: F) -> Result<Option<Self>>
+    where
+        F: Fn(&str) -> Result<Vec<serde_json::Value>>,
+    {
+        use serde_json::{from_value, json};
+
+        let companies = read("docket_companies")?;
+        let operators = read("docket_operators")?;
+        let signatories = read("docket_signatories")?;
+        let fields = read("docket_field_defs")?;
+        let classes = read("docket_person_classes")?;
+        let documents = read("docket_lifecycle")?;
+        let stages = read("docket_lifecycle_stages")?;
+        let messages = read("docket_communications")?;
+        let retention = read("docket_retention")?;
+
+        // No rows in any config table: this tenant is not seeded. The caller uses the git registry.
+        if [
+            &companies,
+            &operators,
+            &signatories,
+            &fields,
+            &classes,
+            &documents,
+            &stages,
+            &messages,
+            &retention,
+        ]
+        .iter()
+        .all(|rows| rows.is_empty())
+        {
+            return Ok(None);
+        }
+
+        // `org` is the unmodelled letterhead Value (serde_yaml); rebuild it as `{companies: […]}`
+        // and convert the JSON records into a yaml Value. Everything else is typed.
+        let org: Value = serde_yaml::to_value(json!({ "companies": companies }))
+            .context("assembling org from docket_companies")?;
+        let signatories: Signatories = from_value(json!({ "signatories": signatories }))
+            .context("deserialising docket_signatories")?;
+        let operators: Operators = from_value(json!({ "operators": operators }))
+            .context("deserialising docket_operators")?;
+        let lifecycle: Lifecycle = from_value(json!({ "documents": documents, "stages": stages }))
+            .context("deserialising docket_lifecycle + docket_lifecycle_stages")?;
+        let retention: Retention = from_value(json!({ "classes": retention }))
+            .context("deserialising docket_retention")?;
+        let classes: ClassFile = from_value(json!({ "classes": classes }))
+            .context("deserialising docket_person_classes")?;
+        let fields: FieldFile =
+            from_value(json!({ "fields": fields })).context("deserialising docket_field_defs")?;
+        let messages: crate::application::comms::MessageFile =
+            from_value(json!({ "messages": messages }))
+                .context("deserialising docket_communications")?;
+
+        Ok(Some(Self {
+            org,
+            signatories: signatories.signatories,
+            lifecycle,
+            retention: retention.classes,
+            catalogue: Catalogue {
+                classes: classes.classes,
+                fields: fields.fields,
+            },
+            messages: messages.messages,
+            operators: operators.operators,
+            team: Vec::new(),
+        }))
+    }
+
     /// The `org` mapping, which every template's letterhead reads.
     #[must_use]
     pub fn org_node(&self) -> Option<&Value> {
@@ -367,4 +447,50 @@ impl Registry {
 pub fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn from_db_is_none_when_a_tenant_has_no_config_rows() {
+        // Every table empty → the tenant is not seeded, and the caller falls back to git.
+        let cfg = Registry::from_db(|_table| Ok(Vec::new())).expect("no error");
+        assert!(cfg.is_none());
+    }
+
+    #[test]
+    fn from_db_assembles_the_config_from_rows() {
+        // Operators and companies present, the rest empty (empty lifecycle still deserialises — both
+        // its lists default to empty). Proves the DB records deserialise into the same types `load`
+        // reads from YAML, which is the whole basis of ADR-0099's config-from-DB.
+        let read = |table: &str| -> Result<Vec<serde_json::Value>> {
+            Ok(match table {
+                "docket_operators" => vec![json!({
+                    "id": "t", "name": "TESTER", "role": "CTO", "active": true, "subject": "sub-1"
+                })],
+                "docket_companies" => {
+                    vec![json!({ "code": "TST", "name": "Test", "default": true })]
+                }
+                _ => Vec::new(),
+            })
+        };
+        let cfg = Registry::from_db(read)
+            .expect("assembles")
+            .expect("seeded tenant yields Some");
+        let op = cfg
+            .operators
+            .iter()
+            .find(|o| o.id == "t")
+            .expect("the operator");
+        assert_eq!(op.subject.as_deref(), Some("sub-1"));
+        assert!(cfg.lifecycle.documents.is_empty());
+        assert!(
+            cfg.team.is_empty(),
+            "team is not a config table (0008/0009)"
+        );
+    }
 }
