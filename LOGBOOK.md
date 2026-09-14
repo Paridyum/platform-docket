@@ -4,6 +4,28 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-15 — seeding Paridyum's config into its tenant rows (ADR-0099 stage 3, the data move)
+
+Migration 0008 gave docket's configuration per-tenant tables; this fills Paridyum's. `scripts/seed-
+config.py` reads `registry/*.yaml` and writes each entry as a row for a tenant, under that tenant's
+operator RLS context — Paridyum becoming the FIRST tenant's rows rather than a special case in code.
+
+It writes the record VERBATIM as the jsonb the tables store, so the git registry and the seeded rows
+are the same document (RFC-0039 D1 carried to config); the generated key columns (`code`, `subject`,
+`class`, …) then extract from it, which is what the backend will look up by. Idempotent — one
+transaction per table, `ON CONFLICT DO NOTHING` — so a re-run adds only what is missing and never
+edits or deletes. Connection mirrors `platform-tenancy/scripts/migrate.py`: `DOCKET_DATABASE_URL` for
+a local/break-glass run, else `kubectl exec` into the primary pod.
+
+Proven against a PG17 whose app role is a non-superuser (RLS binds it): all 116 records seed
+(companies 2, operators 4, signatories 7, fields 62, classes 4, lifecycle 26, messages 7, retention
+4), the company codes (`PAR`, `PCY`) and rohan's operator subject (`390506086174098663`, the ADR-0092
+bind key) resolve from the generated columns, and a second run leaves the counts unchanged.
+
+This is the DATA half of stage 3. The CODE half — the served backend reading config from these rows
+(`Registry::from_db`) with the git registry as fallback until a tenant is seeded — is the cutover
+that follows, and is where the git registry stops being the source of truth.
+
 ## 2026-09-15 — the served backend derives its tenant from the token (ADR-0099 stage 2)
 
 The single-tenant fixpoint was `serve.rs` reading one `DOCKET_TENANT_ID` and stamping it on every
