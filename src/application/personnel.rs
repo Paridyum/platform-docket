@@ -1,8 +1,8 @@
 //! Creating, describing and retiring a person's record.
 
-use crate::adapters::{clock, registry::Registry, store};
+use crate::adapters::store::Store;
+use crate::adapters::{clock, registry::Registry};
 use crate::config::Paths;
-use crate::domain::chain;
 use crate::domain::event::{self, Event, Kind};
 use crate::domain::identity::{self, EngagementId, PersonId, Record, Standing};
 use crate::domain::personnel::{Class, Violation, validate};
@@ -18,6 +18,7 @@ use std::fs;
 /// Fails if the class is unknown, the slug is taken, the template is
 /// missing, or the ledger cannot be written.
 pub fn create(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -45,15 +46,16 @@ pub fn create(
         bail!("slug {slug:?} must be lowercase letters, digits and hyphens");
     }
 
-    let ledger = store::ledger(paths)?;
+    let ledger = store.ledger()?;
     if identity::slug_taken(&ledger, slug) {
         bail!("slug {slug:?} is already allocated");
     }
-    // A record may already be on disk because `--interactive` just wrote it
-    // from the answers. That is the one legitimate case, and the LEDGER is
-    // what decides whether this person is new -- `slug_taken` above has
-    // already said they are not.
-    let record_exists = paths.person(slug).exists();
+    // A record may already exist because `--interactive` (or the console's enrol handler) just
+    // wrote it from the answers. That is the one legitimate case, and the LEDGER is what decides
+    // whether this person is new -- `slug_taken` above has already said they are not. Existence is
+    // asked of the STORE, not the filesystem, so this is correct on Postgres too (the record lives
+    // in the database there, never on this host's disk).
+    let record_exists = store.person_exists(slug)?;
 
     let year = date.year();
     // The PERSON identifier is group-wide and carries no company (ADR-0077 D2):
@@ -80,31 +82,28 @@ pub fn create(
         } else {
             paths.people.join("_TEMPLATE.yaml")
         };
+        // The template is a BLOB on disk (registry-side, design §4), so it is read via `fs`; the
+        // resulting person record is written THROUGH the port, so a default record lands wherever the
+        // store keeps records (the file on the CLI, the JSONB row on the served backend).
         let body = fs::read_to_string(&template)
             .with_context(|| format!("reading {}", template.display()))?;
-        fs::create_dir_all(&paths.people)
-            .with_context(|| format!("creating {}", paths.people.display()))?;
-        fs::write(paths.person(slug), body)
-            .with_context(|| format!("writing {}", paths.person(slug).display()))?;
+        store.create_person(slug, &body)?;
     }
 
-    let record = store::append_chain(
-        &paths.ledger(),
-        Record {
-            person_id: person_id.clone(),
-            engagement_id,
-            slug: slug.to_owned(),
-            class: class.class.clone(),
-            created_on: created_on.clone(),
-            standing: Standing::Active,
-            standing_changed_on: created_on.clone(),
-            prev_sha256: String::new(),
-            entry_sha256: String::new(),
-        },
-    )?;
+    let record = store.append_identity(Record {
+        person_id: person_id.clone(),
+        engagement_id,
+        slug: slug.to_owned(),
+        class: class.class.clone(),
+        created_on: created_on.clone(),
+        standing: Standing::Active,
+        standing_changed_on: created_on.clone(),
+        prev_sha256: String::new(),
+        entry_sha256: String::new(),
+    })?;
 
     record_event(
-        paths,
+        store,
         &person_id,
         Kind::Created,
         Some(&format!("class {class_name}")),
@@ -126,7 +125,7 @@ pub fn create(
 /// re-engaging someone who was never separated would silently overwrite
 /// which engagement their documents belong to.
 pub fn reengage(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     class_name: &str,
@@ -134,7 +133,7 @@ pub fn reengage(
     date: time::Date,
     by: &str,
 ) -> Result<Record> {
-    let current = identify(paths, slug)?;
+    let current = identify(store, slug)?;
     if current.standing == Standing::Erased {
         bail!("{slug} is erased; their data was deleted on request");
     }
@@ -145,7 +144,7 @@ pub fn reengage(
     // What it was ALSO doing, accidentally, was asserting that a person works for
     // one entity, which was never decided and is now false: Rohan is CTO of both
     // companies at the same time.
-    let ledger = store::ledger(paths)?;
+    let ledger = store.ledger()?;
     if let Some(open) = ledger
         .iter()
         .filter(|r| r.slug == slug && r.standing == Standing::Active)
@@ -171,7 +170,7 @@ pub fn reengage(
         );
     };
 
-    let ledger = store::ledger(paths)?;
+    let ledger = store.ledger()?;
     let year = date.year();
     let engagement_id = EngagementId::new(
         company,
@@ -181,22 +180,19 @@ pub fn reengage(
     )?;
     let on = clock::to_iso(date)?;
 
-    let sealed = store::append_chain(
-        &paths.ledger(),
-        Record {
-            person_id: current.person_id.clone(),
-            engagement_id,
-            slug: slug.to_owned(),
-            class: class.class.clone(),
-            created_on: current.created_on.clone(),
-            standing: Standing::Active,
-            standing_changed_on: on,
-            prev_sha256: String::new(),
-            entry_sha256: String::new(),
-        },
-    )?;
+    let sealed = store.append_identity(Record {
+        person_id: current.person_id.clone(),
+        engagement_id,
+        slug: slug.to_owned(),
+        class: class.class.clone(),
+        created_on: current.created_on.clone(),
+        standing: Standing::Active,
+        standing_changed_on: on,
+        prev_sha256: String::new(),
+        entry_sha256: String::new(),
+    })?;
     record_event(
-        paths,
+        store,
         &sealed.person_id,
         Kind::EngagementChanged,
         Some(&format!(
@@ -214,33 +210,30 @@ pub fn reengage(
 /// # Errors
 /// Fails if the log cannot be written.
 pub fn record_event(
-    paths: &Paths,
+    store: &dyn Store,
     person_id: &PersonId,
     kind: Kind,
     detail: Option<&str>,
     recorded_by: &str,
     date: time::Date,
 ) -> Result<Event> {
-    store::append_chain(
-        &paths.events(),
-        Event {
-            person_id: person_id.clone(),
-            at: clock::to_iso(date)?,
-            kind,
-            detail: detail.map(ToOwned::to_owned),
-            recorded_by: recorded_by.to_owned(),
-            prev_sha256: String::new(),
-            entry_sha256: String::new(),
-        },
-    )
+    store.append_event(Event {
+        person_id: person_id.clone(),
+        at: clock::to_iso(date)?,
+        kind,
+        detail: detail.map(ToOwned::to_owned),
+        recorded_by: recorded_by.to_owned(),
+        prev_sha256: String::new(),
+        entry_sha256: String::new(),
+    })
 }
 
 /// The ledger record for a slug.
 ///
 /// # Errors
 /// Fails if the ledger cannot be read or the slug is not in it.
-pub fn identify(paths: &Paths, slug: &str) -> Result<Record> {
-    identify_at(paths, slug, None)
+pub fn identify(store: &dyn Store, slug: &str) -> Result<Record> {
+    identify_at(store, slug, None)
 }
 
 /// The same, for a caller that knows which company it means.
@@ -260,8 +253,8 @@ pub fn identify(paths: &Paths, slug: &str) -> Result<Record> {
 /// # Errors
 /// Fails if the slug has no entry, if `company` names one it has no engagement
 /// at, or if it holds more than one open engagement and none was named.
-pub fn identify_at(paths: &Paths, slug: &str, company: Option<&str>) -> Result<Record> {
-    let ledger = store::ledger(paths)?;
+pub fn identify_at(store: &dyn Store, slug: &str, company: Option<&str>) -> Result<Record> {
+    let ledger = store.ledger()?;
     let mine: Vec<&Record> = ledger.iter().filter(|r| r.slug == slug).collect();
     if mine.is_empty() {
         bail!("{slug} has no identifier; run `docket new {slug} <class>`");
@@ -321,8 +314,8 @@ pub fn identify_at(paths: &Paths, slug: &str, company: Option<&str>) -> Result<R
 ///
 /// # Errors
 /// Fails if the ledger cannot be read.
-pub fn engagements(paths: &Paths, slug: &str) -> Result<Vec<Record>> {
-    let ledger = store::ledger(paths)?;
+pub fn engagements(store: &dyn Store, slug: &str) -> Result<Vec<Record>> {
+    let ledger = store.ledger()?;
     let mut out: Vec<Record> = Vec::new();
     for r in ledger.into_iter().filter(|r| r.slug == slug) {
         if let Some(slot) = out
@@ -371,27 +364,28 @@ pub struct Dossier {
 /// # Errors
 /// Fails if the ledger, register, log or record cannot be read.
 pub fn dossier(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<Dossier> {
-    let identity = identify_at(paths, slug, company)?;
+    let identity = identify_at(store, slug, company)?;
     let class = class_of(registry, &identity)?;
 
     let violations = if identity.standing == Standing::Erased {
         Vec::new()
     } else {
-        validate(&registry.catalogue, class, &store::person(paths, slug)?)?
+        validate(&registry.catalogue, class, &store.person(slug)?)?
     };
 
-    let documents = store::register(paths)?
+    let documents = store
+        .register()?
         .into_iter()
         .filter(|e| e.person_id == identity.person_id)
         .map(|e| (e.code, e.serial, e.issued_on))
         .collect();
 
-    let log = store::events(paths)?;
+    let log = store.events()?;
     let open_access = event::open_access(&log, &identity.person_id);
     let history = event::for_person(&log, &identity.person_id)
         .into_iter()
@@ -438,6 +432,7 @@ impl std::fmt::Display for Gate {
 /// Fails if the person is unknown, already at the last stage, the gate is not
 /// satisfied, or the record cannot be written.
 pub fn advance(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -445,21 +440,21 @@ pub fn advance(
     force: bool,
     by: &str,
 ) -> Result<(String, String, Vec<Gate>)> {
-    let record = identify(paths, slug)?;
+    let record = identify(store, slug)?;
     if record.standing != Standing::Active {
         bail!(
             "{slug} is {}; only an active engagement advances",
             record.standing.as_str()
         );
     }
-    let person = store::person(paths, slug)?;
+    let person = store.person(slug)?;
     let from = person.stage().to_owned();
     let Some(next) = registry.lifecycle.next_after(&from)? else {
         bail!("{slug} is at {from:?}, the last stage; there is nowhere to advance to");
     };
     let to = next.name.clone();
 
-    let gates = unmet_gates(paths, registry, &record, &from, person.class())?;
+    let gates = unmet_gates(store, registry, &record, &from, person.class())?;
     if !gates.is_empty() && !force {
         return Ok((from, to, gates));
     }
@@ -477,7 +472,7 @@ pub fn advance(
     fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
 
     record_event(
-        paths,
+        store,
         &record.person_id,
         Kind::StageChanged,
         Some(&format!("{from} -> {to}")),
@@ -595,7 +590,7 @@ fn stage_line(line: &str, from: &str) -> Option<(String, String)> {
 /// # Errors
 /// Fails if the registry or store cannot be read.
 pub fn unmet_gates(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     record: &Record,
     stage: &str,
@@ -605,8 +600,8 @@ pub fn unmet_gates(
         return Ok(Vec::new());
     };
     let by_code = registry.lifecycle.by_code()?;
-    let register = store::register(paths)?;
-    let signatures = store::signatures(paths)?;
+    let register = store.register()?;
+    let signatures = store.signatures()?;
     let mut out = Vec::new();
 
     for code in &stage.requires_signed {
@@ -649,8 +644,8 @@ pub fn unmet_gates(
 ///
 /// # Errors
 /// Fails if the person is unknown or the ledger cannot be written.
-pub fn separate(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Record> {
-    let current = identify(paths, slug)?;
+pub fn separate(store: &dyn Store, slug: &str, date: time::Date, by: &str) -> Result<Record> {
+    let current = identify(store, slug)?;
     if current.standing != Standing::Active {
         bail!("{slug} is already {}", current.standing.as_str());
     }
@@ -661,8 +656,8 @@ pub fn separate(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result
         entry_sha256: String::new(),
         ..current
     };
-    let sealed = store::append_chain(&paths.ledger(), updated)?;
-    record_event(paths, &sealed.person_id, Kind::Separated, None, by, date)?;
+    let sealed = store.append_identity(updated)?;
+    record_event(store, &sealed.person_id, Kind::Separated, None, by, date)?;
     Ok(sealed)
 }
 
@@ -680,8 +675,14 @@ pub fn separate(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result
 ///
 /// # Errors
 /// Fails if the person is unknown, or the store cannot be rewritten.
-pub fn erase(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Record> {
-    let current = identify(paths, slug)?;
+pub fn erase(
+    store: &dyn Store,
+    paths: &Paths,
+    slug: &str,
+    date: time::Date,
+    by: &str,
+) -> Result<Record> {
+    let current = identify(store, slug)?;
     if current.standing == Standing::Erased {
         bail!("{slug} is already erased");
     }
@@ -718,7 +719,8 @@ pub fn erase(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Re
     }
     let _ = &shredded;
 
-    let kept: Vec<Event> = store::events(paths)?
+    let kept: Vec<Event> = store
+        .events()?
         .into_iter()
         .filter(|e| e.person_id != person_id || e.kind.survives_erasure())
         .map(|e| Event {
@@ -732,7 +734,9 @@ pub fn erase(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Re
             ..e
         })
         .collect();
-    reseal_events(paths, kept)?;
+    // The event-log rewrite-and-reseal lives behind the port now (design §6): the file store
+    // rewrites the JSONL, the Postgres store refuses without the delete-exception migration.
+    store.reseal_events(kept)?;
 
     let updated = Record {
         slug: slug.to_owned(),
@@ -742,29 +746,9 @@ pub fn erase(paths: &Paths, slug: &str, date: time::Date, by: &str) -> Result<Re
         entry_sha256: String::new(),
         ..current
     };
-    let sealed = store::append_chain(&paths.ledger(), updated)?;
-    record_event(paths, &person_id, Kind::Erased, None, by, date)?;
+    let sealed = store.append_identity(updated)?;
+    record_event(store, &person_id, Kind::Erased, None, by, date)?;
     Ok(sealed)
-}
-
-/// Rewrite the event log, re-sealing the chain over what remains.
-fn reseal_events(paths: &Paths, events: Vec<Event>) -> Result<()> {
-    let mut sealed: Vec<Event> = Vec::new();
-    for e in events {
-        let next = chain::seal(e, sealed.last())?;
-        sealed.push(next);
-    }
-    let mut body = String::new();
-    for e in &sealed {
-        body.push_str(&serde_json::to_string(e)?);
-        body.push('\n');
-    }
-    let path = paths.events();
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    }
-    fs::write(&path, body).with_context(|| format!("rewriting {}", path.display()))?;
-    Ok(())
 }
 
 #[cfg(test)]

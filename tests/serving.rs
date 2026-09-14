@@ -14,6 +14,7 @@ use tool_docket::adapters::clock::{FixedClock, parse_iso};
 use tool_docket::adapters::http::request;
 use tool_docket::adapters::http::router::{self, Context};
 use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::FileStore;
 use tool_docket::application::{personnel, roster};
 use tool_docket::config::Paths;
 
@@ -62,9 +63,15 @@ fn date() -> time::Date {
 /// parses differently from how it is written.
 fn call(sandbox: &Sandbox, registry: &Registry, raw: &str) -> (u16, serde_json::Value) {
     let clock = FixedClock(date());
+    // These suites exercise the routing and wire shapes over the file store with the attribution
+    // header (no verifier) — the loopback/break-glass auth path. The token path is covered by the
+    // operator-verifier unit tests and tests/served_api.rs.
+    let store = FileStore::new(&sandbox.paths);
     let ctx = Context {
+        store: &store,
         paths: &sandbox.paths,
         registry,
+        verifier: None,
         clock: &clock,
     };
     let req = request::parse(raw.as_bytes()).expect("request parses");
@@ -123,6 +130,7 @@ fn store_bytes(sandbox: &Sandbox) -> Vec<(PathBuf, Vec<u8>)> {
 /// Enrol one intern, the way the CLI does.
 fn enrol(sandbox: &Sandbox, registry: &Registry, slug: &str) {
     personnel::create(
+        &FileStore::new(&sandbox.paths),
         &sandbox.paths,
         registry,
         slug,
@@ -172,7 +180,7 @@ fn the_roster_says_what_the_cli_says() {
 
     // The comparison that matters. If these ever disagree, HR is looking at two
     // different organisations depending on which interface they opened.
-    let lines = roster::build(&sandbox.paths, &reg).expect("roster");
+    let lines = roster::build(&FileStore::new(&sandbox.paths), &reg).expect("roster");
     let (active, separated, erased) = roster::tally(&lines);
 
     let (status, body) = get(&sandbox, &reg, "/api/roster");
@@ -226,7 +234,8 @@ fn a_person_page_matches_dossier_and_next_rather_than_recomputing_them() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let dossier = personnel::dossier(&sandbox.paths, &reg, "asha", None).expect("dossier");
+    let dossier =
+        personnel::dossier(&FileStore::new(&sandbox.paths), &reg, "asha", None).expect("dossier");
     let (_, body) = get(&sandbox, &reg, "/api/person/asha");
 
     assert_eq!(body["person_id"], dossier.identity.person_id.to_string());
@@ -266,7 +275,9 @@ fn check_reports_the_same_findings_the_cli_would() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let expected = tool_docket::application::check::run(&sandbox.paths, &reg).expect("check");
+    let expected =
+        tool_docket::application::check::run(&FileStore::new(&sandbox.paths), &sandbox.paths, &reg)
+            .expect("check");
     let (status, body) = get(&sandbox, &reg, "/api/check");
     assert_eq!(status, 200);
     assert_eq!(body["errors"], expected.errors());
@@ -659,7 +670,7 @@ fn enrolling_through_the_api_produces_the_same_record_the_cli_would() {
 
     // And the identifier was allocated, so the ledger and the file agree. A
     // record written without one would be a file nothing points at.
-    let record = personnel::identify(&sandbox.paths, "priya").expect("identified");
+    let record = personnel::identify(&FileStore::new(&sandbox.paths), "priya").expect("identified");
     assert_eq!(record.slug, "priya");
     assert_eq!(record.class, "intern");
 

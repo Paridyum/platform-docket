@@ -1,6 +1,7 @@
 //! Recording that an issued document came back executed.
 
-use crate::adapters::{clock, registry::Registry, store};
+use crate::adapters::store::Store;
+use crate::adapters::{clock, registry::Registry};
 use crate::config::Paths;
 use crate::domain::chain::sha256;
 use crate::domain::event::Kind;
@@ -31,7 +32,13 @@ pub struct Signed {
 /// Fails if the serial is unknown, already signed, the dates are malformed,
 /// the signing date precedes issuance, a wet-ink signature has no scan, or
 /// the ledger cannot be written.
+// One more than clippy's cap now that the record store is a parameter (design §4): the extra
+// argument is the `Store` port, and the rest are the independent facts of one signature — serial,
+// method, two dates, an optional scan, the recorder. Bundling them into a struct would only move the
+// same fields behind a name and read no more clearly.
+#[allow(clippy::too_many_arguments)]
 pub fn record(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     serial: &str,
@@ -41,11 +48,11 @@ pub fn record(
     scan: Option<&Path>,
     recorded_by: &str,
 ) -> Result<Signed> {
-    let register = store::register(paths)?;
+    let register = store.register()?;
     let Some(entry) = register.iter().find(|e| e.serial == serial) else {
         bail!("{serial} is not in the register; nothing was issued under it");
     };
-    let signatures = store::signatures(paths)?;
+    let signatures = store.signatures()?;
     if is_signed(&signatures, serial) {
         bail!(
             "{serial} is already recorded as executed. A signature is recorded once; \
@@ -97,24 +104,21 @@ pub fn record(
         None => (None, None),
     };
 
-    let sealed = store::append_chain(
-        &paths.signatures(),
-        Record {
-            serial: serial.to_owned(),
-            signed_on: clock::to_iso(signed_on)?,
-            method,
-            scan_sha256,
-            scan_path,
-            received_on: clock::to_iso(received_on)?,
-            recorded_by: recorded_by.to_owned(),
-            prev_sha256: String::new(),
-            entry_sha256: String::new(),
-        },
-    )?;
+    let sealed = store.append_signature(Record {
+        serial: serial.to_owned(),
+        signed_on: clock::to_iso(signed_on)?,
+        method,
+        scan_sha256,
+        scan_path,
+        received_on: clock::to_iso(received_on)?,
+        recorded_by: recorded_by.to_owned(),
+        prev_sha256: String::new(),
+        entry_sha256: String::new(),
+    })?;
 
     // The event log carries the history; the ledger carries the evidence.
     crate::application::personnel::record_event(
-        paths,
+        store,
         &entry.person_id,
         Kind::DocumentSigned,
         Some(serial),
@@ -138,13 +142,14 @@ pub fn record(
 /// # Errors
 /// Fails if the registry or store cannot be read.
 pub fn outstanding(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     person_id: &crate::domain::identity::PersonId,
 ) -> Result<Vec<Entry>> {
     let by_code = registry.lifecycle.by_code()?;
-    let signatures = store::signatures(paths)?;
-    Ok(store::register(paths)?
+    let signatures = store.signatures()?;
+    Ok(store
+        .register()?
         .into_iter()
         .filter(|e| &e.person_id == person_id)
         .filter(|e| {

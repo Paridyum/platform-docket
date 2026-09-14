@@ -1,6 +1,7 @@
 //! A read-only view of everyone, and of one person at a time.
 
-use crate::adapters::{registry::Registry, screen, store};
+use crate::adapters::store::Store;
+use crate::adapters::{registry::Registry, screen};
 use crate::config::Paths;
 use crate::domain::identity::Standing;
 use anyhow::Result;
@@ -76,10 +77,10 @@ pub fn interpret(view: &View, line: &str, slugs: &[String]) -> Action {
 /// Fails if the store cannot be read or the terminal cannot be written.
 pub fn draw_roster(
     out: &mut impl Write,
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
 ) -> Result<Vec<String>> {
-    let lines = crate::application::roster::build(paths, registry)?;
+    let lines = crate::application::roster::build(store, registry)?;
     screen::clear(out)?;
     screen::heading(out, "Everyone Paridyum has engaged")?;
     writeln!(
@@ -130,13 +131,14 @@ pub fn draw_roster(
 /// Fails if the store cannot be read or the terminal cannot be written.
 pub fn draw_person(
     out: &mut impl Write,
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<()> {
     screen::clear(out)?;
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
     screen::heading(out, &format!("{}  ({slug})", who.person_id))?;
     writeln!(
         out,
@@ -156,8 +158,8 @@ pub fn draw_person(
         return Ok(());
     }
 
-    let signatures = store::signatures(paths)?;
-    let register = store::register(paths)?;
+    let signatures = store.signatures()?;
+    let register = store.register()?;
     let mine: Vec<_> = register
         .iter()
         .filter(|e| e.person_id == who.person_id)
@@ -181,7 +183,7 @@ pub fn draw_person(
     }
 
     writeln!(out, "\nNEXT")?;
-    for (i, step) in crate::application::next::steps(paths, registry, slug, company)?
+    for (i, step) in crate::application::next::steps(store, paths, registry, slug, company)?
         .iter()
         .enumerate()
     {
@@ -198,6 +200,7 @@ pub fn draw_person(
 /// # Errors
 /// Fails if the store cannot be read or the terminal cannot be written.
 pub fn run(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     out: &mut impl Write,
@@ -208,11 +211,11 @@ pub fn run(
 
     loop {
         let slugs = match &view {
-            View::Roster => draw_roster(out, paths, registry)?,
+            View::Roster => draw_roster(out, store, registry)?,
             View::Person(slug) => {
-                draw_person(out, paths, registry, slug, None)?;
+                draw_person(out, store, paths, registry, slug, None)?;
                 // Keep the roster's ordering available so a number still works.
-                crate::application::roster::build(paths, registry)?
+                crate::application::roster::build(store, registry)?
                     .into_iter()
                     .map(|l| l.slug)
                     .collect()

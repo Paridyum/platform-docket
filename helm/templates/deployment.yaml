@@ -1,0 +1,81 @@
+{{- $name := "docket" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: &labels
+    # All six recommended labels (C-0007). One added to spec.selector later cannot be added at
+    # all — the field is immutable on an apps/v1 Deployment.
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/component: platform
+    app.kubernetes.io/part-of: paridyum
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # In-flight requests and the graceful shutdown need a moment on a rolling update.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      volumes:
+        # A read-only root filesystem (below) still needs somewhere to write. `/tmp` for scratch,
+        # and the blob store path for issued PDFs — ephemeral on purpose while this serves
+        # synthetic data (ADR-0093 §5; durable object storage is the open §6 decision).
+        - name: tmp
+          emptyDir: {}
+        - name: store
+          emptyDir: {}
+      containers:
+        - name: {{ $name }}
+          {{- /*
+            A DIGEST, AND THE CHART REFUSES TO RENDER WITHOUT ONE. The digest is the deployment's
+            identity (ADR-0060, REQ-0004 §2); a tag is a mutable pointer, and a rollback to a tag
+            rolls back to whatever that tag means now. `fail`, never a default.
+          */}}
+          {{- if not .Values.image.digest }}
+          {{- fail "image.digest is required. Deployments name a digest, never a tag (ADR-0060, REQ-0004 §2)." }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: store
+              mountPath: /var/lib/docket/store
+          # ADR-0020's probes. `/healthz` is the serve binary's unauthenticated liveness route
+          # (served.rs). Liveness is dumb (the process is up and serving); readiness answers the
+          # same today and is the place a database-reachability check belongs next (SOP).
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.env }}
+          env: {{- toYaml . | nindent 12 }}
+          {{- end }}

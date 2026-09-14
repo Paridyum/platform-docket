@@ -1,0 +1,22 @@
+# Publish the container image for the `serve` binary (ADR-0093, ADR-0060, REQ-0004 §2: a deployment
+# names a digest). Calls the estate's reusable image-publish workflow, which builds ./Dockerfile and
+# pushes to ghcr.io/paridyum/tool-docket by digest, emitting the digest in the run summary.
+#
+# SEPARATE from ci.yml on purpose: ci.yml is the gate suite (rust-ci + the render job), this is the
+# image. An image can publish while the gates are still being brought green — the deploy pins the
+# digest either way. This workflow's own build will pass once the Postgres port lands and `serve`
+# compiles against the shared toolchain (the env-var interface it is built for is stable, ADR-0093).
+name: publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    uses: Paridyum/infra-ci/.github/workflows/image-publish.yml@v1
+    # inherit passes PARIDYUM_PACKAGES_TOKEN if the org holds one; this image needs no private npm
+    # package (Rust, crates.io), so the build succeeds with or without it.
+    secrets: inherit

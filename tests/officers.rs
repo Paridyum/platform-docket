@@ -10,7 +10,8 @@
 use std::path::PathBuf;
 
 use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::{registry::Registry, store};
+use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::{self, FileStore};
 use tool_docket::application::{issue, personnel};
 use tool_docket::config::Paths;
 use tool_docket::domain::person;
@@ -52,6 +53,7 @@ impl Sandbox {
     fn officer(&self, slug: &str) -> person::Person {
         let reg = registry();
         personnel::create(
+            &FileStore::new(&self.paths),
             &self.paths,
             &reg,
             slug,
@@ -129,6 +131,7 @@ fn issuing_an_internship_document_to_an_officer_is_refused() {
     let by_code = reg.lifecycle.by_code().expect("codes");
 
     let err = issue::one(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -165,6 +168,7 @@ fn the_subject_is_substituted_out_rather_than_signing_their_own_document() {
         .clone();
 
     personnel::create(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
         "self-signer",
@@ -188,6 +192,7 @@ fn the_subject_is_substituted_out_rather_than_signing_their_own_document() {
     let person = store::person(&sb.paths, "self-signer").expect("record");
     let by_code = reg.lifecycle.by_code().expect("codes");
     let entry = issue::one(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
         &person,
@@ -229,10 +234,17 @@ fn the_officer_gate_waits_only_on_officer_documents() {
     let sb = Sandbox::new();
     sb.officer("gated-officer");
     let reg = registry();
-    let record = personnel::identify(&sb.paths, "gated-officer").expect("identified");
+    let record =
+        personnel::identify(&FileStore::new(&sb.paths), "gated-officer").expect("identified");
 
-    let gates = personnel::unmet_gates(&sb.paths, &reg, &record, "preboarding", "officer")
-        .expect("gates computed");
+    let gates = personnel::unmet_gates(
+        &FileStore::new(&sb.paths),
+        &reg,
+        &record,
+        "preboarding",
+        "officer",
+    )
+    .expect("gates computed");
     let codes: Vec<&str> = gates.iter().map(|g| g.code.as_str()).collect();
 
     for code in ["NDO", "IPO", "COO", "ISO"] {
@@ -272,7 +284,15 @@ fn the_officer_documents_typeset_and_name_the_director() {
 
     for code in ["NDO", "IPO", "COO", "ISO", "DPO"] {
         let doc = by_code.get(code).expect("declared");
-        let issued = issue::one(&sb.paths, &reg, &person, doc, d("2026-09-06"), "rohan");
+        let issued = issue::one(
+            &FileStore::new(&sb.paths),
+            &sb.paths,
+            &reg,
+            &person,
+            doc,
+            d("2026-09-06"),
+            "rohan",
+        );
         assert!(issued.is_ok(), "{code} renders: {:?}", issued.err());
         assert_eq!(issued.expect("checked on the line above").code, code);
     }
@@ -525,6 +545,7 @@ fn one_person_holds_office_in_two_companies_on_one_identifier() {
     let reg = registry();
 
     let first = personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "rohan",
@@ -535,7 +556,7 @@ fn one_person_holds_office_in_two_companies_on_one_identifier() {
     )
     .expect("paridyum engagement");
     let second = personnel::reengage(
-        &paths,
+        &FileStore::new(&paths),
         &reg,
         "rohan",
         "officer",
@@ -572,6 +593,7 @@ fn a_second_engagement_at_the_same_company_is_still_refused() {
     let reg = registry();
 
     personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "rohan",
@@ -582,7 +604,7 @@ fn a_second_engagement_at_the_same_company_is_still_refused() {
     )
     .expect("creates");
     let err = personnel::reengage(
-        &paths,
+        &FileStore::new(&paths),
         &reg,
         "rohan",
         "officer",
@@ -727,6 +749,7 @@ fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency
     let reg = registry();
 
     personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "rohan",
@@ -737,7 +760,7 @@ fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency
     )
     .expect("creates");
     personnel::reengage(
-        &paths,
+        &FileStore::new(&paths),
         &reg,
         "rohan",
         "officer",
@@ -747,26 +770,28 @@ fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency
     )
     .expect("second company");
 
-    let err = personnel::identify(&paths, "rohan").expect_err("ambiguity must be refused");
+    let err = personnel::identify(&FileStore::new(&paths), "rohan")
+        .expect_err("ambiguity must be refused");
     let text = format!("{err:#}");
     assert!(text.contains("holds 2 open engagements"), "{text}");
     assert!(text.contains("PAR-OFC-2026-0001"), "{text}");
     assert!(text.contains("PCY-OFC-2026-0001"), "{text}");
 
     // Named, it resolves to exactly what was asked for -- both ways round.
-    let par = personnel::identify_at(&paths, "rohan", Some("PAR")).expect("PAR");
+    let par = personnel::identify_at(&FileStore::new(&paths), "rohan", Some("PAR")).expect("PAR");
     assert_eq!(par.engagement_id.as_str(), "PAR-OFC-2026-0001");
-    let pcy = personnel::identify_at(&paths, "rohan", Some("PCY")).expect("PCY");
+    let pcy = personnel::identify_at(&FileStore::new(&paths), "rohan", Some("PCY")).expect("PCY");
     // First engagement at PCY in this store: the sequence is per company.
     assert_eq!(pcy.engagement_id.as_str(), "PCY-OFC-2026-0001");
 
     // A company they hold no office at is an error, not the other engagement.
-    let wrong = personnel::identify_at(&paths, "rohan", Some("PXX"))
+    let wrong = personnel::identify_at(&FileStore::new(&paths), "rohan", Some("PXX"))
         .expect_err("must not fall back to an engagement elsewhere");
     assert!(format!("{wrong:#}").contains("holds no engagement at PXX"));
 
     // And one engagement each still needs no flag.
     personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "aditya",
@@ -776,11 +801,11 @@ fn a_person_with_two_open_engagements_is_refused_rather_than_resolved_by_recency
         "rohan",
     )
     .expect("creates");
-    let solo = personnel::identify(&paths, "aditya").expect("unambiguous");
+    let solo = personnel::identify(&FileStore::new(&paths), "aditya").expect("unambiguous");
     assert_eq!(solo.engagement_id.as_str(), "PAR-OFC-2026-0002");
 
     // `engagements` is the view that shows both.
-    let held = personnel::engagements(&paths, "rohan").expect("engagements");
+    let held = personnel::engagements(&FileStore::new(&paths), "rohan").expect("engagements");
     assert_eq!(held.len(), 2, "{held:?}");
 }
 

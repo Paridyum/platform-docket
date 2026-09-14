@@ -1,7 +1,8 @@
 //! Packaging the store so it outlives the tool that wrote it.
 
 use crate::adapters::registry::Epoch;
-use crate::adapters::{clock, registry::Registry, store};
+use crate::adapters::store::Store;
+use crate::adapters::{clock, registry::Registry};
 use crate::config::Paths;
 use crate::domain::chain::sha256;
 use crate::domain::identity::Standing;
@@ -56,17 +57,17 @@ fn row(cells: &[&str]) -> String {
 ///
 /// # Errors
 /// Fails if the store cannot be read or the index cannot be written.
-pub fn index(paths: &Paths, registry: &Registry) -> Result<Written> {
+pub fn index(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<Written> {
     let dir = paths.store.join("index");
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
-    let ledger = store::ledger(paths)?;
-    let register = store::register(paths)?;
-    let signatures = store::signatures(paths)?;
+    let ledger = store.ledger()?;
+    let register = store.register()?;
+    let signatures = store.signatures()?;
     let current = crate::domain::identity::current(&ledger);
 
     let files = [
-        ("roster.csv", roster_csv(paths, &current, &register)),
+        ("roster.csv", roster_csv(store, &current, &register)),
         ("documents.csv", documents_csv(&register, &signatures)),
         ("README.txt", readme(current.len(), register.len())),
     ];
@@ -92,7 +93,7 @@ pub fn index(paths: &Paths, registry: &Registry) -> Result<Written> {
 
 /// One row per person, with their current engagement.
 fn roster_csv(
-    paths: &Paths,
+    store: &dyn Store,
     current: &[&crate::domain::identity::Record],
     register: &[crate::domain::register::Entry],
 ) -> String {
@@ -115,7 +116,7 @@ fn roster_csv(
         let person = if r.standing == Standing::Erased {
             None
         } else {
-            store::person(paths, &r.slug).ok()
+            store.person(&r.slug).ok()
         };
         let get = |path: &str| -> String {
             person
@@ -264,12 +265,12 @@ pub struct Overdue {
 /// # Errors
 /// Fails if the store or registry cannot be read.
 pub fn retention_due(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     today: time::Date,
 ) -> Result<(Vec<Overdue>, Vec<String>)> {
-    let register = store::register(paths)?;
-    let ledger = store::ledger(paths)?;
+    let register = store.register()?;
+    let ledger = store.ledger()?;
     let mut due = Vec::new();
     let mut unevaluated: Vec<String> = Vec::new();
 

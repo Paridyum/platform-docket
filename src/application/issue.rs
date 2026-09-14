@@ -1,6 +1,7 @@
 //! Producing a document, allocating its serial and recording it.
 
-use crate::adapters::{clock, registry::Registry, store, typeset};
+use crate::adapters::store::{self, Store};
+use crate::adapters::{clock, registry::Registry, typeset};
 use crate::config::Paths;
 use crate::domain::definitions::Definitions;
 use crate::domain::escape;
@@ -126,9 +127,9 @@ pub fn definitions_for(
 ///
 /// # Errors
 /// Fails if the register or event log cannot be read.
-pub fn add_history(defs: &mut Definitions, paths: &Paths, person: &Person) -> Result<()> {
-    let issued = store::register(paths)?;
-    let who = crate::application::personnel::identify(paths, &person.slug).ok();
+pub fn add_history(defs: &mut Definitions, store: &dyn Store, person: &Person) -> Result<()> {
+    let issued = store.register()?;
+    let who = crate::application::personnel::identify(store, &person.slug).ok();
     let mine: Vec<&Entry> = issued
         .iter()
         .filter(|e| who.as_ref().is_some_and(|w| e.person_id == w.person_id))
@@ -157,7 +158,7 @@ pub fn add_history(defs: &mut Definitions, paths: &Paths, person: &Person) -> Re
     // not an error at render time.
     let open = match &who {
         Some(record) => {
-            let log = store::events(paths)?;
+            let log = store.events()?;
             crate::domain::event::open_access(&log, &record.person_id)
         }
         None => Vec::new(),
@@ -302,6 +303,7 @@ fn refuse_if_misrouted(person: &Person, document: &Document, signatories: &[Stri
 /// Fails if the template is missing, the serial format is unset,
 /// typesetting fails, or the register cannot be written.
 pub fn one(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     person: &Person,
@@ -309,7 +311,7 @@ pub fn one(
     date: time::Date,
     by: &str,
 ) -> Result<Entry> {
-    one_with(paths, registry, person, document, date, None, by)
+    one_with(store, paths, registry, person, document, date, None, by)
 }
 
 /// Issue one document, with extra definitions only that document needs.
@@ -321,6 +323,7 @@ pub fn one(
 /// # Errors
 /// As `one`.
 pub fn one_with(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     person: &Person,
@@ -332,7 +335,7 @@ pub fn one_with(
     // The register keys on identifiers, so a document cannot be issued for a
     // record that has none. That is not a limitation: a document with no
     // identified recipient is exactly what the register exists to prevent.
-    let who = crate::application::personnel::identify(paths, &person.slug)?;
+    let who = crate::application::personnel::identify(store, &person.slug)?;
 
     // The company comes from the ENGAGEMENT, not from a flag and not from the
     // person record (ADR-0077 D2). A document belongs to the engagement it was
@@ -357,7 +360,7 @@ pub fn one_with(
         .serial_format()
         .context("org.reference.format is unset; a serial cannot be allocated")?;
     let year = date.year();
-    let existing = store::register(paths)?;
+    let existing = store.register()?;
     let used: Vec<u32> = existing
         .iter()
         .filter(|e| e.code == document.code && e.year == year)
@@ -388,7 +391,7 @@ pub fn one_with(
         "dkDocVerify",
         &serial::verification_code(serial.as_str(), &person.slug, &issued_on, &template_hash),
     );
-    add_history(&mut defs, paths, person)?;
+    add_history(&mut defs, store, person)?;
     if let Some(extra) = extra {
         defs.merge(extra);
     }
@@ -428,30 +431,31 @@ pub fn one_with(
     // engages to anyone who can read the listing (ADR-0051).
     let stored = store::keep_pdf(paths, who.person_id.as_str(), &file_name, &pdf)?;
 
-    let entry = register_entry(
-        &RegisterEntry {
-            serial: &serial,
-            seq,
-            year,
-            person: &who,
-            document,
-            issued_on: &issued_on,
-            template_hash: &template_hash,
-            pdf_sha256: &sha256(&bytes),
-            stored: &stored,
-            engine: engine.as_str(),
-            engine_version: &engine_version,
-            signed_by: &signatories,
-        },
-        existing.last(),
-    )?;
+    // Build the entry UNSEALED and hand it to the port: the seal lives behind `append_register`,
+    // where the Postgres store makes read-tail-seal-insert one atomic, fork-proof transaction and
+    // the file store does the same single-writer (design §4). Sealing here and inserting separately
+    // is exactly the fork the port exists to prevent.
+    let entry = register_entry(&RegisterEntry {
+        serial: &serial,
+        seq,
+        year,
+        person: &who,
+        document,
+        issued_on: &issued_on,
+        template_hash: &template_hash,
+        pdf_sha256: &sha256(&bytes),
+        stored: &stored,
+        engine: engine.as_str(),
+        engine_version: &engine_version,
+        signed_by: &signatories,
+    });
 
-    store::append(paths, &entry)?;
+    let entry = store.append_register(entry)?;
 
     // The log carried access and separation but never issuance, so a person's
     // history was missing the documents themselves.
     crate::application::personnel::record_event(
-        paths,
+        store,
         &who.person_id,
         crate::domain::event::Kind::DocumentIssued,
         Some(&format!("{} {serial}", document.code)),
@@ -496,8 +500,11 @@ struct RegisterEntry<'a> {
     signed_by: &'a [String],
 }
 
-/// Build and seal the register entry for one issuance.
-fn register_entry(f: &RegisterEntry<'_>, previous: Option<&Entry>) -> Result<Entry> {
+/// Build the register entry for one issuance, UNSEALED.
+///
+/// The seal is applied by the [`Store`] port's `append_register`, atomically against the committed
+/// tail of the chain (design §4), so this returns the entry with empty `prev`/`entry` digests.
+fn register_entry(f: &RegisterEntry<'_>) -> Entry {
     Entry {
         serial: f.serial.to_string(),
         code: f.document.code.clone(),
@@ -521,7 +528,6 @@ fn register_entry(f: &RegisterEntry<'_>, previous: Option<&Entry>) -> Result<Ent
         prev_sha256: String::new(),
         entry_sha256: String::new(),
     }
-    .seal(previous)
 }
 
 /// What the PDF says about itself, so a file out of the store is not anonymous.

@@ -1,0 +1,8 @@
+# Reviewable secret-scan exceptions (ADR-0017). Each line is a gitleaks fingerprint whose finding is
+# a verified false positive — never a real secret suppressed.
+#
+# A test database DSN in the (since-deleted) axum spike src/served.rs: `postgres://unused:unused@
+# 127.0.0.1:1/unused`, the lazy-pool connect string for a pool that is never opened in the auth
+# wiring tests. "unused:unused" is not a credential, the host is unroutable, and the file no longer
+# exists — but the --history scan still sees it in commit e25db0b, so it is ignored by fingerprint.
+e25db0b4f178e9d43db466bbce837863586701e6:src/served.rs:paridyum-db-url-with-password:156

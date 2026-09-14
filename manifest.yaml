@@ -1,17 +1,33 @@
 # Schema: knowledge/manifest.schema.json
 #
-# lifecycle: beta — the code is complete and reviewed to the standard it
-# will be operated at (C-0010), but it has not yet issued a document that
-# anyone has signed. It becomes `production` on the first real issuance.
+# class: platform — RECLASSIFIED by ADR-0093 §3. docket gained a served, staff-
+# authenticated backend (the `serve` binary), so it "stops being deployable: false":
+# a served, staff-authenticated backend is platform-shaped, and `platform` carries
+# deployable: true in class-registry.yaml, which is how ADR-0020's probes, resource
+# limits and Helm chart now bind it. The `docket` CLI survives as a break-glass admin
+# path against the same database (ADR-0054: added capability, the old one not removed).
+#
+# NAMING TENSION, tracked as decision debt (DECISION-DEBT.md D-58): the repository is
+# still named `tool-docket`, whose `tool-` prefix maps to the `tool` class under C-0005/
+# C-0007, while this manifest now declares `platform`. Renaming the repository to
+# `platform-docket` is the clean resolution but is a separate breaking operation (git
+# history, remotes, vendored snapshots, the console's references) that ADR-0093 does not
+# schedule here. `stack: rust` is permitted for `platform` in class-registry.yaml, so the
+# class↔stack gate passes; the prefix↔class alignment is the deferred half.
+#
+# lifecycle: beta — the code is complete and reviewed to the standard it will be operated
+# at (C-0010), but it has not yet issued a document that anyone has signed and the served
+# backend has not yet served real staff traffic. It becomes `production` on the first real
+# issuance, gated on rehearsed backups (ADR-0093 §5).
 #
 # NOT `alpha`. That value is not in the schema's enum, which permits only
-# experimental | beta | production | deprecated. tool-forge/manifest.yaml
-# currently carries `alpha` and is therefore schema-invalid; recorded in
-# DECISION-DEBT.md D-12.
+# experimental | beta | production | deprecated.
 name: tool-docket
-class: tool
+class: platform
 stack: rust
 owner: rohanbatrain
+language: rust
+runtime: kubernetes
 lifecycle: beta
 
 # Required by manifest.schema.json and STD-0013. This is the ONLY home of the
@@ -23,3 +39,12 @@ provides:
     and keep the personnel records they are issued against.
   entrypoints:
     - docket
+    - serve
+
+# The served backend (ADR-0093). The `serve` binary exposes an HTTP JSON API and an
+# unauthenticated `/healthz` liveness route on this port, configured entirely from the
+# environment (DOCKET_*). Deployed by helm/ into the `platform` namespace, reached at
+# docket.platform.svc.cluster.local:8080.
+exposes:
+  http:
+    port: 8080

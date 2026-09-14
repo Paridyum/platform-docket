@@ -676,9 +676,15 @@ the point of it.
 
 ---
 
-## Task: serve the API for the HR console
+## Task: serve the API for the HR console — loopback (break-glass)
 
-**When:** an HR operator needs `console-docket` rather than the command line.
+**This is the loopback break-glass path over the FILE store.** The primary served backend is now
+`serve` over Postgres with token authentication (next task, ADR-0093). Use this loopback path when you
+need the console against a local file store — a single operator, offline, SSH-fronted. It authenticates
+by the `X-Docket-Operator` attribution header (no tokens), and since ADR-0093 §decision-2 it serves
+thread-per-request; do not run several concurrent writers against it (D-63).
+
+**When:** an HR operator needs `console-docket` against a local file store rather than the command line.
 **Preconditions:** the store is readable. The script checks the port itself.
 
     scripts/serve.sh --port 8080
@@ -777,6 +783,117 @@ record, or use the CLI where `--force` is typed out and visible in shell history
 
 ---
 
+## Task: run the served backend for all HR staff (Postgres + tokens, ADR-0093)
+
+**When:** the everyday, multi-operator console backend — served over the network to Paridyum's HR
+staff, backed by the shared Postgres store, authenticated by control-plane operator tokens (ADR-0092).
+This is the `serve` binary, NOT `docket serve` (that is the loopback file-store break-glass path
+above). The binary name is `serve` because the deploy chart depends on it.
+
+**Preconditions:** the docket tables exist in the tenant database (platform-tenancy migrations
+0001–0006 applied), the operator's control-plane subject is bound in `registry/operators.yaml` with a
+`subject:` (ADR-0092 §2), and the environment below is set (secrets arrive decrypted at deploy,
+RUN-0004 — never read from a file here).
+
+    DOCKET_DATABASE_URL   the docket database (sqlx)
+    DOCKET_OIDC_ISSUER    the control-plane issuer, e.g. https://id.paridyum.com
+    DOCKET_OIDC_JWKS      JWKS URL (default: {issuer}/oauth/v2/keys)
+    DOCKET_OIDC_AUDIENCE  the paridyum-operations project id a token must be audienced for
+    DOCKET_TENANT_ID      the tenant whose HR records this instance serves (a uuid)
+    DOCKET_BIND           listen address (default 0.0.0.0:8080)
+    DOCKET_ROOT           where registry/ lives (default: the current directory)
+
+    cargo run --bin serve      # or the built `serve` binary in the deploy image
+
+It fetches the control-plane JWKS once at startup (off the request path), opens the Postgres pool,
+loads the registry, and serves the **same** `adapters/http` router the console already speaks — every
+route calling the same `application::` function the CLI calls. It runs in the foreground; startup and
+connection errors go to stderr via `tracing`.
+
+**A routable bind is permitted ONLY because a verifier is present.** `serve` configures an OIDC token
+verifier, so it may bind `0.0.0.0` (design §5). Without a verifier a routable bind is refused — that
+invariant is what keeps docket from ever being reachable without authentication.
+
+**Every write authenticates from a Bearer token, not the header.** The console forwards the operator's
+control-plane token; the backend verifies it (signature, issuer, audience, `operator` role) and binds
+its subject to a docket operator:
+
+```
+curl -H 'Authorization: Bearer <operator-token>' http://<host>:8080/api/roster
+```
+
+- **No token, or an unverifiable one → 401.** Present a valid token.
+- **A valid token whose subject is bound to no operator → 403.** Bind the subject in
+  `registry/operators.yaml`.
+- The `X-Docket-Operator` header is **ignored** here: with a verifier present it does not even get
+  read, so a served route can never degrade to an unverified claim.
+
+Reads and writes, refusal semantics (409 is a refusal, not a failure), and the contract are identical
+to the loopback task above — it is the same router.
+
+**Known limits, recorded as debt:** erasing on the Postgres store is not yet possible — it needs a
+cross-repo migration 0007 (D-60), so honour an erasure through the break-glass CLI on the file store;
+`advance` (stage change) still edits the person body on disk, so it is not yet wired for the served
+Postgres path (D-62); and issued PDF bytes stay on the host that rendered them until the blob store is
+decided — the served backend shares the register RECORD of an issuance immediately, not the file
+(design §8).
+
+**The integration test that proves it:** `tests/served_api.rs`, run with `DOCKET_DATABASE_URL` set —
+a signed operator token creating a person and reading the roster back through the real router, plus the
+401/403 refusals (see the Postgres-store task below for the one-liner).
+
+---
+
+## Task: run the CLI against the cluster Postgres (break-glass)
+
+**When:** you need the command line against the SAME records the served backend (`bin/serve`) serves —
+an admin fix, a bulk read, anything the HR console does not expose. ADR-0093 §3: the CLI is a
+break-glass client of that database, not a second copy.
+**Preconditions:** you can reach the in-cluster database, and you know the tenant's uuid.
+
+A laptop does not reach the in-cluster database directly. Forward it first:
+
+    kubectl port-forward -n postgres svc/paridyum-rw 5432:5432
+
+That holds the forward open in the foreground; run docket from another terminal. Then point docket at
+the database and name the tenant, and every command reads and writes Postgres instead of local files:
+
+    export DOCKET_DATABASE_URL="postgres://<user>:<pass>@localhost:5432/paridyum?sslmode=disable"
+    export DOCKET_TENANT_ID="<the tenant uuid>"
+    export DOCKET_OPERATOR="rohan"          # writes still need an operator
+    docket roster
+    docket new asha-verma intern            # lands in docket_persons + the chains, via the port
+
+**Correct output:** every run prints one line to stderr first, naming the store —
+
+    docket: store = Postgres at localhost:5432/paridyum for tenant <uuid>; break-glass client of the
+    cluster, NOT local files (ADR-0093 §3)
+
+**Read that line.** It is the difference between fixing the cluster and quietly editing a local store.
+Unset `DOCKET_DATABASE_URL` and it says `store = local files at …` instead — the offline default, which
+is a different set of records.
+
+**Verify:** `docket roster` returns the tenant's people; a write (`docket new`, `docket onboard`,
+`docket sign`) then shows on the served console, because both go through the same `Store` port to the
+same rows.
+
+**When it goes wrong:**
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `DOCKET_DATABASE_URL is set … must be told which tenant: set DOCKET_TENANT_ID to a uuid` | the DB URL is set but the tenant is not | export `DOCKET_TENANT_ID`. It is never guessed — every row is tenant-scoped |
+| `DOCKET_TENANT_ID="…" is not a uuid` | the tenant value is malformed | copy the tenant's uuid exactly |
+| `opening the docket database (is DOCKET_DATABASE_URL reachable?)` | nothing is listening on the port | the `kubectl port-forward` is not running, or is on a different local port than the URL |
+| `advance … on Postgres the record lives in the database, not on disk … (D-62)` | `advance` cannot change a stage on Postgres yet | change the stage from the served backend, or run `advance` offline (unset `DOCKET_DATABASE_URL`) |
+| `erase re-seals the event log … forbids without migration 0007 … (D-60)` | erasure is not yet honourable on Postgres | run `docket erase` offline against the file store, which re-seals correctly |
+| a write refused with `paridyum.tenant_id is not set` from psql, but docket works | you queried the table directly without the RLS session variables | that is the isolation working; read through docket, or set `paridyum.tenant_id`/`paridyum.operator_scope` in the psql session |
+
+**No file lock is taken on Postgres**, deliberately: the database's advisory-locked seal-append is the
+concurrency control (ADR-0093 §decision-2), so two operators may run break-glass writes at once without
+one refusing the other. On the file store the single-writer lock still holds.
+
+---
+
 ## Task: find documents past their retention period
 
 **When:** periodically, and before any archive transfer.
@@ -849,3 +966,84 @@ except `erase`, which rewrites the event log to its skeletal events and
 re-seals the chain. That is the one place the append-only rule is broken, and
 it is broken because an append-only log that cannot forget is a log that cannot
 honour an erasure request.
+
+## Running the Postgres store, and its integration test (ADR-0093, RFC-0039 D1)
+
+docket's store is moving to Postgres (`adapters/pg.rs`, migration 0006 in platform-tenancy). The
+adapter is async (sqlx, ADR-0005); the served backend awaits it and the break-glass CLI `block_on`s
+it (ADR-0093 §3). The CLI is now a database client over the mesh, not a reader of a file node.
+
+`tests/pg_store.rs` proves all four sealed chains (identity, register, events, signatures) round-trip
+through a real database with their seals intact, that the mutable person record upserts and reads
+back, and that RLS isolates tenants on every table. It skips unless `DOCKET_DATABASE_URL` is set, so
+`cargo test` needs no database. To run it against a throwaway Postgres:
+
+```sh
+docker run -d --name dk-pg -e POSTGRES_PASSWORD=x -e POSTGRES_DB=paridyum -p 5433:5432 postgres:17
+docker exec dk-pg psql -U postgres -d paridyum -c \
+  "CREATE ROLE paridyum LOGIN PASSWORD 'x'; ALTER DATABASE paridyum OWNER TO paridyum; \
+   ALTER SCHEMA public OWNER TO paridyum; \
+   CREATE OR REPLACE FUNCTION public.uuidv7() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()';"
+# apply platform-tenancy migrations 0001..0006 (up sections) as role paridyum, then:
+DOCKET_DATABASE_URL="postgres://paridyum:x@localhost:5433/paridyum?sslmode=disable" \
+  cargo test --test pg_store --test served_api
+```
+
+`--test served_api` drives the REAL served router end to end over that same database: a signed
+operator token creates a person and reads the roster back through `adapters/http`, and the two auth
+refusals (missing token → 401, unbound subject → 403) are checked. It skips without
+`DOCKET_DATABASE_URL` too.
+
+The `uuidv7()` shim is only for a PG17 box; the cluster's Postgres provides it. The tests seed their
+own fresh tenant per run, so they are re-runnable against a persistent database.
+
+## Task: run the served backend, and deploy it to the cluster (ADR-0093)
+
+**When:** standing docket up as the served HR platform, or building/deploying its image.
+**Preconditions:** the Postgres store is reachable (platform-tenancy migrations applied),
+and a control-plane (Zitadel) issuer with the `paridyum-operations` project exists.
+
+The `serve` binary is the everyday interface for all HR staff; the `docket` CLI remains a
+break-glass admin path against the same database. `serve` is configured ENTIRELY from the
+environment — no flags, no config file (RUN-0004: secrets arrive decrypted at deploy):
+
+    DOCKET_DATABASE_URL   the docket database (sqlx); a SECRET, from SOPS at deploy
+    DOCKET_OIDC_ISSUER    the control-plane issuer, e.g. https://id.paridyum.com
+    DOCKET_OIDC_JWKS      JWKS URL (default: {issuer}/oauth/v2/keys)
+    DOCKET_OIDC_AUDIENCE  the paridyum-operations project id a token must be audienced for
+    DOCKET_TENANT_ID      the tenant whose HR records this instance serves (a uuid)
+    DOCKET_BIND           listen address (default 0.0.0.0:8080)
+    DOCKET_ROOT           where registry/, templates/ and latex/ live (default: .)
+
+Run it locally against a throwaway database:
+
+    DOCKET_DATABASE_URL="postgres://paridyum:x@localhost:5433/paridyum?sslmode=disable" \
+    DOCKET_OIDC_ISSUER="https://id.paridyum.com" \
+    DOCKET_OIDC_AUDIENCE="<paridyum-operations project id>" \
+    DOCKET_TENANT_ID="<tenant uuid>" \
+    cargo run --bin serve
+
+    curl -s localhost:8080/healthz     # the unauthenticated liveness route; 200 when serving
+
+**Build the image.** Pushing to `main` runs `.github/workflows/publish.yml`, which calls the
+estate's `image-publish.yml` to build `./Dockerfile` and push `ghcr.io/paridyum/tool-docket`
+by DIGEST (ADR-0060). The run summary prints the `sha256:…` digest — that, not a tag, is what
+a deployment names. To build it by hand:
+
+    docker build -t ghcr.io/paridyum/tool-docket:local .
+
+**Deploy.** The Helm chart is in `helm/` (Deployment + Service, `/healthz` liveness/readiness
+probes, resource limits, ClusterIP). Non-secret config lives in `helm/values-staging.yaml`;
+`DOCKET_DATABASE_URL` is wired from a k8s Secret named `docket` (key `database_url`), created
+from SOPS at deploy — the chart references it and creates none:
+
+    # create the DSN Secret from the SOPS-encrypted source (never typed on a terminal)
+    kubectl -n platform create secret generic docket \
+      --from-literal=database_url="$(sops --decrypt .../secrets/docket.sops.yaml | awk '/^database_url:/{print $2}')"
+
+    helm upgrade --install docket ./helm -n platform \
+      -f helm/values-staging.yaml --set image.digest=sha256:<from the publish run>
+
+The chart REFUSES to render without `image.digest` (ADR-0060). Fill the
+`SET_FROM_zitadel-apps_OUTPUT` / `SET_FROM_tenancy_OUTPUT` placeholders in
+`values-staging.yaml` with the real project id and tenant uuid before deploying.

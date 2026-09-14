@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::{registry::Registry, store};
+use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::{self, FileStore};
 use tool_docket::application::{check, personnel, roster};
 use tool_docket::config::Paths;
 use tool_docket::domain::event::Kind;
@@ -85,6 +86,7 @@ fn skip_without_typesetter(test: &str) -> bool {
 fn creating_a_person_allocates_an_identifier_and_a_record() {
     let sb = Sandbox::new();
     let r = personnel::create(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         "asha-verma",
@@ -115,12 +117,39 @@ fn creating_a_person_allocates_an_identifier_and_a_record() {
 fn person_sequences_are_global_and_engagement_sequences_are_scoped() {
     let sb = Sandbox::new();
     let reg = registry();
-    let a =
-        personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").expect("creates");
-    let b =
-        personnel::create(&sb.paths, &reg, "b", "intern", "PAR", date(), "rohan").expect("creates");
-    let c = personnel::create(&sb.paths, &reg, "c", "employee", "PAR", date(), "rohan")
-        .expect("creates");
+    let a = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "a",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let b = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "b",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let c = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "c",
+        "employee",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
 
     // A person identifier counts PEOPLE and carries no class or year.
     assert_eq!(a.person_id.as_str(), "PAR-P-000001-X");
@@ -138,6 +167,7 @@ fn person_sequences_are_global_and_engagement_sequences_are_scoped() {
 fn an_unknown_class_names_the_ones_that_exist() {
     let sb = Sandbox::new();
     let err = personnel::create(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         "a",
@@ -159,8 +189,30 @@ fn an_unknown_class_names_the_ones_that_exist() {
 fn a_duplicate_slug_is_refused() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").expect("creates");
-    assert!(personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").is_err());
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "a",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    assert!(
+        personnel::create(
+            &FileStore::new(&sb.paths),
+            &sb.paths,
+            &reg,
+            "a",
+            "intern",
+            "PAR",
+            date(),
+            "rohan"
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -170,13 +222,23 @@ fn collecting_a_statutory_identifier_for_an_unpaid_intern_is_refused() {
     // processing personal data for which no purpose exists.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "t",
         &[("version: 1", "version: 1\nstatutory:\n  pan: ABCDE1234F")],
     );
 
-    let d = personnel::dossier(&sb.paths, &reg, "t", None).expect("dossier");
+    let d = personnel::dossier(&FileStore::new(&sb.paths), &reg, "t", None).expect("dossier");
     assert!(
         d.violations
             .iter()
@@ -191,7 +253,17 @@ fn collecting_a_statutory_identifier_for_an_unpaid_intern_is_refused() {
 fn an_employee_may_hold_statutory_identifiers_but_not_in_the_person_record() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "e", "employee", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "e",
+        "employee",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "e",
         &[
@@ -205,7 +277,7 @@ fn an_employee_may_hold_statutory_identifiers_but_not_in_the_person_record() {
     // The class PERMITS them, unlike an intern's — no `Forbidden` violation.
     // They still belong in the `statutory` store rather than in the person
     // record, so `WrongStore` is expected and is the correct outcome.
-    let d = personnel::dossier(&sb.paths, &reg, "e", None).expect("dossier");
+    let d = personnel::dossier(&FileStore::new(&sb.paths), &reg, "e", None).expect("dossier");
     assert!(
         d.violations
             .iter()
@@ -226,17 +298,33 @@ fn an_employee_may_hold_statutory_identifiers_but_not_in_the_person_record() {
 fn access_still_open_is_derived_from_recorded_events() {
     let sb = Sandbox::new();
     let reg = registry();
-    let r =
-        personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    let r = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     for (kind, detail) in [
         (Kind::AccessGranted, "github"),
         (Kind::AccessGranted, "vpn"),
         (Kind::AccessRevoked, "github"),
     ] {
-        personnel::record_event(&sb.paths, &r.person_id, kind, Some(detail), "test", date())
-            .expect("records");
+        personnel::record_event(
+            &FileStore::new(&sb.paths),
+            &r.person_id,
+            kind,
+            Some(detail),
+            "test",
+            date(),
+        )
+        .expect("records");
     }
-    let d = personnel::dossier(&sb.paths, &reg, "t", None).expect("dossier");
+    let d = personnel::dossier(&FileStore::new(&sb.paths), &reg, "t", None).expect("dossier");
     assert_eq!(d.open_access, ["vpn"]);
 }
 
@@ -244,12 +332,23 @@ fn access_still_open_is_derived_from_recorded_events() {
 fn separation_keeps_the_record_and_its_documents() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
-    let r = personnel::separate(&sb.paths, "t", date(), "rohan").expect("separates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let r =
+        personnel::separate(&FileStore::new(&sb.paths), "t", date(), "rohan").expect("separates");
     assert_eq!(r.standing, Standing::Separated);
     assert!(sb.paths.person("t").exists(), "separation is not erasure");
     assert!(
-        personnel::separate(&sb.paths, "t", date(), "rohan").is_err(),
+        personnel::separate(&FileStore::new(&sb.paths), "t", date(), "rohan").is_err(),
         "not twice"
     );
 }
@@ -260,10 +359,19 @@ fn erasure_deletes_the_record_but_keeps_the_identifier() {
     // has to resolve the serials issued under that identifier.
     let sb = Sandbox::new();
     let reg = registry();
-    let created =
-        personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::record_event(
+    let created = personnel::create(
+        &FileStore::new(&sb.paths),
         &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::record_event(
+        &FileStore::new(&sb.paths),
         &created.person_id,
         Kind::AccessGranted,
         Some("github"),
@@ -272,7 +380,8 @@ fn erasure_deletes_the_record_but_keeps_the_identifier() {
     )
     .expect("records");
 
-    let erased = personnel::erase(&sb.paths, "t", date(), "rohan").expect("erases");
+    let erased = personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "t", date(), "rohan")
+        .expect("erases");
     assert_eq!(erased.standing, Standing::Erased);
     assert_eq!(
         erased.person_id, created.person_id,
@@ -299,10 +408,29 @@ fn erasure_deletes_the_record_but_keeps_the_identifier() {
 fn an_erased_identifier_is_never_reissued() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::erase(&sb.paths, "a", date(), "rohan").expect("erases");
-    let next =
-        personnel::create(&sb.paths, &reg, "b", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "a",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
+    let next = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "b",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     assert_eq!(
         next.person_id.as_str(),
         "PAR-P-000002-8",
@@ -316,11 +444,30 @@ fn every_chain_still_verifies_after_an_erasure() {
     // does not append. The chain must be re-sealed, not merely truncated.
     let sb = Sandbox::new();
     let reg = registry();
-    let a =
-        personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::create(&sb.paths, &reg, "b", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::record_event(
+    let a = personnel::create(
+        &FileStore::new(&sb.paths),
         &sb.paths,
+        &reg,
+        "a",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "b",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::record_event(
+        &FileStore::new(&sb.paths),
         &a.person_id,
         Kind::AccessGranted,
         Some("x"),
@@ -328,9 +475,9 @@ fn every_chain_still_verifies_after_an_erasure() {
         date(),
     )
     .expect("records");
-    personnel::erase(&sb.paths, "a", date(), "rohan").expect("erases");
+    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
 
-    let findings = check::run(&sb.paths, &reg).expect("check runs");
+    let findings = check::run(&FileStore::new(&sb.paths), &sb.paths, &reg).expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -346,10 +493,20 @@ fn an_erased_person_stays_on_the_roster_as_a_tombstone() {
     // register of who was engaged.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "a", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::erase(&sb.paths, "a", date(), "rohan").expect("erases");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "a",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "a", date(), "rohan").expect("erases");
 
-    let lines = roster::build(&sb.paths, &reg).expect("roster");
+    let lines = roster::build(&FileStore::new(&sb.paths), &reg).expect("roster");
     assert_eq!(lines.len(), 1);
     let line = lines.first().expect("one line");
     assert_eq!(line.standing, Standing::Erased);
@@ -370,7 +527,7 @@ fn a_record_created_by_hand_is_reported_rather_than_trusted() {
         sb.paths.person("smuggled"),
     )
     .expect("copy");
-    let findings = check::run(&sb.paths, &reg).expect("check runs");
+    let findings = check::run(&FileStore::new(&sb.paths), &sb.paths, &reg).expect("check runs");
     assert!(
         findings
             .items
@@ -389,7 +546,17 @@ fn recorded_pronouns_reach_the_document() {
     // a person was misgendered on a certificate they keep.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "p", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "p",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "p",
         &[
@@ -409,7 +576,17 @@ fn recorded_pronouns_reach_the_document() {
 fn pronouns_default_to_they_them_when_not_recorded() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "p", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "p",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "p",
         &[(
@@ -432,19 +609,36 @@ fn the_offboarding_checklist_names_access_still_open() {
     // generic list. Deriving it means the paper cannot disagree with the log.
     let sb = Sandbox::new();
     let reg = registry();
-    let r =
-        personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    let r = personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     for (kind, detail) in [
         (Kind::AccessGranted, "github"),
         (Kind::AccessGranted, "vpn"),
         (Kind::AccessRevoked, "vpn"),
     ] {
-        personnel::record_event(&sb.paths, &r.person_id, kind, Some(detail), "test", date())
-            .expect("records");
+        personnel::record_event(
+            &FileStore::new(&sb.paths),
+            &r.person_id,
+            kind,
+            Some(detail),
+            "test",
+            date(),
+        )
+        .expect("records");
     }
     let person = store::person(&sb.paths, "t").expect("record");
     let mut defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    tool_docket::application::issue::add_history(&mut defs, &sb.paths, &person).expect("history");
+    tool_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
+        .expect("history");
 
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("1"));
     let items = defs.get("dkPAccessOpenItems").unwrap_or_default();
@@ -461,10 +655,21 @@ fn a_person_with_no_recorded_history_still_renders() {
     // no \item is a LaTeX error, so the empty case needs a body.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
     let mut defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    tool_docket::application::issue::add_history(&mut defs, &sb.paths, &person).expect("history");
+    tool_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
+        .expect("history");
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("0"));
     assert!(
         defs.get("dkPAccessOpenItems")
@@ -498,8 +703,17 @@ fn consent_is_owed_by_no_stage() {
 fn the_institution_letter_is_owed_only_when_the_institution_asks() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "no-noc", "intern", "PAR", date(), "rohan")
-        .expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "no-noc",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "no-noc",
         &[(
@@ -507,7 +721,7 @@ fn the_institution_letter_is_owed_only_when_the_institution_asks() {
             "institution_requires_noc: false",
         )],
     );
-    let who = personnel::identify(&sb.paths, "no-noc").expect("identified");
+    let who = personnel::identify(&FileStore::new(&sb.paths), "no-noc").expect("identified");
     let person = store::person(&sb.paths, "no-noc").expect("record");
     let owed = tool_docket::application::issue::outstanding(&reg, &person, &who, &[])
         .expect("outstanding");
@@ -559,7 +773,7 @@ fn the_checked_in_catalogue_is_internally_consistent() {
     // Empty store: repository validity must not depend on gitignored records.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&paths, &registry()).expect("check runs");
+    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -595,17 +809,36 @@ fn the_pack_groups_documents_by_what_must_be_done_with_them() {
     // opening the folder actually has, so that is what the folders answer.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
     let by_code = reg.lifecycle.by_code().expect("codes");
     for code in ["NDA", "ONB", "INS", "PUB"] {
         let doc = by_code.get(code).expect("declared");
-        tool_docket::application::issue::one(&sb.paths, &reg, &person, doc, date(), "rohan")
-            .expect("issues");
+        tool_docket::application::issue::one(
+            &FileStore::new(&sb.paths),
+            &sb.paths,
+            &reg,
+            &person,
+            doc,
+            date(),
+            "rohan",
+        )
+        .expect("issues");
     }
 
     let grouped =
-        tool_docket::application::pack::grouped(&sb.paths, &reg, "t", None).expect("grouped");
+        tool_docket::application::pack::grouped(&FileStore::new(&sb.paths), &reg, "t", None)
+            .expect("grouped");
     let find = |a: Action| -> Vec<String> {
         grouped
             .iter()
@@ -630,7 +863,17 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
     }
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
     let doc = reg
         .lifecycle
@@ -639,14 +882,30 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
         .get("NDA")
         .copied()
         .expect("declared");
-    tool_docket::application::issue::one(&sb.paths, &reg, &person, doc, date(), "rohan")
-        .expect("issues");
+    tool_docket::application::issue::one(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        &person,
+        doc,
+        date(),
+        "rohan",
+    )
+    .expect("issues");
 
     let before = std::fs::read(sb.paths.register()).expect("register");
     let out = sb.dir.path().join("out");
-    let p =
-        tool_docket::application::pack::assemble(&sb.paths, &reg, "t", None, &out, date(), "rohan")
-            .expect("assembles");
+    let p = tool_docket::application::pack::assemble(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+        &out,
+        date(),
+        "rohan",
+    )
+    .expect("assembles");
 
     // Every listed hash matches the file it names.
     let manifest = std::fs::read_to_string(p.root.join("MANIFEST-sha256.txt")).expect("manifest");
@@ -673,13 +932,31 @@ fn packing_a_person_with_nothing_issued_is_refused() {
     }
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     let out = sb.dir.path().join("out");
-    let err =
-        tool_docket::application::pack::assemble(&sb.paths, &reg, "t", None, &out, date(), "rohan")
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
+    let err = tool_docket::application::pack::assemble(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+        &out,
+        date(),
+        "rohan",
+    )
+    .err()
+    .map(|e| e.to_string())
+    .unwrap_or_default();
     assert!(err.contains("no issued documents"), "{err}");
 }
 
@@ -690,7 +967,17 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
     }
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
     let doc = reg
         .lifecycle
@@ -699,19 +986,43 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
         .get("NDA")
         .copied()
         .expect("declared");
-    tool_docket::application::issue::one(&sb.paths, &reg, &person, doc, date(), "rohan")
-        .expect("issues");
+    tool_docket::application::issue::one(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        &person,
+        doc,
+        date(),
+        "rohan",
+    )
+    .expect("issues");
 
     let out = sb.dir.path().join("out");
-    let first =
-        tool_docket::application::pack::assemble(&sb.paths, &reg, "t", None, &out, date(), "rohan")
-            .expect("assembles");
+    let first = tool_docket::application::pack::assemble(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+        &out,
+        date(),
+        "rohan",
+    )
+    .expect("assembles");
     let stray = first.root.join("01_Sign_and_return").join("99_stale.pdf");
     std::fs::write(&stray, b"left over from a previous pack").expect("write");
 
-    let again =
-        tool_docket::application::pack::assemble(&sb.paths, &reg, "t", None, &out, date(), "rohan")
-            .expect("reassembles");
+    let again = tool_docket::application::pack::assemble(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+        &out,
+        date(),
+        "rohan",
+    )
+    .expect("reassembles");
     assert!(!stray.exists(), "a stale file must not survive a rebuild");
     assert!(again.root.join("MANIFEST-sha256.txt").exists());
 }
@@ -754,8 +1065,19 @@ fn a_message_reports_attachments_that_have_not_been_issued() {
     // about to attach it to a real email.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
-    let due = tool_docket::application::comms::due(&sb.paths, &reg, "t", None).expect("due");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+        .expect("due");
     let offer = due
         .iter()
         .find(|m| m.id == "offer")
@@ -767,8 +1089,19 @@ fn a_message_reports_attachments_that_have_not_been_issued() {
 fn messages_are_addressed_from_the_record() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
-    let due = tool_docket::application::comms::due(&sb.paths, &reg, "t", None).expect("due");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+        .expect("due");
     let offer = due.iter().find(|m| m.id == "offer").expect("offer");
     assert_eq!(offer.address.as_deref(), Some("test.person@example.com"));
     assert!(
@@ -788,14 +1121,36 @@ fn messages_are_addressed_from_the_record() {
 fn the_guardian_message_is_due_only_for_a_child() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "adult", "intern", "PAR", date(), "rohan").expect("creates");
-    let adult = tool_docket::application::comms::due(&sb.paths, &reg, "adult", None).expect("due");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "adult",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let adult =
+        tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "adult", None)
+            .expect("due");
     assert!(
         !adult.iter().any(|m| m.id == "guardian"),
         "no guardian, no message"
     );
 
-    personnel::create(&sb.paths, &reg, "child", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "child",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "child",
         &[
@@ -806,7 +1161,9 @@ fn the_guardian_message_is_due_only_for_a_child() {
             ),
         ],
     );
-    let child = tool_docket::application::comms::due(&sb.paths, &reg, "child", None).expect("due");
+    let child =
+        tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "child", None)
+            .expect("due");
     let g = child
         .iter()
         .find(|m| m.id == "guardian")
@@ -823,9 +1180,20 @@ fn messages_are_cumulative_across_stages() {
     // Reaching `active` does not mean the preboarding messages were sent.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit("t", &[("stage: preboarding", "stage: active")]);
-    let due = tool_docket::application::comms::due(&sb.paths, &reg, "t", None).expect("due");
+    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+        .expect("due");
     let ids: Vec<&str> = due.iter().map(|m| m.id.as_str()).collect();
     assert!(
         ids.contains(&"offer"),
@@ -844,9 +1212,26 @@ fn next_walks_a_person_through_the_workflow_in_order() {
     // has to know the lifecycle.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
 
-    let first = tool_docket::application::next::steps(&sb.paths, &reg, "t", None).expect("steps");
+    let first = tool_docket::application::next::steps(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+    )
+    .expect("steps");
     assert!(
         first.first().is_some_and(|s| s.what.contains("Issue")),
         "nothing is issued yet, so issuing is first: {:?}",
@@ -860,13 +1245,30 @@ fn next_refuses_to_look_past_a_record_that_cannot_be_issued_against() {
     // the list stops at the fix rather than burying it under later steps.
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit(
         "t",
         &[("currently_enrolled: true", "currently_enrolled: false")],
     );
 
-    let steps = tool_docket::application::next::steps(&sb.paths, &reg, "t", None).expect("steps");
+    let steps = tool_docket::application::next::steps(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+    )
+    .expect("steps");
     assert!(
         steps.iter().all(|s| s.what.starts_with("Fix the record")),
         "{steps:?}"
@@ -886,9 +1288,26 @@ fn next_does_not_suggest_advancing_out_of_an_ungated_stage() {
     );
 
     let sb = Sandbox::new();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
     sb.edit("t", &[("stage: preboarding", "stage: active")]);
-    let steps = tool_docket::application::next::steps(&sb.paths, &reg, "t", None).expect("steps");
+    let steps = tool_docket::application::next::steps(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+    )
+    .expect("steps");
     assert!(
         !steps.iter().any(|s| s.what.contains("next stage")),
         "must not suggest advancing from an ungated stage: {steps:?}"
@@ -899,9 +1318,26 @@ fn next_does_not_suggest_advancing_out_of_an_ungated_stage() {
 fn next_says_nothing_remains_for_an_erased_person() {
     let sb = Sandbox::new();
     let reg = registry();
-    personnel::create(&sb.paths, &reg, "t", "intern", "PAR", date(), "rohan").expect("creates");
-    personnel::erase(&sb.paths, "t", date(), "rohan").expect("erases");
-    let steps = tool_docket::application::next::steps(&sb.paths, &reg, "t", None).expect("steps");
+    personnel::create(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    personnel::erase(&FileStore::new(&sb.paths), &sb.paths, "t", date(), "rohan").expect("erases");
+    let steps = tool_docket::application::next::steps(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        "t",
+        None,
+    )
+    .expect("steps");
     assert_eq!(steps.len(), 1);
     assert!(
         steps.first().is_some_and(|s| s.command.is_none()),

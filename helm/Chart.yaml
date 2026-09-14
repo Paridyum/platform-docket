@@ -1,0 +1,6 @@
+apiVersion: v2
+name: docket
+description: The docket served backend (ADR-0093) — the HR platform every Paridyum staff member reaches, authenticated against the control plane and backed by Postgres.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

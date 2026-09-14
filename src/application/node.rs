@@ -7,7 +7,8 @@
 //! This module answers two questions the store could not previously answer:
 //! *what dies with this machine*, and *can a different machine bring it back*.
 
-use crate::adapters::{crypt, store};
+use crate::adapters::crypt;
+use crate::adapters::store::Store;
 use crate::config::Paths;
 use crate::domain::chain;
 use anyhow::{Context, Result, bail};
@@ -242,16 +243,16 @@ pub fn restore(bundle: &Path, identity: &Path, into: &Paths) -> Result<Vec<Strin
 ///
 /// # Errors
 /// Fails if a chain cannot be read.
-pub fn verify_restored(paths: &Paths) -> Result<Vec<String>> {
+pub fn verify_restored(store: &dyn Store) -> Result<Vec<String>> {
     let mut faults = Vec::new();
-    let ledger = store::ledger(paths)?;
+    let ledger = store.ledger()?;
     for fault in chain::verify(&ledger)? {
         faults.push(format!("identity ledger {fault}"));
     }
-    for fault in chain::verify(&store::events(paths)?)? {
+    for fault in chain::verify(&store.events()?)? {
         faults.push(format!("event log {fault}"));
     }
-    for fault in chain::verify(&store::signatures(paths)?)? {
+    for fault in chain::verify(&store.signatures()?)? {
         faults.push(format!("signature ledger {fault}"));
     }
     if ledger.is_empty() {

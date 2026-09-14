@@ -1,12 +1,65 @@
 //! Who is making this request, and whether they may.
 
+use crate::adapters::auth::OperatorVerifier;
 use crate::adapters::http::request::Request;
-use crate::adapters::http::router::NOT_PERMITTED;
+use crate::adapters::http::router::{NOT_AUTHENTICATED, NOT_PERMITTED};
 use crate::adapters::registry::Registry;
 use anyhow::{Context, Result, anyhow};
 
 /// Header naming the operator. Also the CSRF defence — see [`resolve`].
 pub const OPERATOR_HEADER: &str = "x-docket-operator";
+
+/// The bearer-token header the served backend authenticates from (ADR-0092).
+pub const AUTHORIZATION_HEADER: &str = "authorization";
+
+/// Resolve the operator, choosing the auth mechanism by whether a verifier is present.
+///
+/// This is the §5 invariant made mechanical: a served backend is configured with a token verifier
+/// and authenticates every write from a control-plane Bearer token (ADR-0092); a loopback backend
+/// (the CLI's `docket serve`, break-glass, SSH-fronted) has no verifier and falls back to the
+/// attribution header. The two never mix — where a verifier is present the header is not even read,
+/// so a served route cannot degrade to an unverified claim (design §5).
+///
+/// # Errors
+/// Token path: missing or unverifiable token → 401; a verified subject bound to no operator → 403.
+/// Header path: a missing, blank, or unknown operator → 403.
+pub fn resolve<'a>(
+    registry: &'a Registry,
+    verifier: Option<&OperatorVerifier>,
+    req: &Request,
+) -> Result<&'a str> {
+    match verifier {
+        Some(verifier) => resolve_token(registry, verifier, req),
+        None => resolve_header(registry, req),
+    }
+}
+
+/// The served path: a verified control-plane token bound to a docket operator (ADR-0092).
+fn resolve_token<'a>(
+    registry: &'a Registry,
+    verifier: &OperatorVerifier,
+    req: &Request,
+) -> Result<&'a str> {
+    let Some(header) = req.header(AUTHORIZATION_HEADER) else {
+        return Err(anyhow!(NOT_AUTHENTICATED).context(
+            "this write carries no bearer token. The served backend authenticates every write \
+             from a control-plane operator token (ADR-0092); send it as `Authorization: Bearer …`.",
+        ));
+    };
+    // A bad signature, wrong issuer/audience, missing role or expiry is a 401: the caller must
+    // present a valid token, which is a different remedy from being a known-but-unbound subject.
+    let proven = verifier
+        .verify(header)
+        .map_err(|e| anyhow!(NOT_AUTHENTICATED).context(format!("{e}")))
+        .context("the bearer token was not accepted")?;
+    // A correctly-signed token whose subject is bound to no active operator is a 403: authenticated,
+    // but not permitted — the subject must be bound in registry/operators.yaml (ADR-0092 §2).
+    let operator = registry
+        .by_subject(&proven.subject)
+        .map_err(|e| anyhow!(NOT_PERMITTED).context(format!("{e}")))
+        .context("the verified subject is bound to no operator")?;
+    Ok(&operator.id)
+}
 
 /// Resolve the operator for a write, or refuse.
 ///
@@ -38,7 +91,7 @@ pub const OPERATOR_HEADER: &str = "x-docket-operator";
 /// # Errors
 /// Fails if the header is absent, blank, or names an operator the registry does
 /// not declare.
-pub fn resolve<'a>(registry: &'a Registry, req: &Request) -> Result<&'a str> {
+fn resolve_header<'a>(registry: &'a Registry, req: &Request) -> Result<&'a str> {
     let Some(claimed) = req.header(OPERATOR_HEADER) else {
         return Err(anyhow!(NOT_PERMITTED).context(format!(
             "this write has no operator. Send {OPERATOR_HEADER} naming someone in \
@@ -94,12 +147,14 @@ mod tests {
         let r = req(&format!(
             "POST /api/x HTTP/1.1\r\nX-Docket-Operator: {known}\r\n\r\n"
         ));
-        assert_eq!(resolve(&reg, &r).expect("resolves"), known);
+        // No verifier: the loopback/break-glass path authenticates from the attribution header.
+        assert_eq!(resolve(&reg, None, &r).expect("resolves"), known);
     }
 
     #[test]
     fn a_write_with_no_operator_header_is_refused() {
-        let err = resolve(&registry(), &req("POST /api/x HTTP/1.1\r\n\r\n")).expect_err("refused");
+        let err =
+            resolve(&registry(), None, &req("POST /api/x HTTP/1.1\r\n\r\n")).expect_err("refused");
         let text = format!("{err}");
         assert!(text.contains("no operator"), "{text}");
         // The message must say what to do, not just that it failed.
@@ -110,6 +165,7 @@ mod tests {
     fn a_blank_operator_header_is_not_an_operator() {
         let err = resolve(
             &registry(),
+            None,
             &req("POST /api/x HTTP/1.1\r\nX-Docket-Operator:   \r\n\r\n"),
         )
         .expect_err("refused");
@@ -121,9 +177,51 @@ mod tests {
         assert!(
             resolve(
                 &registry(),
+                None,
                 &req("POST /api/x HTTP/1.1\r\nX-Docket-Operator: nobody\r\n\r\n")
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn with_a_verifier_the_header_no_longer_authenticates() {
+        // The served path does not read the attribution header at all: a request that carries only
+        // X-Docket-Operator and no token is unauthenticated (401), never a claim (design §5).
+        let verifier = OperatorVerifier::new(
+            std::collections::BTreeMap::new(),
+            "https://id.paridyum.com".to_owned(),
+            "operations".to_owned(),
+        );
+        let err = resolve(
+            &registry(),
+            Some(&verifier),
+            &req("POST /api/x HTTP/1.1\r\nX-Docket-Operator: rohan\r\n\r\n"),
+        )
+        .expect_err("no token, so refused");
+        // The 401 marker rides in the error chain (where `status_for` reads it), not the top display.
+        assert!(
+            err.chain().any(|c| c.to_string() == NOT_AUTHENTICATED),
+            "missing token is a 401"
+        );
+    }
+
+    #[test]
+    fn with_a_verifier_a_garbage_token_is_401() {
+        let verifier = OperatorVerifier::new(
+            std::collections::BTreeMap::new(),
+            "https://id.paridyum.com".to_owned(),
+            "operations".to_owned(),
+        );
+        let err = resolve(
+            &registry(),
+            Some(&verifier),
+            &req("POST /api/x HTTP/1.1\r\nAuthorization: Bearer not-a-token\r\n\r\n"),
+        )
+        .expect_err("unverifiable, so refused");
+        assert!(
+            err.chain().any(|c| c.to_string() == NOT_AUTHENTICATED),
+            "{err:#}"
         );
     }
 
@@ -141,6 +239,6 @@ mod tests {
         let r = req(&format!(
             "POST /api/x HTTP/1.1\r\nx-DOCKET-operator: {known}\r\n\r\n"
         ));
-        assert!(resolve(&reg, &r).is_ok());
+        assert!(resolve(&reg, None, &r).is_ok());
     }
 }

@@ -1,0 +1,55 @@
+# The docket served backend, configured ENTIRELY from the environment (serve.rs, ADR-0093). Nothing
+# here names a cluster or a host; the issuer, audience and tenant are supplied per environment, and
+# the database URL is a SECRET wired from a k8s Secret in values-staging.yaml, never here.
+replicaCount: 2
+
+image:
+  # ghcr.io/paridyum/tool-docket — the path is the REPOSITORY name, class prefix included, because
+  # that is what the image is published under (image-publish derives it from github.repository).
+  # The chart/release name strips it to the bare capability `docket` (C-0007).
+  repository: ghcr.io/paridyum/tool-docket
+  # REQUIRED, no tag: the digest is the deployment's identity (ADR-0060, REQ-0004 §2). The chart
+  # refuses to render without it; supplied per release from the image-publish run.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# Names a Secret the cluster already holds (created by `kubectl create secret` from SOPS at deploy);
+# this chart creates none, keeping the registry token out of the values a release renders from.
+imagePullSecrets: []
+
+resources:
+  # ADR-0020 requires limits. A Rust service that also shells `typst`/`latex` for issuance, so the
+  # memory ceiling is higher than a pure API. Requests and limits equal on memory so an overrun is
+  # OOM-killed under test rather than surprising production.
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: "1", memory: 512Mi }
+
+service:
+  # Fail closed: ClusterIP. docket is reached by console-docket's server (the staff UI) and by
+  # authenticated staff through the ingress the cluster fronts, never directly from the internet.
+  # ADR-0092: every request carries a control-plane token the backend validates; the network is not
+  # the trust boundary, so exposure is settled at the ingress, not by flipping this to a VIP here.
+  type: ClusterIP
+  port: 8080
+
+# READ-ONLY root filesystem (estate security posture). The served backend writes its records to
+# Postgres (ADR-0093), so the root needs no writes; a writable emptyDir is mounted for temp files
+# and for the blob store path below. Durable blob persistence (issued PDFs) is a SEPARATE, open
+# decision — ADR-0093 §5 gates real data on rehearsed backups and §6 leaves the object store (B2/
+# R2/MinIO vs a PVC) undecided. Until that lands this instance serves SYNTHETIC data only, for which
+# an ephemeral store is correct.
+storeEmptyDir: true
+
+# Non-secret configuration for the serve binary (serve.rs). DOCKET_DATABASE_URL is a SECRET and is
+# wired in values-staging.yaml from a k8s Secret, never here. DOCKET_BIND defaults to 0.0.0.0:8080
+# in the binary and is left unset. DOCKET_ROOT points at the image's baked repository data
+# (registry/, templates/, latex/) and DOCKET_STORE at the writable mount.
+env:
+  - name: DOCKET_ROOT
+    value: "/app"
+  - name: DOCKET_STORE
+    value: "/var/lib/docket/store"
+  #   - name: DOCKET_OIDC_ISSUER    value: "https://id.paridyum.com"            # the control-plane issuer
+  #   - name: DOCKET_OIDC_AUDIENCE  value: "<paridyum-operations project id>"   # from `make zitadel-apps`
+  #   - name: DOCKET_TENANT_ID      value: "<the Paridyum tenant uuid>"
+  #   - name: DOCKET_DATABASE_URL   valueFrom.secretKeyRef → the docket DSN (SOPS → k8s Secret)

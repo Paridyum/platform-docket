@@ -52,6 +52,15 @@ jobs:
       # of them gained a TeX Live install. D-36 holds the remaining half.
       coverage-total: 60
       coverage-patch: 80
+      # docket's store is Postgres, so its DB-backed tests (pg_store, served_api, the PgStore/served
+      # paths) need a database to run — and to be COVERED, not read as uncovered. infra-ci stands up
+      # a throwaway Postgres and applies platform-tenancy's migrations, because the schema docket's
+      # tests target lives there. Opt-in; other repos are unaffected (ADR-0021, @v1).
+      postgres: true
+      db-migrations-repo: Paridyum/platform-tenancy
+    # `secrets: inherit` passes PARIDYUM_PACKAGES_TOKEN so infra-ci can check out the schema repo.
+    # That token must have read access to platform-tenancy (a repo, not just packages).
+    secrets: inherit
 
   # ── D-30 and D-35: the render path, exercised where it was not ──────────────
   #

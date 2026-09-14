@@ -241,6 +241,33 @@ mod tests {
     }
 
     #[test]
+    fn the_seal_survives_a_json_round_trip() {
+        // JSONB storage (ADR-0093 / migration 0006) is a record -> JSON -> record path. The seal,
+        // and the Kind enum, must survive it — RFC-0039 D1's condition for the store move.
+        let sealed = chain(vec![
+            event(1, Kind::Created, Some("joined")),
+            event(1, Kind::StageChanged, None),
+            event(1, Kind::Separated, None),
+        ]);
+        let restored: Vec<Event> = sealed
+            .iter()
+            .map(|e| {
+                serde_json::from_str::<Event>(&serde_json::to_string(e).expect("ser")).expect("de")
+            })
+            .collect();
+        for (a, b) in sealed.iter().zip(&restored) {
+            assert_eq!(
+                serde_json::to_value(a).expect("v"),
+                serde_json::to_value(b).expect("v")
+            );
+        }
+        assert!(
+            verify(&restored).expect("verifiable").is_empty(),
+            "the seal did not survive the JSON round trip"
+        );
+    }
+
+    #[test]
     fn an_unknown_event_names_the_ones_that_exist() {
         let err = Kind::parse("exploded")
             .err()

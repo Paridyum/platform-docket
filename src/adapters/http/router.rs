@@ -4,13 +4,14 @@
 //! type in `dto`. If an arm ever needs an `if` about what a person owes, that
 //! `if` belongs in `application::` — see ANTI-0004 and §2 of the design.
 
+use crate::adapters::auth::OperatorVerifier;
 use crate::adapters::clock::Clock;
 use crate::adapters::http::dto;
 use crate::adapters::http::operator;
 use crate::adapters::http::request::Request;
 use crate::adapters::http::response::Response;
 use crate::adapters::registry::Registry;
-use crate::adapters::store;
+use crate::adapters::store::Store;
 use crate::application::{archive, check, comms, enrol, issue, next, personnel, roster, sign};
 use crate::config::Paths;
 use crate::domain::identity::Standing;
@@ -20,13 +21,20 @@ use serde::Serialize;
 
 /// Everything a handler needs, assembled once at startup.
 pub struct Context<'a> {
-    /// Where the store lives.
+    /// The record store — Postgres on the served backend, files on the CLI (ADR-0093, the port). The
+    /// four sealed chains and the person document reach it through this; blobs still go via `paths`.
+    pub store: &'a dyn Store,
+    /// Where the BLOBS live: issued PDFs, packs, scans, generated indexes, templates (design §4).
     pub paths: &'a Paths,
     /// The registry, loaded once. Nothing here writes to it (§8).
     pub registry: &'a Registry,
+    /// Verifies operator tokens on the served backend (ADR-0092). `None` on the loopback/break-glass
+    /// backend, where the attribution header stands in and SSH is the authentication (design §5).
+    pub verifier: Option<&'a OperatorVerifier>,
     /// Injected, never `SystemTime::now` — STD-0004, and it makes retention
-    /// arithmetic testable on a fixed date.
-    pub clock: &'a dyn Clock,
+    /// arithmetic testable on a fixed date. `Sync` so the thread-per-request server can share the
+    /// context across request threads (the store and verifier are already `Sync`).
+    pub clock: &'a (dyn Clock + Sync),
 }
 
 /// Dispatch one request.
@@ -129,10 +137,19 @@ const NOT_FOUND: &str = "docket::http::not_found";
 /// authorisation failure reported as 500 reads as an outage.
 pub const NOT_PERMITTED: &str = "docket::http::not_permitted";
 
+/// The request carried no valid credentials.
+///
+/// Distinct from 403 (`NOT_PERMITTED`) because the remedies differ: 401 means present a valid token,
+/// 403 means you are known but not allowed. The served backend returns 401 for a missing or
+/// unverifiable operator token (ADR-0092) and 403 for a verified subject bound to no operator.
+pub const NOT_AUTHENTICATED: &str = "docket::http::not_authenticated";
+
 fn status_for(e: &anyhow::Error) -> u16 {
     let marked = |m: &str| e.chain().any(|c| c.to_string() == m);
     if marked(NOT_FOUND) {
         404
+    } else if marked(NOT_AUTHENTICATED) {
+        401
     } else if marked(NOT_PERMITTED) {
         403
     } else {
@@ -145,7 +162,7 @@ fn not_found(what: &str) -> anyhow::Error {
 }
 
 fn roster_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
-    let all = roster::build(ctx.paths, ctx.registry)?;
+    let all = roster::build(ctx.store, ctx.registry)?;
 
     // `?standing=active` filters, exactly as `docket roster --standing` does.
     // Parsed here rather than in `application::`, because which query parameters
@@ -179,12 +196,12 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
     // reading its message, so "unknown person" and "the ledger is unreadable"
     // cannot be confused. One returns 404 and the other 500, and conflating them
     // would send an operator hunting for a typo during a disk failure.
-    let ledger = store::ledger(ctx.paths)?;
+    let ledger = ctx.store.ledger()?;
     if !ledger.iter().any(|r| r.slug == slug) {
         return Err(not_found(&format!("no person with slug {slug}")));
     }
 
-    let dossier = personnel::dossier(ctx.paths, ctx.registry, slug, None)?;
+    let dossier = personnel::dossier(ctx.store, ctx.registry, slug, None)?;
     let erased = dossier.identity.standing == Standing::Erased;
 
     // An erased person has no record on disk, so there is no stage to read and
@@ -193,9 +210,9 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
     let (steps, blockers) = if erased {
         (Vec::new(), Vec::new())
     } else {
-        let person = store::person(ctx.paths, slug)?;
+        let person = ctx.store.person(slug)?;
         let gates = personnel::unmet_gates(
-            ctx.paths,
+            ctx.store,
             ctx.registry,
             &dossier.identity,
             person.stage(),
@@ -203,7 +220,7 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
         )?;
         // No company picker in the console yet; an ambiguous person is refused
         // rather than resolved by recency (ADR-0077 D3).
-        let steps = next::steps(ctx.paths, ctx.registry, slug, None)?;
+        let steps = next::steps(ctx.store, ctx.paths, ctx.registry, slug, None)?;
         (steps, gates)
     };
 
@@ -242,12 +259,12 @@ fn person_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
 }
 
 fn check_handler(ctx: &Context<'_>) -> Result<Response> {
-    let findings = check::run(ctx.paths, ctx.registry)?;
+    let findings = check::run(ctx.store, ctx.paths, ctx.registry)?;
     Ok(json(&dto::Check::from(&findings)))
 }
 
 fn retention_handler(ctx: &Context<'_>) -> Result<Response> {
-    let (due, unevaluated) = archive::retention_due(ctx.paths, ctx.registry, ctx.clock.today()?)?;
+    let (due, unevaluated) = archive::retention_due(ctx.store, ctx.registry, ctx.clock.today()?)?;
     Ok(json(&dto::Retention {
         overdue: due
             .iter()
@@ -266,11 +283,11 @@ fn retention_handler(ctx: &Context<'_>) -> Result<Response> {
 }
 
 fn emails_handler(ctx: &Context<'_>, slug: &str) -> Result<Response> {
-    let ledger = store::ledger(ctx.paths)?;
+    let ledger = ctx.store.ledger()?;
     if !ledger.iter().any(|r| r.slug == slug) {
         return Err(not_found(&format!("no person with slug {slug}")));
     }
-    let due = comms::due(ctx.paths, ctx.registry, slug, None)?;
+    let due = comms::due(ctx.store, ctx.registry, slug, None)?;
     let messages: Vec<dto::Message> = due.iter().map(dto::Message::from).collect();
     Ok(json(&messages))
 }
@@ -319,7 +336,7 @@ fn form_handler(ctx: &Context<'_>, class_name: &str) -> Result<Response> {
 /// appends to the identity ledger, and a ledger entry for a record that failed to
 /// write would be a permanent row pointing at nothing.
 fn enrol_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
-    let by = operator::resolve(ctx.registry, req)?;
+    let by = operator::resolve(ctx.registry, ctx.verifier, req)?;
     let ask: dto::EnrolRequest = body(req)?;
 
     if ctx.registry.catalogue.class(&ask.class).is_none() {
@@ -327,8 +344,9 @@ fn enrol_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
     }
 
     let yaml = enrol::to_yaml(ctx.registry, &ask.class, &ask.answers);
-    enrol::write_record(ctx.paths, &ask.slug, &yaml)?;
+    enrol::write_record(ctx.store, &ask.slug, &yaml)?;
     let record = personnel::create(
+        ctx.store,
         ctx.paths,
         ctx.registry,
         &ask.slug,
@@ -354,8 +372,8 @@ fn enrol_handler(ctx: &Context<'_>, req: &Request) -> Result<Response> {
 
 /// `POST /api/person/{slug}/onboard` — issue everything owed at this stage.
 fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
-    let by = operator::resolve(ctx.registry, req)?;
-    let person = store::person(ctx.paths, slug)?;
+    let by = operator::resolve(ctx.registry, ctx.verifier, req)?;
+    let person = ctx.store.person(slug)?;
 
     // Refusals first, and NOT forceable from here.
     //
@@ -373,8 +391,8 @@ fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
         ));
     }
 
-    let who = personnel::identify(ctx.paths, slug)?;
-    let register = store::register(ctx.paths)?;
+    let who = personnel::identify(ctx.store, slug)?;
+    let register = ctx.store.register()?;
 
     // Refuse BEFORE rendering anything, naming the fields that are missing.
     //
@@ -411,7 +429,7 @@ fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
         let Some(doc) = by_code.get(code.as_str()) else {
             anyhow::bail!("{code}: declared by a stage but not by documents");
         };
-        let entry = issue::one(ctx.paths, ctx.registry, &person, doc, today, by)?;
+        let entry = issue::one(ctx.store, ctx.paths, ctx.registry, &person, doc, today, by)?;
         issued.push(dto::Document {
             code: entry.code.clone(),
             serial: entry.serial.clone(),
@@ -432,14 +450,14 @@ fn onboard_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
 
 /// `POST /api/person/{slug}/sign` — record a document coming back executed.
 fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
-    let by = operator::resolve(ctx.registry, req)?;
+    let by = operator::resolve(ctx.registry, ctx.verifier, req)?;
     let ask: dto::SignRequest = body(req)?;
 
     // The serial must belong to this person. Without this check a request could
     // record a signature against anybody's document through anybody's URL, and
     // the signature ledger would be right while the audit trail was misleading.
-    let who = personnel::identify(ctx.paths, slug)?;
-    let register = store::register(ctx.paths)?;
+    let who = personnel::identify(ctx.store, slug)?;
+    let register = ctx.store.register()?;
     let owned = register
         .iter()
         .any(|e| e.serial == ask.serial && e.person_id == who.person_id);
@@ -460,6 +478,7 @@ fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response
     let scan = ask.scan.as_deref().map(std::path::Path::new);
 
     let signed = sign::record(
+        ctx.store,
         ctx.paths,
         ctx.registry,
         &ask.serial,
@@ -482,7 +501,7 @@ fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response
 
 /// `POST /api/person/{slug}/advance` — move to the next lifecycle stage.
 fn advance_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response> {
-    let by = operator::resolve(ctx.registry, req)?;
+    let by = operator::resolve(ctx.registry, ctx.verifier, req)?;
     // A body is optional here; absent means `force: false`.
     let ask: dto::AdvanceRequest = if req.body.is_empty() {
         dto::AdvanceRequest { force: false }
@@ -491,6 +510,7 @@ fn advance_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Respo
     };
 
     let (from, to, gates) = personnel::advance(
+        ctx.store,
         ctx.paths,
         ctx.registry,
         slug,

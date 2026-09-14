@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::{registry::Registry, store};
+use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::{self, FileStore};
 use tool_docket::application::{check, issue, personnel, sign, status};
 use tool_docket::config::Paths;
 use tool_docket::domain::signature::Method;
@@ -53,6 +54,7 @@ impl Sandbox {
     fn with_docs(&self, slug: &str, codes: &[&str]) -> tool_docket::domain::identity::Record {
         let reg = registry();
         let r = personnel::create(
+            &FileStore::new(&self.paths),
             &self.paths,
             &reg,
             slug,
@@ -66,7 +68,16 @@ impl Sandbox {
         let by_code = reg.lifecycle.by_code().expect("codes");
         for code in codes {
             let doc = by_code.get(*code).expect("declared");
-            issue::one(&self.paths, &reg, &person, doc, d("2026-08-19"), "rohan").expect("issues");
+            issue::one(
+                &FileStore::new(&self.paths),
+                &self.paths,
+                &reg,
+                &person,
+                doc,
+                d("2026-08-19"),
+                "rohan",
+            )
+            .expect("issues");
         }
         r
     }
@@ -103,6 +114,7 @@ fn sign_it(sb: &Sandbox, code: &str, method: Method, on: &str) -> anyhow::Result
         None
     };
     sign::record(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         &serial,
@@ -164,6 +176,7 @@ fn wet_ink_without_a_scan_is_refused() {
     sb.onboarded("t");
     let serial = sb.serial_of("NDA");
     let err = sign::record(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         &serial,
@@ -199,6 +212,7 @@ fn a_document_cannot_be_signed_before_it_was_issued() {
     let serial = sb.serial_of("NDA");
     let scan = sb.scan("s.pdf");
     let err = sign::record(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         &serial,
@@ -225,6 +239,7 @@ fn the_received_date_cannot_precede_the_signing_date() {
     let scan = sb.scan("s.pdf");
     assert!(
         sign::record(
+            &FileStore::new(&sb.paths),
             &sb.paths,
             &registry(),
             &serial,
@@ -262,6 +277,7 @@ fn signing_an_unissued_serial_is_refused() {
     sb.onboarded("t");
     assert!(
         sign::record(
+            &FileStore::new(&sb.paths),
             &sb.paths,
             &registry(),
             "PAR/NDA/1999/0001",
@@ -338,9 +354,16 @@ fn the_stage_gate_refuses_while_agreements_are_unexecuted() {
     // as prose and nothing checked it. This is the check.
     let sb = Sandbox::new();
     sb.gated("t");
-    let (from, to, gates) =
-        personnel::advance(&sb.paths, &registry(), "t", d("2026-09-01"), false, "rohan")
-            .expect("evaluates");
+    let (from, to, gates) = personnel::advance(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &registry(),
+        "t",
+        d("2026-09-01"),
+        false,
+        "rohan",
+    )
+    .expect("evaluates");
     assert_eq!(from, "preboarding");
     assert_eq!(to, "active");
     assert!(!gates.is_empty(), "the gate must hold");
@@ -363,9 +386,16 @@ fn the_gate_opens_once_every_required_document_is_executed() {
     for code in ["NDA", "ISP", "IPA", "AGR", "COC", "GRV"] {
         sign_it(&sb, code, Method::AadhaarEsign, "2026-08-25").expect("signs");
     }
-    let (from, to, gates) =
-        personnel::advance(&sb.paths, &registry(), "t", d("2026-09-01"), false, "rohan")
-            .expect("advances");
+    let (from, to, gates) = personnel::advance(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &registry(),
+        "t",
+        d("2026-09-01"),
+        false,
+        "rohan",
+    )
+    .expect("advances");
     assert!(gates.is_empty(), "{gates:?}");
     assert_eq!((from.as_str(), to.as_str()), ("preboarding", "active"));
     let person = store::person(&sb.paths, "t").expect("record");
@@ -380,9 +410,16 @@ fn force_advances_past_an_unmet_gate() {
     // Escape hatch, because refusing forever is not a workflow. It says so.
     let sb = Sandbox::new();
     sb.onboarded("t");
-    let (_, _, gates) =
-        personnel::advance(&sb.paths, &registry(), "t", d("2026-09-01"), true, "rohan")
-            .expect("advances");
+    let (_, _, gates) = personnel::advance(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &registry(),
+        "t",
+        d("2026-09-01"),
+        true,
+        "rohan",
+    )
+    .expect("advances");
     assert!(gates.is_empty());
     assert_eq!(
         store::person(&sb.paths, "t").expect("record").stage(),
@@ -440,7 +477,8 @@ fn check_detects_a_tampered_signature_ledger() {
     let text = std::fs::read_to_string(&path).expect("read");
     std::fs::write(&path, text.replace("2026-08-25", "2026-08-01")).expect("write");
 
-    let findings = check::run(&sb.paths, &registry()).expect("check runs");
+    let findings =
+        check::run(&FileStore::new(&sb.paths), &sb.paths, &registry()).expect("check runs");
     assert!(
         findings
             .items
@@ -463,7 +501,8 @@ fn check_detects_a_missing_scan() {
     let rel = s.record.scan_path.as_deref().expect("path");
     std::fs::remove_file(sb.paths.store.join(rel)).expect("remove");
 
-    let findings = check::run(&sb.paths, &registry()).expect("check runs");
+    let findings =
+        check::run(&FileStore::new(&sb.paths), &sb.paths, &registry()).expect("check runs");
     assert!(
         findings
             .items

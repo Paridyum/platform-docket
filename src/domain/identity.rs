@@ -469,6 +469,34 @@ mod tests {
     }
 
     #[test]
+    fn the_seal_survives_a_json_round_trip() {
+        // JSONB storage (ADR-0093 / migration 0006) is a record -> JSON -> record path. The seal,
+        // and the Standing enum, must survive it — RFC-0039 D1's condition for the store move.
+        let mut sealed: Vec<Record> = Vec::new();
+        for i in 1..=3 {
+            sealed.push(
+                seal(row(i, i, "asha-verma", Standing::Active), sealed.last()).expect("seal"),
+            );
+        }
+        let restored: Vec<Record> = sealed
+            .iter()
+            .map(|r| {
+                serde_json::from_str::<Record>(&serde_json::to_string(r).expect("ser")).expect("de")
+            })
+            .collect();
+        for (a, b) in sealed.iter().zip(&restored) {
+            assert_eq!(
+                serde_json::to_value(a).expect("v"),
+                serde_json::to_value(b).expect("v")
+            );
+        }
+        assert!(
+            verify(&restored).expect("verifiable").is_empty(),
+            "the seal did not survive the JSON round trip"
+        );
+    }
+
+    #[test]
     fn an_identifier_is_never_reissued_after_erasure() {
         let ledger = vec![
             row(1, 1, "a", Standing::Active),

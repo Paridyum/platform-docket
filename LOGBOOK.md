@@ -4,6 +4,102 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-14 — the deployment surface for the served backend (ADR-0093 §3)
+
+ADR-0093 makes docket a served, staff-authenticated platform and reclassifies it: the served
+`serve` binary is platform-shaped, so `tool-docket` "stops being deployable: false" and now owes
+ADR-0020's Helm chart, probes and resource limits. This entry adds that surface without touching the
+Rust internals (a parallel worker owns the Postgres port):
+
+- **Helm chart** (`helm/`), modelled on `platform-identity/helm` rather than invented: Deployment +
+  Service, a digest-only image (the chart `fail`s without `image.digest`, ADR-0060), `/healthz`
+  liveness AND readiness probes against the serve binary's unauthenticated route, resource
+  requests/limits (ADR-0020), ClusterIP, and the SOPS→k8s-Secret wiring the estate uses — the DB
+  URL is referenced from a Secret named `docket`, the chart creates none. Non-secret DOCKET_* config
+  is inline in `values-staging.yaml`. `helm lint` clean; `helm template` renders and refuses without
+  a digest as designed. Root filesystem is read-only with emptyDir mounts for `/tmp` and the blob
+  store — ephemeral on purpose while only synthetic data is served (§5), durable object storage left
+  as the open §6 decision.
+- **Dockerfile** for the `serve` binary: multi-stage, `rust:1.97.1-slim-trixie` (the locked
+  toolchain, STD-0003), rustls not openssl (ADR-0005 — sqlx and reqwest carry rustls features so the
+  runtime needs only ca-certificates), `--locked`, non-root, PID-1 binary for clean SIGTERM. It
+  bakes `registry/`, `templates/` and `latex/` read-only at DOCKET_ROOT; records and PDFs never
+  enter a layer. The image build passes once the parallel refactor lands and `serve` compiles — the
+  env-var interface it targets is stable.
+- **CI** `publish.yml`, a thin caller of the estate's reusable `image-publish.yml@v1` (ADR-0021),
+  publishing by digest to `ghcr.io/paridyum/tool-docket`. `ci.yml` is unchanged.
+- **manifest.yaml** reclassified `class: tool → platform`, gaining `exposes.http` and the `serve`
+  entrypoint. The class registry already carries `platform` as deployable, so no registry edit was
+  needed; `platform` permits `rust`, so the class↔stack gate passes.
+
+**The one real tension, flagged not hidden (D-60).** The repository is still named `tool-docket`,
+whose `tool-` prefix maps to the `tool` class under C-0005/C-0007, while the manifest now says
+`platform`. No shipped gate enforces prefix↔class agreement (`repo.name_matches_scheme` is
+forge-owned and reads the name, not the manifest class), so nothing breaks today — but the honest
+resolution is a repository rename to `platform-docket`, which is a separate breaking operation. Left
+for a human decision rather than performed silently as a side effect of a chart.
+
+**Skills and tools used.** Reading `platform-identity/helm`, the shared `rust-ci.yml` /
+`image-publish.yml`, and `class-registry.schema.json` / `manifest.schema.json` before writing
+anything, to match the established convention rather than invent one; `helm lint` and `helm template`
+as the structural gate; `check-knowledge.sh` for the class↔stack and manifest checks.
+
+## 2026-09-13 — the store starts moving to Postgres: the register adapter (ADR-0093, RFC-0039 D1)
+
+ADR-0093 supersedes ADR-0072's one-node/filesystem store; docket becomes served + multi-user, so its
+store is the database. First the invariant that had to hold: `domain::{register,identity,event}` now
+each carry a test proving a sealed chain survives the JSON round trip — the record → JSON → record
+path a JSONB column is — with digests and links intact, including the Standing and Kind enums. If that
+had failed, the whole move would have been wrong (RFC-0039 D1).
+
+Then the adapter. `adapters/pg.rs` is the async sqlx store (ADR-0005): `append_register` /
+`read_register` for now. Each operation runs in a transaction that first sets the RLS session
+variables (`paridyum.tenant_id`, `operator_scope`) with `set_config(..., local := true)`, because
+migration 0006's policies gate on both and the accessors RAISE when unset (ADR-0038) — a forgetful
+call is refused, not silently widened. Records are stored verbatim as JSONB (`sqlx::types::Json`) so
+the seal is byte-preserved; `read_register` verifies the chain before returning and treats a fault as
+an error, as the filesystem store did.
+
+**Why async in a sync CLI.** sqlx is async and is the locked DB lib. The served backend will await
+this adapter; the break-glass CLI will `block_on` it (ADR-0093 §3) — one implementation, two callers.
+That is why the CLI still works "remotely": it becomes a Postgres client over the mesh, not an
+SSH reader of a file node.
+
+**Proven, not asserted.** `tests/pg_store.rs` runs the register through a real Postgres 17: seal
+verifies after the DB round trip, records are byte-identical, and another tenant sees nothing (RLS).
+It seeds a fresh tenant per run so it is re-runnable, and skips without `DOCKET_DATABASE_URL` so
+`cargo test` needs no database (SOP has the one-liner). Supply chain: sqlx/tokio/rustls pulled
+`webpki-roots` (CDLA-Permissive-2.0), allowed in deny.toml with a note, matching platform-identity.
+
+The adapter is now COMPLETE for the store: the three chains share one generic `append_chain`/
+`read_chain` (register/identity/event), and the mutable person record has `upsert_person`/
+`read_person`/`list_persons` (the roster). A person is a `serde_yaml::Value` carried losslessly
+through JSONB. Four integration tests pass against real Postgres — each chain keeps its seal (incl.
+the Standing and Kind enums), the person upsert replaces rather than duplicates, and RLS isolates
+every table by tenant.
+
+The ADR-0092 auth core is next in and done: `adapters/auth.rs` verifies an operator's control-plane
+token against the JWKS — RS256, issuer pinned to id.paridyum.com, audience pinned to the
+paridyum-operations project (a token minted for another app is otherwise accepted, ADR-0047 D5),
+`operator` role required — and returns the opaque subject, which `Registry::by_subject` binds to a
+docket operator (ADR-0092 §2; `operators.yaml` now carries rohan's `subject`). Seven tests cover the
+happy path and the full denial matrix (wrong role/issuer/audience, expired, unknown key), signing
+with a keypair generated at test time so nothing is embedded to scan for. Second in-crate RSA
+verifier in the estate; a shared Rust lib-auth waits for a third consumer (ADR-0092 §3).
+
+Then the served backend itself: `src/served.rs` (the router, testable via `app`) and `src/bin/serve.rs`
+(the deployable binary — fetch the control-plane JWKS once at startup, then serve). Every protected
+route goes through one `authorize` middleware that requires an operator token, so a handler cannot
+run unauthenticated by construction (STD-0004). Endpoints so far: `GET /healthz` (open), `GET /roster`
+and `POST /person` (operator-gated) — list and create HR records, the multi-user surface ADR-0093 is
+for. The CLI stays sync and unchanged; this is the everyday interface beside it (ADR-0093 §3).
+
+Proven end to end: a wiring test suite (healthz open, protected routes 401 without/with a bad token)
+and `tests/served_api.rs`, which signs a real operator token, `POST`s a person and `GET`s the roster
+back through the router, the pg adapter, the database and RLS — the whole product path on the happy
+line. What remains is **console-docket's OIDC login** in front of this API (the TypeScript half), a
+Helm chart + CI to deploy it, and the backup gate before any real person record (ADR-0068 §5).
+
 Started 2026-09-06, part-way through the tool's life. Everything before that
 date lives in `CHANGELOG.md` and `DECISION-DEBT.md`, which were doing this
 job less directly.
@@ -913,3 +1009,159 @@ chain before writing a claim about it, which is what caught D-59; and `mem::forg
 STD-0003, which was right — the `Registry` is fully parsed and the temp directory can simply drop.
 
 396 tests. fmt, clippy and test green; `check` red on the four held records.
+
+## 2026-09-14 — an honest correction, a port design, and the fourth chain
+
+**The correction.** An earlier autonomous run reported "the complete, e2e-tested backend is done."
+Reading the real HTTP layer back showed that was overstated. The server the console actually speaks
+to is `adapters/http/` — a `std::net` JSON API serving the whole contract (roster with tallies, a
+person dossier with steps/blockers/documents/history, `/check`, `/retention`, `/emails`, `/form`, and
+the onboard/sign/advance/enrol writes), every route calling a tested `application::` function over the
+**file store**. What the run built instead — `served.rs` + `bin/serve.rs` — is a minimal **axum**
+server exposing two routes straight against Postgres, bypassing the entire application layer and all
+its rules. It cannot back the console. `pg.rs` and `auth.rs` are sound foundations; the served
+backend is a spike. Wiring the console's OIDC on top of it would have been building on sand.
+
+**The design.** ADR-0093's real work — the store move the ADR itself calls "the single largest change
+in the estate" (~200 lines of `fs::` across ~10 call sites, 15 application modules, 209 file-store
+sites) — is not done. Because governance precedes implementation, that is now designed before it is
+built: `docs/superpowers/specs/2026-09-13-docket-postgres-port-design.md`. Its core decision is to
+keep the application layer **synchronous** behind a `Store` port and drive `sqlx` from a shared
+runtime via `block_on`, rather than rewrite the fifteen modules async — the code most dangerous to
+rewrite is exactly the tested rules, and Path B leaves them bit-for-bit while reusing the rich
+contract the console already speaks. The axum spike is removed by that design; the real server gains
+thread-per-request and ADR-0092 token auth.
+
+**Step 1, shipped and validated.** Writing that design caught a concrete gap: docket has **four**
+sealed chains, and the Postgres foundation covered three. The **signature ledger** had no table in
+migration 0006, no `append`/`read` in `pg.rs`, and no store at all. Closed: `docket_signatures` added
+to 0006 (platform-tenancy); `append_signature`/`read_signatures` added to `pg.rs`; a JSON-round-trip
+unit test added to `domain/signature.rs` (the fourth of four, holding the signature record — with its
+kebab-case `Method` and `skip_serializing_if` scan fields — to the same seal-preservation bar); and a
+signature-chain integration test added to `tests/pg_store.rs`.
+
+Proven against a real Postgres 17 (migrations 0001–0006 applied as role `paridyum`): 5/5 integration
+tests green — all four chains seal-intact through JSONB and RLS-isolated by tenant — plus 237 lib
+tests, fmt and clippy clean, and `check-migrations.sh` passing.
+
+**Skills and tools used.** Retrieving the real architecture before deciding (reading `adapters/http/`
+and the 2026-08-21 served-platform design rather than inferring from the spike); a throwaway
+`postgres:17` in Docker with the `uuidv7()` shim to validate the migration and the new chain
+end-to-end; `check-migrations.sh` as the governed structural gate; `cargo clippy --all-targets` which
+caught a `vec![]`-over-array on the new test.
+
+## 2026-09-14 (later) — the port is threaded through, and the real server goes served (ADR-0093 steps 2, 4, 5)
+
+The design's Path B, built. The `Store` port (four sealed chains + the person document, `FileStore`
+and `PgStore` behind it) was already defined and tested; what remained was to make the application
+layer and the served backend USE it. That is the ~200-line change ADR-0093 calls the largest in the
+estate, done module by module against the compiler.
+
+**Records through the port, blobs left on `Paths`.** Every `application::` function that reads or
+writes a RECORD now takes a `store: &dyn Store` and calls `store.foo()` where it used to call
+`store::foo(paths, …)`; every `fs::`/`paths.` BLOB call (issued PDFs, packs, scans, generated
+indexes, templates) was left exactly as it was (design §4). The cut is by concern, not by function —
+most writers gained a `Store` and kept their `Paths`. The record appends now go through
+`store.append_*`, which **seals internally**: `issue.rs` no longer builds a pre-sealed entry and
+inserts it (that was the fork the port exists to prevent) — it builds the entry unsealed and hands it
+to `append_register`, where the Postgres store seals under a per-chain advisory lock in one
+transaction and the file store seals single-writer. Person creation moved onto the port too:
+`enrol::write_record` is now `store.create_person`, and `personnel::create` asks the STORE whether a
+record exists (not the filesystem) and writes a default record THROUGH the port — so a served enrol
+lands in `docket_persons`, not as a stray file on the server's disk. `erase`'s rewrite-and-reseal
+became `store.reseal_events` (§6).
+
+**The served backend, evolved not replaced.** `router::Context` gained `store: &dyn Store` and an
+optional `verifier`; `Store: Sync` (a supertrait) and a `dyn Clock + Sync` let a `&Context` cross the
+new thread-per-request server, which uses `std::thread::scope` so the borrowed context needs no `Arc`.
+`operator::resolve` now branches on the verifier: with one present (the served backend) it resolves
+the operator from a **verified Bearer token** — `OperatorVerifier::verify` → `registry::by_subject` →
+the operator id, missing/invalid → 401, unbound subject → 403 (a new `NOT_AUTHENTICATED` marker gives
+the router its 401); with none (loopback break-glass) it keeps the `X-Docket-Operator` attribution
+header. The header path is not read at all when a verifier is present, so a served route cannot
+degrade to an unverified claim (design §5). `require_loopback` became `permit_bind`: a routable bind
+is allowed only when a verifier is present, refused otherwise.
+
+**The spike, deleted.** `src/served.rs` and the axum `bin/serve.rs` are gone; `axum` (dep) and `tower`
+(dev-dep) removed with them (nothing else used them). The new `bin/serve` (name kept — the deploy
+chart depends on it) builds a multi-threaded tokio runtime it keeps alive, opens a `PgStore` on its
+handle, fetches the JWKS once and builds the verifier, loads the registry, and serves the **real**
+`adapters/http` router with a `Context` carrying `Some(verifier)` on `DOCKET_BIND` — same env vars as
+before. `tests/served_api.rs` was rewritten to drive that real router (a `PgStore` + a test verifier,
+a signed operator token, raw HTTP through `request::parse`): it proves missing token → 401, unbound
+subject → 403, and a bound operator creating a person then seeing exactly them on the roster (RLS
+scoped) — the spike's happy path, now over the whole rule stack.
+
+**The CLI** constructs a `FileStore::new(&paths)` at each command and passes it to the threaded
+application functions; every command works on the file store. The PgStore-CLI (a runtime + a
+`PgStore` when `DOCKET_DATABASE_URL` is set) is tracked debt (D-61), as the design permits.
+
+**What deferred.** `PgStore::reseal_events` refuses with a clear error — erasing on Postgres needs a
+cross-repo platform-tenancy migration 0007 (an append-only delete exception), which must not be made
+here (D-60); the file/CLI erase path keeps working through the port. `advance` still edits the person
+body on disk to preserve its DPDP field-purpose comments, so the served stage-change waits on a
+port operation for the raw body (D-62). The loopback `docket serve` is now thread-per-request over the
+file store, dropping ADR-0072's serialisation for that break-glass path (D-63). PDF bytes still stay
+host-local (design §8).
+
+**Gates.** `scripts/gates.sh` all green — fmt, clippy (`--all-targets`, zero warnings; one justified
+`too_many_arguments` allow on `sign::record` now that the store is a parameter), 239 lib + all
+integration tests, and `docket check` (which needed a `default-run = "docket"` in Cargo.toml now that
+two binaries ship). Against the throwaway Postgres 17 (migrations 0001–0006, localhost:5433):
+`--test pg_store` 7/7 and `--test served_api` 1/1 green — the chain-preservation gate (all four chains
+seal-intact through the application layer on `PgStore`) and the end-to-end auth+create+roster path.
+
+**Skills and tools used.** Reading the port design and every touched module before editing (governance
+precedes implementation); the compiler as the refactor's guide (a call site that is not migrated does
+not compile — Path B's stated safety property, confirmed); a scripted mechanical transform for the
+~150 test call sites (wrapping each `&paths` in `&FileStore::new(&paths)`), then `cargo fmt`;
+`scripts/gates.sh` as the single un-piped gate (CLAUDE.md); the throwaway Postgres for the record
+port's real proof.
+
+## 2026-09-14 (later still) — the break-glass CLI reaches the same Postgres (ADR-0093 §3, D-61 resolved)
+
+The previous entry left the CLI on `FileStore` and named the gap as D-61: a `PgStore` when
+`DOCKET_DATABASE_URL` is set. This closes it. The CLI is now a break-glass client of the SAME database
+the served backend serves, and defaults to local files when the variable is unset — offline break-glass,
+unchanged.
+
+**Store built once, threaded down.** The ~25 handlers each opened `let store = FileStore::new(paths)`;
+that construction moved into `run()`, which builds the backend once and threads a `store: &dyn Store`
+through `dispatch` → `route` → `route_person` → every handler. The handlers still take `&Paths` where
+they touch BLOBs (issued PDFs, packs, scans) — records via the store, blobs via paths, the split the
+app layer already draws. `--tui` browse and `docket serve` (loopback break-glass) both take the same
+threaded store, so both run on either backend.
+
+**Backend chosen by environment.** `open_backend`: `DOCKET_DATABASE_URL` set → build a multi-thread
+tokio runtime kept alive for the process (as `bin/serve` does), open the pool on it, read the tenant
+from `DOCKET_TENANT_ID` and construct `PgStore::new(pool, tenant, handle)`; unset → `FileStore`. A DB
+URL without a valid `DOCKET_TENANT_ID` uuid is refused, not defaulted — every row is tenant-scoped by
+the 0006 RLS policies, and a guessed tenant is how one operator's write lands against another's
+records. One stderr line names the store each run, and for Postgres the host (credentials stripped)
+and tenant, so an operator cannot mistake the cluster for local files.
+
+**The write lock stayed on the file store.** `lock::acquire` is skipped when the backend is Postgres:
+the database's advisory-locked, atomic seal-append is the concurrency control there (ADR-0093
+§decision-2); a lockfile beside a database store would serialise nothing and leave a stray file.
+
+**Two commands refuse on Postgres, clearly.** `advance` rewrites `people/<slug>.yaml` as text to keep
+its DPDP purpose comments (D-62) and `erase` re-seals the event log by rewriting it (D-60, needs the
+cross-repo migration 0007). `unavailable_on_pg` refuses both up front with the reason and the remedy,
+so `advance` no longer fails deep in an `fs` read and `erase` no longer deletes host-local blobs before
+its re-seal fails. `PgStore::reseal_events` still carries its own clear refusal as the backstop.
+
+**Proven against the running throwaway Postgres (localhost:5433, migrations 0001–0006).** `--test
+pg_store` 7/7. Then the CLI itself, tenant seeded the way the test seeds one: `docket roster` returns
+cleanly with the banner; `docket new asha-verma intern` lands the person in `docket_persons` and its
+sealed identity (`PAR-P-000001-X`) and `created` event in `docket_identities`/`docket_events` — read
+back only after setting the RLS session variables, which is the isolation working — with NO file
+written to `people/`; `roster` then shows the person; `advance` and `erase` refuse with their
+D-62/D-60 messages. `scripts/gates.sh` green in file mode (fmt, clippy `--all-targets` zero warnings —
+two justified `too_many_arguments` allows where the store parameter pushed a dispatch handler to nine,
+tests, `docket check`).
+
+**Skills and tools used.** Reading the whole `Store`/`PgStore`/`bin/serve` trio before touching a line
+(governance precedes implementation); the compiler as the guide through the ~25 handler signatures;
+`unavailable_on_pg` and the lock gate written as explicit, greppable functions in the style of the
+existing `writes()`; `scripts/gates.sh` as the single un-piped gate; the throwaway Postgres and a
+seeded tenant for the CLI's real end-to-end proof.

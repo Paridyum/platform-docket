@@ -1,6 +1,7 @@
 //! The single next thing to do for one person.
 
-use crate::adapters::{registry::Registry, store};
+use crate::adapters::registry::Registry;
+use crate::adapters::store::Store;
 use crate::config::Paths;
 use crate::domain::identity::Standing;
 use anyhow::Result;
@@ -26,12 +27,13 @@ pub struct Step {
 /// # Errors
 /// Fails if the person is unknown or the store cannot be read.
 pub fn steps(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<Vec<Step>> {
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
     let mut out = Vec::new();
 
     if who.standing == Standing::Erased {
@@ -43,8 +45,8 @@ pub fn steps(
         return Ok(out);
     }
 
-    let person = store::person(paths, slug)?;
-    let register = store::register(paths)?;
+    let person = store.person(slug)?;
+    let register = store.register()?;
 
     // 1. A record that cannot lawfully be issued against blocks everything.
     let refusals = crate::application::issue::refusals(registry, &person);
@@ -59,7 +61,9 @@ pub fn steps(
         return Ok(out);
     }
 
-    workflow_steps(paths, registry, slug, &who, &person, &register, &mut out)?;
+    workflow_steps(
+        store, paths, registry, slug, &who, &person, &register, &mut out,
+    )?;
     if out.is_empty() {
         out.push(Step {
             what: "Nothing.".to_owned(),
@@ -75,6 +79,7 @@ pub fn steps(
 
 /// The steps that follow once the record itself is sound.
 fn workflow_steps(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -130,7 +135,7 @@ fn workflow_steps(
     }
 
     // 5. Documents issued and not returned executed.
-    let awaiting = crate::application::sign::outstanding(paths, registry, &who.person_id)?;
+    let awaiting = crate::application::sign::outstanding(store, registry, &who.person_id)?;
     if !awaiting.is_empty() {
         let codes: Vec<&str> = awaiting.iter().map(|e| e.code.as_str()).collect();
         out.push(Step {
@@ -159,7 +164,7 @@ fn workflow_steps(
     let gated = current.is_some_and(|s| !s.requires_signed.is_empty());
     if gated {
         let unmet = crate::application::personnel::unmet_gates(
-            paths,
+            store,
             registry,
             who,
             person.stage(),
@@ -176,7 +181,7 @@ fn workflow_steps(
 
     // 7. Messages that carry documents now issued.
     if let Ok(messages) =
-        crate::application::comms::due(paths, registry, slug, who.engagement_id.company())
+        crate::application::comms::due(store, registry, slug, who.engagement_id.company())
     {
         let ready: Vec<&str> = messages
             .iter()

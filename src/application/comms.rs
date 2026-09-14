@@ -1,7 +1,7 @@
 //! Rendering the messages that carry documents to the people who need them.
 
-use crate::adapters::{registry::Registry, store};
-use crate::config::Paths;
+use crate::adapters::registry::Registry;
+use crate::adapters::store::Store;
 use crate::domain::person::Person;
 use anyhow::{Result, bail};
 use serde::Deserialize;
@@ -174,16 +174,16 @@ fn fill(text: &str, values: &BTreeMap<&'static str, String>) -> (String, Vec<Str
 /// Fails if the registry, record or register cannot be read, or a message
 /// names a stage the lifecycle does not declare.
 pub fn due(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<Vec<Rendered>> {
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
-    let person = store::person(paths, slug)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
+    let person = store.person(slug)?;
     let values = placeholders(registry, &person);
     let by_code = registry.lifecycle.by_code()?;
-    let register = store::register(paths)?;
+    let register = store.register()?;
 
     // Cumulative, like the documents: reaching `active` does not mean the
     // preboarding messages were sent.

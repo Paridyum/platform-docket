@@ -7,6 +7,14 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **The deployment surface for the served backend.** ADR-0093 §3. A Helm chart (`helm/` —
+  Deployment + Service, `/healthz` liveness/readiness probes, resource limits, digest-only image,
+  SOPS→k8s-Secret wiring for the database URL), a multi-stage `Dockerfile` for the `serve` binary
+  (rustls not openssl, the locked toolchain), and `publish.yml` publishing the image by digest to
+  `ghcr.io/paridyum/tool-docket`. `API.md` and `RUNBOOK.md` for the served API and its operation.
+  Reclassified `class: tool → platform` (ADR-0093 §3); the repository-name tension (still
+  `tool-docket`) is tracked as DECISION-DEBT D-60.
+
 - **A cold spare, so losing a laptop stops losing the estate.** ADR-0072.
   `docket store status | restore`.
 

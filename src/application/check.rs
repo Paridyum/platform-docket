@@ -1,6 +1,7 @@
 //! Validating the registries, the templates and the register.
 
-use crate::adapters::{registry::Registry, store};
+use crate::adapters::registry::Registry;
+use crate::adapters::store::Store;
 use crate::config::Paths;
 use crate::domain::chain;
 use crate::domain::identity::Record as IdentityRecord;
@@ -109,7 +110,7 @@ fn team_export(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
 /// laptop, which is a thing to fix rather than a reason to refuse the next operation. A store
 /// with nothing issued says nothing at all, so this stays quiet until there is something to be
 /// quiet about.
-fn vault(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
+fn vault(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Result<()> {
     if let Some(reason) = crate::application::vault::register_backup_stale(paths) {
         warn(items, reason);
     }
@@ -120,7 +121,7 @@ fn vault(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
     if let Some(reason) = crate::application::vault::escrow_outstanding(paths, None) {
         warn(items, reason);
     }
-    let pending = crate::application::vault::unsealed(paths)?;
+    let pending = crate::application::vault::unsealed(store, paths)?;
     if !pending.is_empty() {
         warn(
             items,
@@ -141,7 +142,7 @@ fn vault(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
 /// Fails only when a file cannot be read; a check that FINDS a problem
 /// reports it in `Findings` rather than returning an error, so one bad
 /// document does not hide the rest.
-pub fn run(paths: &Paths, registry: &Registry) -> Result<Findings> {
+pub fn run(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<Findings> {
     let mut items: Vec<Finding> = Vec::new();
     let by_code = registry.lifecycle.by_code()?;
 
@@ -152,11 +153,11 @@ pub fn run(paths: &Paths, registry: &Registry) -> Result<Findings> {
     gitignore(&mut items, paths, registry);
     catalogue(&mut items, registry);
     communications(&mut items, registry)?;
-    people(&mut items, paths, registry)?;
-    let entries = register(&mut items, paths)?;
-    archive_index(&mut items, paths, registry)?;
+    people(&mut items, store, paths, registry)?;
+    let entries = register(&mut items, store, paths)?;
+    archive_index(&mut items, store, paths, registry)?;
     team_export(&mut items, paths)?;
-    vault(&mut items, paths)?;
+    vault(&mut items, store, paths)?;
 
     items.sort();
     items.reverse();
@@ -585,8 +586,8 @@ fn class_templates_are_not_ignored(
 }
 
 /// The chain is unbroken and every issued PDF still matches its hash.
-fn register(items: &mut Vec<Finding>, paths: &Paths) -> Result<usize> {
-    let entries = store::register(paths)?;
+fn register(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Result<usize> {
+    let entries = store.register()?;
     for fault in verify_chain(&entries)? {
         err(items, fault.to_string());
     }
@@ -914,27 +915,32 @@ fn unique_identifiers(items: &mut Vec<Finding>, ledger: &[IdentityRecord]) {
     }
 }
 
-fn people(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Result<()> {
-    let ledger = store::ledger(paths)?;
+fn people(
+    items: &mut Vec<Finding>,
+    store: &dyn Store,
+    paths: &Paths,
+    registry: &Registry,
+) -> Result<()> {
+    let ledger = store.ledger()?;
     for fault in chain::verify(&ledger)? {
         err(items, format!("identity ledger {fault}"));
     }
     unique_identifiers(items, &ledger);
-    let log = store::events(paths)?;
+    let log = store.events()?;
     for fault in chain::verify(&log)? {
         err(items, format!("event log {fault}"));
     }
 
-    signatures(items, paths)?;
+    signatures(items, store, paths)?;
 
-    for slug in store::slugs(paths)? {
+    for slug in store.slugs()? {
         // `engagements`, NOT `identify`. `identify` refuses a person holding two
         // open engagements (ADR-0077 D3) so that no command silently picks one --
         // and this `else` read that refusal as "no identifier in the ledger",
         // reporting a correctly registered officer as hand-created. The question
         // here is whether the record is registered AT ALL, which is what
         // `engagements` answers without having to choose between them.
-        let held = crate::application::personnel::engagements(paths, &slug)?;
+        let held = crate::application::personnel::engagements(store, &slug)?;
         let Some(record) = held.first().cloned() else {
             err(
                 items,
@@ -955,7 +961,7 @@ fn people(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Resul
             );
             continue;
         };
-        let person = store::person(paths, &slug)?;
+        let person = store.person(&slug)?;
         for v in validate(&registry.catalogue, class, &person)? {
             err(items, format!("{slug}: {v}"));
         }
@@ -994,7 +1000,12 @@ fn people(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Resul
 /// ADR-0040's `docs.system_view_is_current` pattern: the failure mode of
 /// generated output is staleness, not incorrectness, so the only claim worth
 /// making about it is that regenerating produces the same bytes.
-fn archive_index(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -> Result<()> {
+fn archive_index(
+    items: &mut Vec<Finding>,
+    store: &dyn Store,
+    paths: &Paths,
+    registry: &Registry,
+) -> Result<()> {
     let dir = paths.store.join("index");
     let roster = dir.join("roster.csv");
     if !paths.register().exists() {
@@ -1009,7 +1020,7 @@ fn archive_index(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -
     }
     let before = fs::read_to_string(&roster).unwrap_or_default();
     let docs_before = fs::read_to_string(dir.join("documents.csv")).unwrap_or_default();
-    crate::application::archive::index(paths, registry)?;
+    crate::application::archive::index(store, paths, registry)?;
     let after = fs::read_to_string(&roster).unwrap_or_default();
     let docs_after = fs::read_to_string(dir.join("documents.csv")).unwrap_or_default();
     if before != after || docs_before != docs_after {
@@ -1028,12 +1039,12 @@ fn archive_index(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) -
 
 /// The signature ledger is intact, references real issuances, and its scans
 /// are still where they were filed.
-fn signatures(items: &mut Vec<Finding>, paths: &Paths) -> Result<()> {
-    let signatures = store::signatures(paths)?;
+fn signatures(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Result<()> {
+    let signatures = store.signatures()?;
     for fault in chain::verify(&signatures)? {
         err(items, format!("signature ledger {fault}"));
     }
-    let register = store::register(paths)?;
+    let register = store.register()?;
     for sig in &signatures {
         match register.iter().find(|e| e.serial == sig.serial) {
             None => err(

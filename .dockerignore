@@ -1,0 +1,15 @@
+# Keep the build context small and free of anything that never belongs in an image. `target/` is
+# the largest offender; `store/` and `people/` hold records that must never enter a layer (they are
+# gitignored for the same reason). The Dockerfile COPYs only what it needs, but a lean context also
+# speeds the buildx cache and removes any chance of an accidental COPY of the above.
+target/
+store/
+people/
+.git/
+.github/
+helm/
+docs/
+tests/
+fixtures/
+rehearsal/
+*.md

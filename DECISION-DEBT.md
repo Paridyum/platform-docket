@@ -1043,3 +1043,98 @@ for his own documents both are the subject.
 list's shape rather than from the code that reads it is a specific way to be wrong, and this one
 was published in a summary before it was checked.
 
+
+## D-60 — Erase is not yet honourable on the Postgres store  (OPEN, needs migration 0007)
+
+`docket erase` rewrites the event log to its skeletal events and re-seals the chain — the one
+writer that does not append (CLAUDE.md, port design §6). Behind the `Store` port this is
+`reseal_events`. The file store rewrites the JSONL and re-seals; the Postgres store cannot, because
+re-sealing means DELETEing chain rows and the append-only trigger (`paridyum.forbid_mutation()`,
+platform-tenancy migration 0006) forbids that. `PgStore::reseal_events` therefore returns a clear
+error — "erasing on the Postgres store needs migration 0007 (append-only delete exception)" — rather
+than silently failing the trigger.
+
+The fix is a **cross-repo** platform-tenancy migration: a narrowly-scoped, `SECURITY DEFINER` delete
+exception (or a per-table erase function) that is the only path permitted to remove chain rows. It
+must NOT be made from this repo. Until then, an erasure against a Postgres-backed instance is honoured
+by running `docket erase` through the **break-glass CLI on the file store**, which still re-seals
+correctly. Threaded through the port so the file path keeps working today.
+
+## D-61 — The CLI is file-store only; a Postgres-backed CLI is not wired  (RESOLVED 2026-09-14)
+
+ADR-0093 §3 makes the CLI a break-glass client of the same database: `FileStore::new(&paths)` offline,
+a `PgStore` when `DOCKET_DATABASE_URL` is set. The first half was wired earlier; this change wires the
+second and closes the debt.
+
+**What changed.** Store construction moved out of the ~25 per-command handlers and into `run()`, which
+now builds the backend ONCE and threads a `store: &dyn Store` down through `dispatch` → `route`
+(→ `route_person`) → each handler. `open_backend` chooses by environment: with `DOCKET_DATABASE_URL`
+set it builds a multi-thread tokio runtime kept alive for the process (as `bin/serve` does), opens the
+pool on it, reads the tenant from `DOCKET_TENANT_ID` (a uuid — refused clearly if unset or unparseable
+while the DB URL is set, because every row is tenant-scoped by the migration-0006 RLS policies and
+guessing the tenant is how one operator's break-glass write lands against another's records), and
+constructs `PgStore::new(pool, tenant, handle)`; unset, it is the offline `FileStore` exactly as before.
+Either way it prints one stderr line naming the store — and, for Postgres, the host and tenant, with
+credentials stripped — so an operator knows they are hitting the cluster, not local files.
+
+**The write lock is file-store-only.** `lock::acquire` is skipped on the Postgres backend: the
+database's advisory-locked, atomic seal-append is the concurrency control there (ADR-0093
+§decision-2), and a lockfile beside a database store would leave a stray file and serialise nothing.
+
+**What still cannot run on Postgres, and now fails clearly rather than obscurely.** `advance` rewrites
+`people/<slug>.yaml` as text to preserve its DPDP field-purpose comments (D-62), and `erase` re-seals
+the event log by rewriting it (D-60, needs the cross-repo migration 0007). Both are refused up front by
+`unavailable_on_pg` with the reason and the remedy (run offline against the file store), so `advance`
+no longer dies deep in an `fs` read and `erase` no longer deletes host-local blobs before its re-seal
+fails. Both work unchanged on the file store.
+
+**Proven.** `scripts/gates.sh` green (file mode); `--test pg_store` 7/7 against the throwaway Postgres;
+and the CLI itself against that database (a seeded tenant) — `docket roster` returns cleanly and
+`docket new asha-verma intern` lands the person in `docket_persons` with its sealed identity and
+`created` event in `docket_identities`/`docket_events`, all through the port, no file written to
+`people/`; `advance` and `erase` refuse with their D-62/D-60 messages. The break-glass loopback
+`docket serve` and `--tui` browse both run on either backend.
+
+## D-62 — `advance` still edits the person body on the filesystem  (OPEN, served stage-change)
+
+`personnel::advance` reads and rewrites `people/<slug>.yaml` as TEXT (via `fs`), deliberately, to
+preserve the field-purpose comments the DPDP Act cares about (the record is not re-serialised). That
+is correct on the file store and is why `advance` keeps its `&Paths`. On the Postgres store the person
+record lives in `docket_persons`, not on disk, so `advance` — and only `advance` — cannot change a
+stage there yet: it would look for a file that is not present. Every other person write already goes
+through the port (`create_person`/`rewrite_person`). The served backend's stage-change therefore waits
+on a port operation that returns the raw person body for a comment-preserving edit (or a decision that
+the JSONB record needs no comment preservation). Not exercised by the served happy-path test; called
+out rather than hidden. Same family as the blob limitation (port design §8): the served instance
+shares the *record* immediately, some host-local edits later.
+
+## D-63 — The loopback `docket serve` is now thread-per-request over the file store  (OPEN, low risk)
+
+ADR-0072's single-request serialisation — which is what kept the four append-only file chains safe
+without a file lock — was retired here because ADR-0093 §decision-2 moves write concurrency into the
+database: `adapters::http::server` is thread-per-request, and correctness under concurrent writers is
+the `Store` port's atomic, advisory-locked seal-append. That reasoning holds for the primary served
+backend (`bin/serve`, a `PgStore`). The break-glass loopback `docket serve` (CLI subcommand, a
+`FileStore`) now also serves thread-per-request, so two concurrent writers to its file chains are no
+longer serialised by the server. It is a single-operator break-glass/dev path over SSH, so the
+exposure is small, but it is a real change from ADR-0072 and is recorded as such. The clean fix is for
+the loopback path to use the same database (D-61) or to reinstate a file-store write lock behind the
+port.
+
+## D-64 — docket is class `platform` but still named `tool-docket`
+
+ADR-0093 §3 reclassifies the served backend as platform-shaped, and `manifest.yaml` now declares
+`class: platform` so that ADR-0020's deployable obligations (the Helm chart, probes, limits added
+2026-09-14) actually bind. But the repository is still named `tool-docket`, whose `tool-` prefix maps
+to the `tool` class under C-0005 and C-0007. The two disagree.
+
+Nothing fails today: `repo.name_matches_scheme` is forge-owned and validates the NAME against the set
+of registered prefixes (which `tool-` is), not the manifest `class`; and the class↔stack gate passes
+because `platform` permits `rust`. So the disagreement is latent, not breaking.
+
+The clean resolution is to rename the repository to `platform-docket` — but that is a breaking
+operation (git remote, the org repo, every vendored `.paridyum/` snapshot, and console-docket's
+references to it) that ADR-0093 does not schedule, and it is not something to do as a side effect of
+adding a chart. **Reopens when:** the rename is scheduled, or forge ships a check that binds a
+manifest's `class` to its repository-name prefix — whichever is first. Sibling debt: console-docket
+D-? (its manifest is now `class: web` while named `console-docket`).

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: docket
+  labels:
+    app.kubernetes.io/name: docket
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/component: platform
+    app.kubernetes.io/part-of: paridyum
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  # ClusterIP always: reached by console-docket's server inside the cluster and by staff through
+  # the ingress, never as a public VIP. The Service name is the bare capability `docket` (C-0007),
+  # so deployed in namespace `platform` it resolves at `docket.platform.svc.cluster.local:8080`.
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: docket
+    app.kubernetes.io/instance: {{ .Release.Name }}

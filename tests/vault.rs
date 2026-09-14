@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::{crypt, registry::Registry, store};
+use tool_docket::adapters::store::{self, FileStore};
+use tool_docket::adapters::{crypt, registry::Registry};
 use tool_docket::application::{issue, personnel, sign, vault, verify};
 use tool_docket::config::Paths;
 use tool_docket::domain::signature::Method;
@@ -84,6 +85,7 @@ impl Sandbox {
     fn with_document(&self, slug: &str) -> tool_docket::domain::identity::Record {
         let reg = registry();
         let record = personnel::create(
+            &FileStore::new(&self.paths),
             &self.paths,
             &reg,
             slug,
@@ -101,7 +103,16 @@ impl Sandbox {
             .get("NDO")
             .copied()
             .expect("NDO is declared");
-        issue::one(&self.paths, &reg, &person, doc, d("2026-09-06"), "rohan").expect("issues");
+        issue::one(
+            &FileStore::new(&self.paths),
+            &self.paths,
+            &reg,
+            &person,
+            doc,
+            d("2026-09-06"),
+            "rohan",
+        )
+        .expect("issues");
         record
     }
 }
@@ -116,11 +127,25 @@ fn sealing_is_idempotent() {
     let sb = Sandbox::new();
     sb.with_document("seal-twice");
 
-    let first = vault::seal(&sb.paths, "seal-twice", None, &sb.estate).expect("seals");
+    let first = vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "seal-twice",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
     assert_eq!(first.written.len(), 1);
     assert_eq!(first.skipped, 0);
 
-    let second = vault::seal(&sb.paths, "seal-twice", None, &sb.estate).expect("seals again");
+    let second = vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "seal-twice",
+        None,
+        &sb.estate,
+    )
+    .expect("seals again");
     assert!(second.written.is_empty(), "nothing re-encrypted");
     assert_eq!(second.skipped, 1);
 }
@@ -132,7 +157,14 @@ fn a_sealed_document_is_ciphertext_and_opens_back_to_the_original() {
     }
     let sb = Sandbox::new();
     let who = sb.with_document("round-trip");
-    vault::seal(&sb.paths, "round-trip", None, &sb.estate).expect("seals");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "round-trip",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
 
     let entry = store::register(&sb.paths)
         .expect("register")
@@ -163,6 +195,7 @@ fn a_sealed_document_is_ciphertext_and_opens_back_to_the_original() {
     );
 
     let opened = vault::open(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         "round-trip",
         None,
@@ -183,7 +216,14 @@ fn erasure_destroys_the_vault_and_leaves_a_tombstone() {
     // erasure, because the versions remain. Destroying the only key that opens them is.
     let sb = Sandbox::new();
     let who = sb.with_document("to-erase");
-    vault::seal(&sb.paths, "to-erase", None, &sb.estate).expect("seals");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "to-erase",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
 
     let key = sb
         .paths
@@ -194,7 +234,14 @@ fn erasure_destroys_the_vault_and_leaves_a_tombstone() {
     let issued = sb.paths.store.join("issued").join(who.person_id.as_str());
     assert!(key.exists() && vault_dir.exists() && issued.exists());
 
-    personnel::erase(&sb.paths, "to-erase", d("2026-09-07"), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "to-erase",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
 
     assert!(!key.exists(), "the key is destroyed — this is the erasure");
     assert!(!vault_dir.exists(), "the ciphertext goes too");
@@ -241,8 +288,22 @@ fn an_erased_persons_document_still_verifies_from_their_own_copy() {
         .join("their-copy.pdf");
     std::fs::copy(sb.paths.store.join(&entry.pdf_path), &theirs).expect("they keep a copy");
 
-    vault::seal(&sb.paths, "still-provable", None, &sb.estate).expect("seals");
-    personnel::erase(&sb.paths, "still-provable", d("2026-09-07"), "rohan").expect("erases");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "still-provable",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "still-provable",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
 
     let register = store::register(&sb.paths).expect("the register survives erasure");
     let outcome = verify::verify(&sb.paths, &register, &entry.serial, Some(&theirs))
@@ -262,11 +323,32 @@ fn opening_a_shredded_vault_says_why_rather_than_failing_to_decrypt() {
     // worked, and the message has to say so or somebody will go looking for a backup.
     let sb = Sandbox::new();
     sb.with_document("shredded");
-    vault::seal(&sb.paths, "shredded", None, &sb.estate).expect("seals");
-    personnel::erase(&sb.paths, "shredded", d("2026-09-07"), "rohan").expect("erases");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "shredded",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "shredded",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
 
-    let err = vault::open(&sb.paths, "shredded", None, "anything.age", &sb.estate)
-        .expect_err("cannot open");
+    let err = vault::open(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "shredded",
+        None,
+        "anything.age",
+        &sb.estate,
+    )
+    .expect_err("cannot open");
     let message = err.to_string();
     assert!(message.contains("permanent"), "{message}");
     assert!(
@@ -360,7 +442,14 @@ fn the_backup_never_carries_the_keystore() {
     // no erasure this system performs is real.
     let sb = Sandbox::new();
     sb.with_document("no-keys");
-    vault::seal(&sb.paths, "no-keys", None, &sb.estate).expect("seals");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "no-keys",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
     vault::back_up_register(&sb.paths, &sb.estate).expect("backs up");
 
     let uploaded = sb.paths.store.join("vault");
@@ -408,6 +497,7 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
     let scan = sb.paths.store.parent().expect("a parent").join("scan.pdf");
     std::fs::write(&scan, b"a scanned signed copy").expect("scan written");
     sign::record(
+        &FileStore::new(&sb.paths),
         &sb.paths,
         &registry(),
         &entry.serial,
@@ -423,19 +513,35 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
     assert!(scans.exists(), "the scan was filed");
 
     // Reported as needing sealing, and named as a scan so it is not mistaken for the PDF.
-    let pending = vault::unsealed(&sb.paths).expect("status computes");
+    let pending = vault::unsealed(&FileStore::new(&sb.paths), &sb.paths).expect("status computes");
     assert!(
         pending.iter().any(|p| p.contains("signed scan")),
         "the scan is reported unsealed: {pending:?}"
     );
 
-    vault::seal(&sb.paths, "with-scan", None, &sb.estate).expect("seals");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "with-scan",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
     assert!(
-        vault::unsealed(&sb.paths).expect("status").is_empty(),
+        vault::unsealed(&FileStore::new(&sb.paths), &sb.paths)
+            .expect("status")
+            .is_empty(),
         "sealing covers the scan as well as the document"
     );
 
-    personnel::erase(&sb.paths, "with-scan", d("2026-09-07"), "rohan").expect("erases");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "with-scan",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
     assert!(
         !scans.exists(),
         "the scan is destroyed with everything else, or the erasure keeps the one copy the \
@@ -454,19 +560,39 @@ fn never_sealed_is_not_mistaken_for_shredded() {
     let sb = Sandbox::new();
     sb.with_document("not-yet");
 
-    let before = vault::unsealed(&sb.paths).expect("status computes");
+    let before = vault::unsealed(&FileStore::new(&sb.paths), &sb.paths).expect("status computes");
     assert_eq!(
         before.len(),
         1,
         "a never-sealed document is reported: {before:?}"
     );
 
-    vault::seal(&sb.paths, "not-yet", None, &sb.estate).expect("seals");
-    assert!(vault::unsealed(&sb.paths).expect("status").is_empty());
-
-    personnel::erase(&sb.paths, "not-yet", d("2026-09-07"), "rohan").expect("erases");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "not-yet",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
     assert!(
-        vault::unsealed(&sb.paths).expect("status").is_empty(),
+        vault::unsealed(&FileStore::new(&sb.paths), &sb.paths)
+            .expect("status")
+            .is_empty()
+    );
+
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "not-yet",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
+    assert!(
+        vault::unsealed(&FileStore::new(&sb.paths), &sb.paths)
+            .expect("status")
+            .is_empty(),
         "a shredded document is not reported: re-sealing what erasure destroyed is not a task"
     );
 }
@@ -481,7 +607,14 @@ fn an_escrow_inside_the_store_is_refused() {
     // completely silent.
     let sb = Sandbox::new();
     sb.with_document("escrowed");
-    vault::seal(&sb.paths, "escrowed", None, &sb.estate).expect("seals");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "escrowed",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
 
     let inside = sb.paths.store.join("vault").join("escrow.age");
     let err = vault::escrow(&sb.paths, &sb.estate, &inside).expect_err("refused");
@@ -516,8 +649,22 @@ fn a_shredding_after_an_escrow_is_reported_as_incomplete() {
     );
 
     sb.with_document("shred-after-escrow");
-    vault::seal(&sb.paths, "shred-after-escrow", None, &sb.estate).expect("seals");
-    personnel::erase(&sb.paths, "shred-after-escrow", d("2026-09-07"), "rohan").expect("erases");
+    vault::seal(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "shred-after-escrow",
+        None,
+        &sb.estate,
+    )
+    .expect("seals");
+    personnel::erase(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        "shred-after-escrow",
+        d("2026-09-07"),
+        "rohan",
+    )
+    .expect("erases");
 
     let warning = vault::escrow_outstanding(&sb.paths, None).expect("reported");
     assert!(warning.contains("not complete"), "{warning}");

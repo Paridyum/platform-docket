@@ -2,9 +2,9 @@
 
 use crate::adapters::console;
 use crate::adapters::registry::Registry;
-use crate::config::Paths;
+use crate::adapters::store::Store;
 use crate::domain::personnel::Question;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, Write};
@@ -290,15 +290,11 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 ///
 /// # Errors
 /// Fails if a record is already there, or it cannot be written.
-pub fn write_record(paths: &Paths, slug: &str, body: &str) -> Result<()> {
-    let path = paths.person(slug);
-    if path.exists() {
-        bail!("a record already exists at {}", path.display());
-    }
-    std::fs::create_dir_all(&paths.people)
-        .with_context(|| format!("creating {}", paths.people.display()))?;
-    std::fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+pub fn write_record(store: &dyn Store, slug: &str, body: &str) -> Result<()> {
+    // The person record is a record on the port now (design §4): creating one is `create_person`,
+    // which the file store writes as YAML verbatim (comments and all) and the Postgres store parses
+    // into the JSONB document. Both refuse to overwrite an existing record.
+    store.create_person(slug, body)
 }
 
 #[cfg(test)]

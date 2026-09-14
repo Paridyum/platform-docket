@@ -9,6 +9,10 @@ edition = "2024"
 rust-version = "1.97"
 description = "Paridyum internship document issuance and register"
 publish = false
+# Two binaries ship: `docket` (the CLI, C-0007) and `serve` (the served backend, ADR-0093). `cargo
+# run` and `scripts/gates.sh` mean the CLI, so it is the default-run; `serve` is launched explicitly
+# (bin name kept — the deploy chart depends on it).
+default-run = "docket"
 
 # C-0007: binary name is the bare capability — tool-docket produces `docket`.
 [[bin]]
@@ -28,8 +32,17 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 time = { version = "0.3", features = ["formatting", "parsing", "macros", "local-offset"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "json"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+jsonwebtoken = "9"   # RS256 validation of operator tokens against the control-plane JWKS (ADR-0092)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }  # fetch the control-plane JWKS at startup
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+rsa = "0.9"
+rand = "0.8"
 
 # STD-0003: declared once at the workspace root; every member inherits. A member that does not
 # inherit has silently opted out of the entire policy, which is why it is checked.

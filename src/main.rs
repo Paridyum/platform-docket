@@ -2,12 +2,15 @@
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
 use tool_docket::adapters::http;
 use tool_docket::adapters::lock;
-use tool_docket::adapters::{registry::Registry, store, typeset};
+use tool_docket::adapters::pg::{self, PgStore};
+use tool_docket::adapters::store::{FileStore, Store};
+use tool_docket::adapters::{registry::Registry, typeset};
 use tool_docket::application::{
     archive, browse, check, comms, enrol, issue, next, node, pack, personnel, roster, sign, status,
     vault, verify,
@@ -18,6 +21,7 @@ use tool_docket::domain::event::Kind;
 use tool_docket::domain::identity::Standing;
 use tool_docket::domain::person;
 use tool_docket::domain::signature::Method;
+use uuid::Uuid;
 
 /// Paridyum's internship document system.
 #[derive(Parser)]
@@ -298,28 +302,172 @@ fn run() -> Result<ExitCode> {
         .map(|id| registry.operator(&id).map(|o| o.id.clone()))
         .transpose()?;
 
-    // `--tui` wins, with or without a subcommand. It writes nothing, so it
-    // needs no operator.
+    // Printing help must not require a store: a database-backed CLI would
+    // otherwise open a connection just to say what the commands are. So the
+    // no-command, no-tui case is answered before the backend is built.
+    let command = cli.command;
+    if !cli.tui && command.is_none() {
+        <Cli as clap::CommandFactory>::command().print_help()?;
+        println!();
+        return Ok(ExitCode::from(2));
+    }
+
+    // The store the whole command shares, built ONCE here and threaded down as a
+    // `&dyn Store` (ADR-0093 §3): a `PgStore` against the cluster database when
+    // `DOCKET_DATABASE_URL` is set, the offline file store otherwise. It says on
+    // stderr which one, so an operator knows whether they are hitting the cluster.
+    let backend = open_backend(&paths)?;
+
+    // `--tui` wins, with or without a subcommand. It writes nothing, so it needs
+    // no operator, but it reads through the same store as everything else.
     if cli.tui {
         let stdin = std::io::stdin();
         let mut input = stdin.lock();
         let mut out = std::io::stdout();
-        browse::run(&paths, &registry, &mut out, &mut input)?;
+        browse::run(backend.as_store(), &paths, &registry, &mut out, &mut input)?;
         return Ok(ExitCode::SUCCESS);
     }
-    let Some(command) = cli.command else {
-        // Printing help beats inventing a default action.
-        <Cli as clap::CommandFactory>::command().print_help()?;
-        println!();
+    let Some(command) = command else {
+        // Unreachable: the no-command case returned above. Kept so the value is
+        // a `Command` rather than an `Option` from here on.
         return Ok(ExitCode::from(2));
     };
     dispatch(
         command,
+        &backend,
         &paths,
         &registry,
         operator.as_deref(),
         cli.company.as_deref(),
     )
+}
+
+/// docket's record store for one command: the file store, or Postgres.
+///
+/// [`FileStore`] borrows the paths; [`PgStore`] owns its pool and a handle onto
+/// the process's tokio runtime. That runtime must outlive the store that drives
+/// sqlx on it, so it is kept here for the whole command and dropped only with the
+/// backend — the same lifetime `bin/serve` gives it. Fields drop in declaration
+/// order, so the store (pool + handle) drops before the runtime.
+enum Backend<'a> {
+    File(FileStore<'a>),
+    Pg {
+        store: PgStore,
+        _runtime: tokio::runtime::Runtime,
+    },
+}
+
+impl Backend<'_> {
+    /// The store behind whichever backend this is, as the shared port type.
+    fn as_store(&self) -> &dyn Store {
+        match self {
+            Backend::File(s) => s,
+            Backend::Pg { store, .. } => store,
+        }
+    }
+
+    /// Whether this is the Postgres backend — the file write lock and the two
+    /// filesystem-bound commands turn on this.
+    const fn is_pg(&self) -> bool {
+        matches!(self, Backend::Pg { .. })
+    }
+}
+
+/// Build the store the whole command shares, choosing the backend by environment.
+///
+/// `DOCKET_DATABASE_URL` set makes the CLI a break-glass client of the SAME
+/// Postgres database the served backend uses (ADR-0093 §3): every record read and
+/// write goes to the cluster, not local files, so it says so on stderr. Unset is
+/// the default offline path — the file store under `store/`, exactly as before.
+fn open_backend(paths: &Paths) -> Result<Backend<'_>> {
+    let url = std::env::var("DOCKET_DATABASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let Some(url) = url else {
+        eprintln!("docket: store = local files at {}", paths.store.display());
+        return Ok(Backend::File(FileStore::new(paths)));
+    };
+
+    // A database URL without a tenant is refused rather than defaulted: every
+    // row is tenant-scoped by the RLS policies (migration 0006), and guessing the
+    // tenant is exactly how one operator's break-glass write would land against
+    // another tenant's records.
+    let tenant_raw = std::env::var("DOCKET_TENANT_ID")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .context(
+            "DOCKET_DATABASE_URL is set, so this is a break-glass client of the cluster \
+             database and must be told which tenant: set DOCKET_TENANT_ID to a uuid",
+        )?;
+    let tenant: Uuid = tenant_raw
+        .parse()
+        .with_context(|| format!("DOCKET_TENANT_ID={tenant_raw:?} is not a uuid"))?;
+
+    // A multi-thread runtime the command owns for its whole life. `PgStore` drives
+    // sqlx to completion on this runtime's handle from the calling (blocking)
+    // thread, so the runtime must outlive every call — bin/serve builds it the
+    // same way, for the same reason.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("building the tokio runtime")?;
+    let pool = runtime
+        .block_on(pg::pool(&url))
+        .context("opening the docket database (is DOCKET_DATABASE_URL reachable?)")?;
+    eprintln!(
+        "docket: store = Postgres at {} for tenant {tenant}; break-glass client of the \
+         cluster, NOT local files (ADR-0093 §3)",
+        db_host(&url)
+    );
+    let store = PgStore::new(pool, tenant, runtime.handle().clone());
+    Ok(Backend::Pg {
+        store,
+        _runtime: runtime,
+    })
+}
+
+/// The `host[:port]/database` of a Postgres URL, with any credentials removed.
+///
+/// For the one-line stderr banner only, and it must never echo the password: it
+/// takes the authority AFTER the last `@` (or the whole authority when there are
+/// no credentials) and stops at the query string. An unparseable URL degrades to
+/// a placeholder rather than risking printing it verbatim.
+fn db_host(url: &str) -> String {
+    let Some((_, after_scheme)) = url.split_once("://") else {
+        return "(the configured URL)".to_owned();
+    };
+    let host_part = after_scheme
+        .rsplit_once('@')
+        .map_or(after_scheme, |(_, host)| host);
+    host_part.split('?').next().unwrap_or(host_part).to_owned()
+}
+
+/// Commands the break-glass CLI cannot yet run against the Postgres store, each
+/// with the reason it is refused CLEARLY here rather than failing obscurely later.
+///
+/// Both writers still assume the filesystem. `advance` changes a stage by
+/// rewriting `people/<slug>.yaml` as TEXT, to keep each field's DPDP purpose
+/// comment (D-62) — on Postgres the record is in `docket_persons`, not on disk,
+/// so it would fail deep in an `fs` read. `erase` re-seals the event log by
+/// rewriting it and deletes the person's local blobs; the Postgres re-seal needs
+/// migration 0007's delete exception (D-60), and refusing up front also avoids
+/// deleting host-local PDFs before that re-seal fails. An erasure against a
+/// Postgres instance is honoured by running `erase` offline on the file store.
+fn unavailable_on_pg(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Advance { .. } => Some(
+            "advance changes a stage by rewriting people/<slug>.yaml as text, to preserve each \
+             field's DPDP purpose comment (D-62); on Postgres the record lives in the database, \
+             not on disk. Change the stage from the served backend, or run advance offline \
+             against the file store (unset DOCKET_DATABASE_URL).",
+        ),
+        Command::Erase { .. } => Some(
+            "erase re-seals the event log by rewriting it, which the Postgres append-only trigger \
+             forbids without migration 0007 (D-60). Honour this erasure by running `docket erase` \
+             offline against the file store (unset DOCKET_DATABASE_URL), which re-seals correctly.",
+        ),
+        _ => None,
+    }
 }
 
 /// Whether a command writes to the store, and so must hold the store lock.
@@ -377,21 +525,41 @@ fn writes(command: &Command) -> bool {
 /// the entry point becoming the longest function in the crate.
 fn dispatch(
     command: Command,
+    backend: &Backend<'_>,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
     company: Option<&str>,
 ) -> Result<ExitCode> {
-    // Held for the whole command and released on drop. Bound to a name rather
-    // than `_`: `let _ = ...` drops immediately and would unlock the store
-    // before the first write.
-    let _lock = if writes(&command) {
+    // Refuse a command that cannot work against Postgres before it does anything,
+    // rather than letting it fail obscurely (or, for erase, delete local blobs
+    // first). The file store runs every command, so this gate is pg-only.
+    if backend.is_pg()
+        && let Some(reason) = unavailable_on_pg(&command)
+    {
+        bail!("{reason}");
+    }
+
+    // The file store's single-writer guard. NOT taken on Postgres: the database's
+    // advisory-locked, atomic seal-append is the concurrency control there
+    // (ADR-0093 §decision-2), and a lockfile beside a database store would serialise
+    // nothing useful while leaving a stray file. Held for the whole command and
+    // released on drop; bound to a name rather than `_`, which would drop it at once
+    // and unlock the store before the first write.
+    let _lock = if writes(&command) && !backend.is_pg() {
         Some(lock::acquire(paths, operator)?)
     } else {
         None
     };
 
-    route(command, paths, registry, operator, company)
+    route(
+        command,
+        backend.as_store(),
+        paths,
+        registry,
+        operator,
+        company,
+    )
 }
 
 /// The routing table itself, split from the locking so neither grows into the
@@ -399,15 +567,17 @@ fn dispatch(
 /// goes.
 fn route(
     command: Command,
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
     company: Option<&str>,
 ) -> Result<ExitCode> {
     match command {
-        Command::Next { slug } => cmd_next(paths, registry, &slug, company),
-        Command::Status { slug } => cmd_status(paths, registry, &slug, company),
+        Command::Next { slug } => cmd_next(store, paths, registry, &slug, company),
+        Command::Status { slug } => cmd_status(store, registry, &slug, company),
         Command::Onboard { slug, date, force } => cmd_onboard(
+            store,
             paths,
             registry,
             &slug,
@@ -422,6 +592,7 @@ fn route(
             date,
             force,
         } => cmd_issue(
+            store,
             paths,
             registry,
             &slug,
@@ -430,9 +601,9 @@ fn route(
             force,
             operator,
         ),
-        Command::Render { slug, code } => cmd_render(paths, registry, &slug, &code),
-        Command::Verify { serial, file } => cmd_verify(paths, &serial, file.as_deref()),
-        Command::Check => cmd_check(paths, registry),
+        Command::Render { slug, code } => cmd_render(store, paths, registry, &slug, &code),
+        Command::Verify { serial, file } => cmd_verify(store, paths, &serial, file.as_deref()),
+        Command::Check => cmd_check(store, paths, registry),
         Command::Sign {
             serial,
             method,
@@ -440,6 +611,7 @@ fn route(
             received,
             scan,
         } => cmd_sign(
+            store,
             paths,
             registry,
             &serial,
@@ -449,10 +621,17 @@ fn route(
             scan.as_deref(),
             operator,
         ),
-        Command::Advance { slug, force, date } => {
-            cmd_advance(paths, registry, &slug, force, date.as_deref(), operator)
-        }
+        Command::Advance { slug, force, date } => cmd_advance(
+            store,
+            paths,
+            registry,
+            &slug,
+            force,
+            date.as_deref(),
+            operator,
+        ),
         Command::Pack { slug, out, date } => cmd_pack(
+            store,
             paths,
             registry,
             &slug,
@@ -462,15 +641,15 @@ fn route(
             operator,
         ),
         Command::Emails { slug, only } => {
-            cmd_emails(paths, registry, &slug, company, only.as_deref())
+            cmd_emails(store, registry, &slug, company, only.as_deref())
         }
-        Command::Index => cmd_index(paths, registry),
+        Command::Index => cmd_index(store, paths, registry),
         Command::Team => cmd_team(paths, registry),
-        Command::Addresses { slug } => cmd_addresses(paths, &slug, company),
-        Command::Vault { what } => cmd_vault(paths, &what),
+        Command::Addresses { slug } => cmd_addresses(store, &slug, company),
+        Command::Vault { what } => cmd_vault(store, paths, &what),
         Command::Store { what } => cmd_store(paths, &what),
-        Command::Retention { date } => cmd_retention(paths, registry, date.as_deref()),
-        other => route_person(other, paths, registry, operator, company),
+        Command::Retention { date } => cmd_retention(store, registry, date.as_deref()),
+        other => route_person(other, store, paths, registry, operator, company),
     }
 }
 
@@ -482,6 +661,7 @@ fn route(
 /// everything here changes who is on the register.
 fn route_person(
     command: Command,
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     operator: Option<&str>,
@@ -494,6 +674,7 @@ fn route_person(
             date,
             interactive,
         } => cmd_new(
+            store,
             interactive,
             paths,
             registry,
@@ -504,7 +685,7 @@ fn route_person(
             operator,
         ),
         Command::Reengage { slug, class, date } => cmd_reengage(
-            paths,
+            store,
             registry,
             &slug,
             &class,
@@ -512,28 +693,28 @@ fn route_person(
             date.as_deref(),
             operator,
         ),
-        Command::Record { slug } => cmd_record(paths, registry, &slug, company),
-        Command::Serve { port } => cmd_serve(paths, registry, port),
-        Command::Roster { standing } => cmd_roster(paths, registry, standing.as_deref()),
+        Command::Record { slug } => cmd_record(store, registry, &slug, company),
+        Command::Serve { port } => cmd_serve(store, paths, registry, port),
+        Command::Roster { standing } => cmd_roster(store, registry, standing.as_deref()),
         Command::Event {
             slug,
             kind,
             detail,
             date,
         } => cmd_event(
-            paths,
+            store,
             &slug,
             company,
             &kind,
             detail.as_deref(),
             date.as_deref(),
         ),
-        Command::Separate { slug, date } => cmd_separate(paths, &slug, date.as_deref(), operator),
+        Command::Separate { slug, date } => cmd_separate(store, &slug, date.as_deref(), operator),
         Command::Erase {
             slug,
             confirm,
             date,
-        } => cmd_erase(paths, &slug, confirm, date.as_deref(), operator),
+        } => cmd_erase(store, paths, &slug, confirm, date.as_deref(), operator),
         // `route` handles every other variant and delegates here; a command
         // reaching this arm means the split above lost one.
         other => unreachable_command(&other),
@@ -569,12 +750,13 @@ fn resolve_date(explicit: Option<&str>) -> Result<time::Date> {
 }
 
 fn cmd_next(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<ExitCode> {
-    let steps = next::steps(paths, registry, slug, company)?;
+    let steps = next::steps(store, paths, registry, slug, company)?;
     let done = steps.len() == 1 && steps.first().is_some_and(|s| s.command.is_none());
     for (i, step) in steps.iter().enumerate() {
         println!("{}. {}", i + 1, step.what);
@@ -593,15 +775,15 @@ fn cmd_next(
 }
 
 fn cmd_status(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<ExitCode> {
-    let person = store::person(paths, slug)?;
-    let who = personnel::identify_at(paths, slug, company)?;
-    let register = store::register(paths)?;
-    let signatures = store::signatures(paths)?;
+    let person = store.person(slug)?;
+    let who = personnel::identify_at(store, slug, company)?;
+    let register = store.register()?;
+    let signatures = store.signatures()?;
     let report = status::report(registry, &person, &who, &register, &signatures)?;
 
     println!("{}  ({})", report.name, report.slug);
@@ -668,6 +850,7 @@ fn report_refusals(refusals: &[String], slug: &str) {
 }
 
 fn cmd_onboard(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -677,7 +860,7 @@ fn cmd_onboard(
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
-    let person = store::person(paths, slug)?;
+    let person = store.person(slug)?;
     // Checked before `force` is even looked at.
     let unforceable = issue::unforceable(&person);
     if !unforceable.is_empty() {
@@ -690,8 +873,8 @@ fn cmd_onboard(
         return Ok(ExitCode::from(2));
     }
 
-    let who = personnel::identify_at(paths, slug, company)?;
-    let register = store::register(paths)?;
+    let who = personnel::identify_at(store, slug, company)?;
+    let register = store.register()?;
     let todo = issue::outstanding(registry, &person, &who, &register)?;
     if todo.is_empty() {
         println!(
@@ -713,7 +896,7 @@ fn cmd_onboard(
         let Some(doc) = by_code.get(code.as_str()) else {
             bail!("{code}: declared by a stage but not by documents");
         };
-        let entry = issue::one(paths, registry, &person, doc, when, by)?;
+        let entry = issue::one(store, paths, registry, &person, doc, when, by)?;
         println!("  {code}  {:<22} {}", entry.serial, entry.pdf_path);
     }
     println!(
@@ -725,6 +908,7 @@ fn cmd_onboard(
 }
 
 fn cmd_issue(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -734,7 +918,7 @@ fn cmd_issue(
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
-    let person = store::person(paths, slug)?;
+    let person = store.person(slug)?;
     let by_code = registry.lifecycle.by_code()?;
     let Some(doc) = by_code.get(code) else {
         let known: Vec<&str> = by_code.keys().copied().collect();
@@ -752,13 +936,27 @@ fn cmd_issue(
         report_refusals(&refusals, slug);
         return Ok(ExitCode::from(2));
     }
-    let entry = issue::one(paths, registry, &person, doc, resolve_date(date)?, by)?;
+    let entry = issue::one(
+        store,
+        paths,
+        registry,
+        &person,
+        doc,
+        resolve_date(date)?,
+        by,
+    )?;
     println!("{code}  {}  {}", entry.serial, entry.pdf_path);
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_render(paths: &Paths, registry: &Registry, slug: &str, code: &str) -> Result<ExitCode> {
-    let person = store::person(paths, slug)?;
+fn cmd_render(
+    store: &dyn Store,
+    paths: &Paths,
+    registry: &Registry,
+    slug: &str,
+    code: &str,
+) -> Result<ExitCode> {
+    let person = store.person(slug)?;
     let by_code = registry.lifecycle.by_code()?;
     let Some(doc) = by_code.get(code) else {
         bail!("unknown document code {code:?}");
@@ -789,8 +987,13 @@ fn cmd_render(paths: &Paths, registry: &Registry, slug: &str, code: &str) -> Res
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_verify(paths: &Paths, serial: &str, file: Option<&Path>) -> Result<ExitCode> {
-    let register = store::register(paths)?;
+fn cmd_verify(
+    store: &dyn Store,
+    paths: &Paths,
+    serial: &str,
+    file: Option<&Path>,
+) -> Result<ExitCode> {
+    let register = store.register()?;
     let outcome = verify::verify(paths, &register, serial, file)?;
     println!("serial     {}", outcome.serial);
     println!("document   {}", outcome.title);
@@ -810,7 +1013,12 @@ fn cmd_verify(paths: &Paths, serial: &str, file: Option<&Path>) -> Result<ExitCo
     Ok(ExitCode::from(1))
 }
 
+// A dispatch handler: its arguments are the shared store and paths plus the
+// fields clap parsed from `Command::Sign`. Grouping them into a struct only to
+// satisfy the count would hide the one-to-one correspondence with the command.
+#[allow(clippy::too_many_arguments)]
 fn cmd_sign(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     serial: &str,
@@ -827,6 +1035,7 @@ fn cmd_sign(
         None => signed_on,
     };
     let s = sign::record(
+        store,
         paths,
         registry,
         serial,
@@ -852,6 +1061,7 @@ fn cmd_sign(
 }
 
 fn cmd_advance(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -861,7 +1071,7 @@ fn cmd_advance(
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
     let (from, to, gates) =
-        personnel::advance(paths, registry, slug, resolve_date(date)?, force, by)?;
+        personnel::advance(store, paths, registry, slug, resolve_date(date)?, force, by)?;
     if gates.is_empty() {
         println!("{slug}: {from} -> {to}");
         if force {
@@ -885,6 +1095,7 @@ fn cmd_advance(
 }
 
 fn cmd_pack(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -896,6 +1107,7 @@ fn cmd_pack(
     let by = writer(operator)?;
     let target = out.map_or_else(|| pack::default_out(paths), Path::to_path_buf);
     let p = pack::assemble(
+        store,
         paths,
         registry,
         slug,
@@ -933,13 +1145,13 @@ fn cmd_pack(
 }
 
 fn cmd_emails(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
     only: Option<&str>,
 ) -> Result<ExitCode> {
-    let all = comms::due(paths, registry, slug, company)?;
+    let all = comms::due(store, registry, slug, company)?;
     let wanted: Vec<&comms::Rendered> = all
         .iter()
         .filter(|m| only.is_none_or(|o| m.id == o))
@@ -1003,9 +1215,9 @@ fn cmd_emails(
 /// DERIVED AND PRINTED, NOT WRITTEN. It does not edit the record, because provisioning is a
 /// thing an operator does in Google's console and the record should say what was actually
 /// created rather than what was intended. Paste the two lines back once the accounts exist.
-fn cmd_addresses(paths: &Paths, slug: &str, company: Option<&str>) -> Result<ExitCode> {
-    let person = store::person(paths, slug)?;
-    let record = personnel::identify_at(paths, slug, company)?;
+fn cmd_addresses(store: &dyn Store, slug: &str, company: Option<&str>) -> Result<ExitCode> {
+    let person = store.person(slug)?;
+    let record = personnel::identify_at(store, slug, company)?;
     let Some(name) = person.string("identity.legal_name") else {
         bail!("{slug}: identity.legal_name is unset; an address is derived from it");
     };
@@ -1167,8 +1379,10 @@ fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
             }
             // Verified rather than announced. ADR-0071 §3: a backup that has
             // never been restored is a belief, and a restore that was never
-            // checked is the same belief one step later.
-            let faults = node::verify_restored(&target)?;
+            // checked is the same belief one step later. The restored chains are
+            // read back through the file store rooted at the restore target.
+            let restored_store = FileStore::new(&target);
+            let faults = node::verify_restored(&restored_store)?;
             if faults.is_empty() {
                 println!(
                     "\n{} file(s) restored; every chain verifies",
@@ -1186,7 +1400,7 @@ fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
     }
 }
 
-fn cmd_vault(paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
+fn cmd_vault(store: &dyn Store, paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
     match what {
         VaultCmd::Seal { slug } => {
             // Resolved here, at the one place that knows a key is needed, rather than deep
@@ -1194,7 +1408,7 @@ fn cmd_vault(paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
             let estate = tool_docket::adapters::crypt::estate_identity()?;
             // `vault seal` has no company of its own: it seals everything issued to a
             // PERSON, and a person is one archive across companies (ADR-0077 D2).
-            let out = vault::seal(paths, slug, None, &estate)?;
+            let out = vault::seal(store, paths, slug, None, &estate)?;
             for name in &out.written {
                 println!("  sealed   {name}");
             }
@@ -1206,7 +1420,7 @@ fn cmd_vault(paths: &Paths, what: &VaultCmd) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         VaultCmd::Status => {
-            let pending = vault::unsealed(paths)?;
+            let pending = vault::unsealed(store, paths)?;
             if pending.is_empty() {
                 println!("every issued document is sealed");
                 return Ok(ExitCode::SUCCESS);
@@ -1299,8 +1513,8 @@ fn cmd_team(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_index(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
-    let w = archive::index(paths, registry)?;
+fn cmd_index(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<ExitCode> {
+    let w = archive::index(store, paths, registry)?;
     for f in &w.files {
         println!("  {}", paths.store.join(f).display());
     }
@@ -1309,8 +1523,8 @@ fn cmd_index(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_retention(paths: &Paths, registry: &Registry, date: Option<&str>) -> Result<ExitCode> {
-    let (due, unevaluated) = archive::retention_due(paths, registry, resolve_date(date)?)?;
+fn cmd_retention(store: &dyn Store, registry: &Registry, date: Option<&str>) -> Result<ExitCode> {
+    let (due, unevaluated) = archive::retention_due(store, registry, resolve_date(date)?)?;
     for u in &unevaluated {
         println!("unevaluated  {u}");
     }
@@ -1332,8 +1546,8 @@ fn cmd_retention(paths: &Paths, registry: &Registry, date: Option<&str>) -> Resu
     Ok(ExitCode::from(1))
 }
 
-fn cmd_check(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
-    let findings = check::run(paths, registry)?;
+fn cmd_check(store: &dyn Store, paths: &Paths, registry: &Registry) -> Result<ExitCode> {
+    let findings = check::run(store, paths, registry)?;
     for f in &findings.items {
         if f.blocking {
             eprintln!("ERROR  {}", f.message);
@@ -1381,7 +1595,11 @@ fn resolve_company(registry: &Registry, given: Option<&str>) -> Result<String> {
     }
 }
 
+// A dispatch handler: the shared store and paths plus the fields clap parsed from
+// `Command::New`. See `cmd_sign` for why the count is left as it is.
+#[allow(clippy::too_many_arguments)]
 fn cmd_new(
+    store: &dyn Store,
     interactive: bool,
     paths: &Paths,
     registry: &Registry,
@@ -1403,10 +1621,11 @@ fn cmd_new(
         let mut out = std::io::stdout();
         let answers = enrol::interview(registry, class, &mut out, &mut input)?;
         let body = enrol::to_yaml(registry, class, &answers);
-        enrol::write_record(paths, slug, &body)?;
+        enrol::write_record(store, slug, &body)?;
     }
 
     let record = personnel::create(
+        store,
         paths,
         registry,
         slug,
@@ -1425,7 +1644,7 @@ fn cmd_new(
 }
 
 fn cmd_reengage(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     class: &str,
@@ -1436,7 +1655,7 @@ fn cmd_reengage(
     let by = writer(operator)?;
     let company = resolve_company(registry, company)?;
     let r = personnel::reengage(
-        paths,
+        store,
         registry,
         slug,
         class,
@@ -1454,17 +1673,17 @@ fn cmd_reengage(
 }
 
 fn cmd_record(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<ExitCode> {
-    let d = personnel::dossier(paths, registry, slug, company)?;
+    let d = personnel::dossier(store, registry, slug, company)?;
     println!("{}  ({})", d.identity.person_id, d.identity.slug);
     // EVERY engagement, not the latest. `record` is the answer to "what is held
     // about this person", and one line showing only their most recent company
     // was how Rohan's Paridyum office disappeared from his own record.
-    let held = personnel::engagements(paths, slug)?;
+    let held = personnel::engagements(store, slug)?;
     if held.len() > 1 {
         println!("engagements ({})", held.len());
         for e in &held {
@@ -1515,8 +1734,8 @@ fn cmd_record(
     Ok(ExitCode::from(1))
 }
 
-fn cmd_roster(paths: &Paths, registry: &Registry, standing: Option<&str>) -> Result<ExitCode> {
-    let all = roster::build(paths, registry)?;
+fn cmd_roster(store: &dyn Store, registry: &Registry, standing: Option<&str>) -> Result<ExitCode> {
+    let all = roster::build(store, registry)?;
     let lines: Vec<&roster::Line> = all
         .iter()
         .filter(|l| standing.is_none_or(|s| l.standing.as_str() == s))
@@ -1560,19 +1779,19 @@ fn cmd_roster(paths: &Paths, registry: &Registry, standing: Option<&str>) -> Res
 }
 
 fn cmd_event(
-    paths: &Paths,
+    store: &dyn Store,
     slug: &str,
     company: Option<&str>,
     kind: &str,
     detail: Option<&str>,
     date: Option<&str>,
 ) -> Result<ExitCode> {
-    let record = personnel::identify_at(paths, slug, company)?;
+    let record = personnel::identify_at(store, slug, company)?;
     if record.standing == Standing::Erased {
         bail!("{slug} is erased; no further events may be recorded against them");
     }
     let event = personnel::record_event(
-        paths,
+        store,
         &record.person_id,
         Kind::parse(kind)?,
         detail,
@@ -1590,13 +1809,13 @@ fn cmd_event(
 }
 
 fn cmd_separate(
-    paths: &Paths,
+    store: &dyn Store,
     slug: &str,
     date: Option<&str>,
     operator: Option<&str>,
 ) -> Result<ExitCode> {
     let by = writer(operator)?;
-    let record = personnel::separate(paths, slug, resolve_date(date)?, by)?;
+    let record = personnel::separate(store, slug, resolve_date(date)?, by)?;
     println!(
         "{} separated on {}",
         record.person_id, record.standing_changed_on
@@ -1606,6 +1825,7 @@ fn cmd_separate(
 }
 
 fn cmd_erase(
+    store: &dyn Store,
     paths: &Paths,
     slug: &str,
     confirm: bool,
@@ -1622,10 +1842,11 @@ fn cmd_erase(
         return Ok(ExitCode::from(2));
     }
     // Read the folder link BEFORE erasing: the record is about to be deleted.
-    let folder = store::person(paths, slug)
+    let folder = store
+        .person(slug)
         .ok()
         .and_then(|p| p.string("access.cloud_folder").map(ToOwned::to_owned));
-    let record = personnel::erase(paths, slug, resolve_date(date)?, by)?;
+    let record = personnel::erase(store, paths, slug, resolve_date(date)?, by)?;
     println!(
         "{} erased on {}",
         record.person_id, record.standing_changed_on
@@ -1639,19 +1860,21 @@ fn cmd_erase(
     Ok(ExitCode::SUCCESS)
 }
 
-/// Serve the operator API over loopback.
+/// Serve the operator API over loopback (break-glass; the primary served backend is `bin/serve`).
 ///
-/// Read-only so far: every route calls an `application::` function the CLI also
-/// calls, and none of them writes. Writes arrive with operator resolution, which
-/// the design sequences before the first one — a write that cannot name who made
-/// it is not auditable, and this process has no way to name one yet.
-fn cmd_serve(paths: &Paths, registry: &Registry, port: u16) -> Result<ExitCode> {
+/// No token verifier, so [`http::server::serve`] refuses anything but a loopback bind: SSH keys are
+/// the authentication and the operating system is the identity (ADR-0054). The routable, token-
+/// authenticated backend is `bin/serve` (ADR-0093). Writes are attributed from the `X-Docket-Operator`
+/// header here because there is no verifier to bind a token to (design §5).
+fn cmd_serve(store: &dyn Store, paths: &Paths, registry: &Registry, port: u16) -> Result<ExitCode> {
     let clock = SystemClock;
     let ctx = http::router::Context {
+        store,
         paths,
         registry,
+        verifier: None,
         clock: &clock,
     };
-    http::server::serve(&ctx, port)?;
+    http::server::serve(&ctx, SocketAddr::from(([127, 0, 0, 1], port)))?;
     Ok(ExitCode::SUCCESS)
 }

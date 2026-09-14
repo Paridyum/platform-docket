@@ -1,7 +1,7 @@
 //! The register of everyone Paridyum has engaged.
 
-use crate::adapters::{registry::Registry, store};
-use crate::config::Paths;
+use crate::adapters::registry::Registry;
+use crate::adapters::store::Store;
 use crate::domain::identity::Standing;
 use anyhow::Result;
 
@@ -39,9 +39,9 @@ pub struct Line {
 ///
 /// # Errors
 /// Fails if the ledger, register or a person record cannot be read.
-pub fn build(paths: &Paths, _registry: &Registry) -> Result<Vec<Line>> {
-    let ledger = store::ledger(paths)?;
-    let register = store::register(paths)?;
+pub fn build(store: &dyn Store, _registry: &Registry) -> Result<Vec<Line>> {
+    let ledger = store.ledger()?;
+    let register = store.register()?;
 
     let latest = crate::domain::identity::current(&ledger);
 
@@ -50,7 +50,7 @@ pub fn build(paths: &Paths, _registry: &Registry) -> Result<Vec<Line>> {
         let person = if r.standing == Standing::Erased {
             None
         } else {
-            store::person(paths, &r.slug).ok()
+            store.person(&r.slug).ok()
         };
         out.push(Line {
             person_id: r.person_id.to_string(),

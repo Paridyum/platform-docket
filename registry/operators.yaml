@@ -18,6 +18,8 @@ operators:
     name: ROHAN BATRA
     role: Chief Technology Officer
     active: true
+    # The control-plane Zitadel subject rohan signs in as through the served console (ADR-0092).
+    subject: '390506086174098663'
 
   - id: ruhani
     name: RUHANI KHURANA

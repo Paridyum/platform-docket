@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 
 use tool_docket::adapters::clock::parse_iso;
+use tool_docket::adapters::store::FileStore;
 use tool_docket::adapters::{crypt, registry::Registry};
 use tool_docket::application::{node, personnel, vault};
 use tool_docket::config::Paths;
@@ -75,6 +76,7 @@ impl Node {
     fn add(&self, slug: &str) {
         let reg = Registry::load(&Paths::resolve(&root())).expect("registry");
         personnel::create(
+            &FileStore::new(&self.paths),
             &self.paths,
             &reg,
             slug,
@@ -201,7 +203,7 @@ fn a_cold_spare_rebuilds_the_register_from_the_bundle_and_the_key_alone() {
     let restored = node::restore(&bundle, &spare.estate, &spare.paths).expect("restore");
     assert!(!restored.is_empty());
     assert!(
-        node::verify_restored(&spare.paths)
+        node::verify_restored(&FileStore::new(&spare.paths))
             .expect("verify")
             .is_empty(),
         "the restored chains do not verify"

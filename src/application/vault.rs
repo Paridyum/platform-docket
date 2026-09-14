@@ -1,6 +1,7 @@
 //! The encrypted archive: one key per person, so erasure has a mechanism.
 
-use crate::adapters::{clock, crypt, store};
+use crate::adapters::store::Store;
+use crate::adapters::{clock, crypt};
 use crate::config::Paths;
 use crate::domain::identity::PersonId;
 use anyhow::{Context, Result, bail};
@@ -127,16 +128,22 @@ pub struct Sealed {
 ///
 /// # Errors
 /// Fails if the register cannot be read, `age` is unavailable, or a document is missing.
-pub fn seal(paths: &Paths, slug: &str, company: Option<&str>, estate: &Path) -> Result<Sealed> {
+pub fn seal(
+    store: &dyn Store,
+    paths: &Paths,
+    slug: &str,
+    company: Option<&str>,
+    estate: &Path,
+) -> Result<Sealed> {
     crypt::detect()?;
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
     let identity = person_identity(paths, &who.person_id, estate)?;
     let recipient = recipient_in(&identity)?;
     let dir = vault_dir(paths, &who.person_id);
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let mut out = Sealed::default();
-    for entry in store::register(paths)? {
+    for entry in store.register()? {
         if entry.person_id != who.person_id {
             continue;
         }
@@ -193,6 +200,7 @@ fn seal_one(source: &Path, dir: &Path, recipient: &str, out: &mut Sealed) -> Res
 /// Fails if the key is gone — which is what a shredded vault looks like, and the message says so
 /// rather than reporting a decryption failure.
 pub fn open(
+    store: &dyn Store,
     paths: &Paths,
     slug: &str,
     company: Option<&str>,
@@ -200,7 +208,7 @@ pub fn open(
     estate: &Path,
 ) -> Result<Vec<u8>> {
     crypt::detect()?;
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
     if !key_path(paths, &who.person_id).exists() {
         bail!(
             "{slug} has no vault key. If they were erased this is expected and permanent: the \
@@ -494,7 +502,7 @@ pub fn syncable(paths: &Paths) -> (PathBuf, Vec<PathBuf>) {
 ///
 /// # Errors
 /// Fails if the register cannot be read.
-pub fn unsealed(paths: &Paths) -> Result<Vec<String>> {
+pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
     let mut out = Vec::new();
 
     // SHREDDED IS NOT THE SAME AS NEVER SEALED, and keying on the key file cannot tell them
@@ -509,17 +517,18 @@ pub fn unsealed(paths: &Paths) -> Result<Vec<String>> {
 
     // Scans first, because they are the irreplaceable half: an issued PDF was handed over in a
     // pack, a returned scan exists nowhere else.
-    for sig in store::signatures(paths)? {
+    let register = store.register()?;
+    for sig in store.signatures()? {
         let Some(rel) = sig.scan_path.as_ref() else {
             continue;
         };
         let Some(name) = Path::new(rel).file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        let Some(person) = store::register(paths)?
-            .into_iter()
+        let Some(person) = register
+            .iter()
             .find(|e| e.serial == sig.serial)
-            .map(|e| e.person_id)
+            .map(|e| e.person_id.clone())
         else {
             continue;
         };
@@ -534,7 +543,7 @@ pub fn unsealed(paths: &Paths) -> Result<Vec<String>> {
         }
     }
 
-    for entry in store::register(paths)? {
+    for entry in register {
         let dir = vault_dir(paths, &entry.person_id);
         let Some(name) = Path::new(&entry.pdf_path)
             .file_name()

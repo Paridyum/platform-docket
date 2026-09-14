@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::{registry::Registry, store};
+use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::{self, FileStore};
 use tool_docket::application::{check, issue, status, verify};
 use tool_docket::config::Paths;
 use tool_docket::domain::person::Person;
@@ -54,6 +55,7 @@ impl Sandbox {
     /// no identifier is a finding, not a valid fixture.
     fn person(&self, slug: &str, edits: &[(&str, &str)]) -> Person {
         tool_docket::application::personnel::create(
+            &FileStore::new(&self.paths),
             &self.paths,
             &registry(),
             slug,
@@ -77,7 +79,8 @@ impl Sandbox {
 
 /// The ledger record for a slug, which the register now keys on.
 fn who(sb: &Sandbox, slug: &str) -> tool_docket::domain::identity::Record {
-    tool_docket::application::personnel::identify(&sb.paths, slug).expect("identified")
+    tool_docket::application::personnel::identify(&FileStore::new(&sb.paths), slug)
+        .expect("identified")
 }
 
 fn registry() -> Registry {
@@ -93,7 +96,16 @@ fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> tool_docket::domain::
     let reg = registry();
     let by_code = reg.lifecycle.by_code().expect("codes");
     let doc = by_code.get(code).expect("known code");
-    issue::one(&sb.paths, &reg, person, doc, date(), "rohan").expect("issues")
+    issue::one(
+        &FileStore::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        person,
+        doc,
+        date(),
+        "rohan",
+    )
+    .expect("issues")
 }
 
 /// Whether a typesetter is installed.
@@ -130,7 +142,7 @@ fn the_checked_in_registry_is_valid() {
     // whichever records happen to be on this machine.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&paths, &registry()).expect("check runs");
+    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
     let blocking: Vec<&str> = findings
         .items
         .iter()
@@ -166,7 +178,16 @@ fn onboarding_issues_the_whole_preboarding_pack() {
     let by_code = reg.lifecycle.by_code().expect("codes");
     for code in &todo {
         let doc = by_code.get(code.as_str()).expect("declared");
-        issue::one(&sb.paths, &reg, &person, doc, date(), "rohan").expect("issues");
+        issue::one(
+            &FileStore::new(&sb.paths),
+            &sb.paths,
+            &reg,
+            &person,
+            doc,
+            date(),
+            "rohan",
+        )
+        .expect("issues");
     }
 
     let register = store::register(&sb.paths).expect("register");
@@ -345,7 +366,7 @@ fn no_template_restates_a_fact_the_registry_owns() {
     // in eleven files before this system existed.
     let sb = Sandbox::new();
     let paths = sb.paths.clone();
-    let findings = check::run(&paths, &registry()).expect("check runs");
+    let findings = check::run(&FileStore::new(&paths), &paths, &registry()).expect("check runs");
     let hardcoded: Vec<&str> = findings
         .items
         .iter()

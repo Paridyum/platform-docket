@@ -1,4 +1,9 @@
-//! The listener: binding loopback only, and one connection at a time.
+//! The listener: binding conditionally on auth, one thread per request.
+//!
+//! ADR-0093 §decision-2 moved docket's write concurrency from a single-writer file lock into the
+//! database: the served backend is thread-per-request, and correctness under concurrent writers is
+//! the `Store` port's atomic, advisory-locked seal-append (`adapters::pg`), not this listener's
+//! serialisation. So the "one request at a time" loop that protected the file chains is retired.
 
 use crate::adapters::http::request;
 use crate::adapters::http::response::Response;
@@ -15,79 +20,72 @@ use std::time::Duration;
 /// is generous for a request travelling over loopback or an SSH forward.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Refuse to listen on anything but a loopback address.
+/// Refuse a routable bind unless the server can authenticate its callers.
 ///
-/// This is the whole access-control model, so it is a function with tests rather
-/// than a default someone can pass a flag around. §4 of the design: SSH keys are
-/// the authentication and the operating system is the identity, which holds only
-/// while the socket cannot be reached from off the machine. The moment this binds
-/// a routable interface, the application has no authentication at all — every
-/// caller becomes a trusted operator.
-///
-/// When an authentication adapter exists (ADR-0047, `platform-identity`), it is
-/// added beside this rather than replacing it — ADR-0054.
+/// This is the design §5 invariant made mechanical. A loopback bind is always allowed: SSH keys are
+/// the authentication and the operating system is the identity, which holds while the socket cannot
+/// be reached from off the machine. A ROUTABLE bind is allowed ONLY when a token verifier is present
+/// (`has_verifier`): the served backend authenticates every write from a control-plane operator
+/// token (ADR-0092), so it may be reached from another machine. A routable bind with no verifier is
+/// refused — that is a server with no authentication of its own exposed to the network, which is the
+/// exact failure ADR-0072's loopback rule existed to prevent.
 ///
 /// # Errors
-/// Fails if the address is not a loopback address.
-pub fn require_loopback(addr: IpAddr) -> Result<()> {
-    if addr.is_loopback() {
+/// Fails if `addr` is routable and no verifier is present.
+pub fn permit_bind(addr: IpAddr, has_verifier: bool) -> Result<()> {
+    if addr.is_loopback() || has_verifier {
         return Ok(());
     }
     bail!(
-        "refusing to bind {addr}: this server has no authentication of its own, so it \
-         must not be reachable from another machine. Reach it over an SSH forward \
-         instead: ssh -L 8080:127.0.0.1:8080 <host>"
+        "refusing to bind {addr}: this backend has no token verifier, so it has no authentication \
+         of its own and must not be reachable from another machine. Either bind a loopback address \
+         and reach it over an SSH forward (ssh -L 8080:127.0.0.1:8080 <host>), or configure the \
+         OIDC verifier so the served backend can authenticate operators (ADR-0092)."
     )
 }
 
-/// Serve until the process is stopped.
+/// Serve until the process is stopped, a thread per accepted connection.
 ///
 /// # Errors
-/// Fails if the address is not loopback, or if the port cannot be bound.
-pub fn serve(ctx: &Context<'_>, port: u16) -> Result<()> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    require_loopback(addr.ip())?;
+/// Fails if the bind is refused ([`permit_bind`]) or the port cannot be bound.
+pub fn serve(ctx: &Context<'_>, addr: SocketAddr) -> Result<()> {
+    permit_bind(addr.ip(), ctx.verifier.is_some())?;
 
     let listener = TcpListener::bind(addr)
         .with_context(|| format!("could not bind {addr}; is another docket already serving?"))?;
 
-    // Printed rather than logged: this is a foreground process an operator starts
-    // and watches, and the SSH command is the thing they actually need next.
+    // Printed rather than logged: an operator starts this in the foreground and watches it.
     println!("docket serving on http://{addr}");
-    println!("reach it from another machine with:  ssh -L {port}:127.0.0.1:{port} <this-host>");
-    // D-41: the limit stated where an operator meets it, rather than only in a
-    // ledger nobody reads at the moment a screen appears to hang. One connection
-    // at a time is deliberate -- it is what keeps four append-only hash chains
-    // safe without file locking -- and the visible symptom of a slow route is
-    // indistinguishable from a crash unless it was said in advance.
-    println!();
-    println!("ONE REQUEST AT A TIME, deliberately: this process is the only writer to four");
-    println!("append-only hash chains. A slow route -- issuing a pack runs the typesetter --");
-    println!("blocks every other operator's screen until it finishes. That is waiting, not a");
-    println!("hang. This process also holds the store lock, so CLI writes are refused while");
-    println!("it runs (ADR-0072).");
-
-    for incoming in listener.incoming() {
-        match incoming {
-            Ok(stream) => {
-                // One connection at a time, deliberately.
-                //
-                // This process is the only writer to four append-only hash chains,
-                // and that is what makes them safe without file locking (§4). A
-                // thread per connection would make two concurrent writes possible
-                // and a torn chain the failure. Three HR operators clicking
-                // through screens do not need concurrency, and a serialised
-                // server is one whose correctness is arguable from its shape.
-                if let Err(e) = handle(ctx, stream) {
-                    // A failed connection must never stop the server. The usual
-                    // cause is a client that hung up mid-request, which is not an
-                    // event worth ending the process over.
-                    eprintln!("connection error: {e:#}");
-                }
-            }
-            Err(e) => eprintln!("accept failed: {e:#}"),
-        }
+    if ctx.verifier.is_some() {
+        println!("authenticating every write from a control-plane operator token (ADR-0092)");
+    } else {
+        println!("no token verifier: loopback only, SSH is the authentication (ADR-0054)");
+        println!(
+            "reach it from another machine with:  ssh -L {p}:127.0.0.1:{p} <this-host>",
+            p = addr.port()
+        );
     }
+
+    // One thread per connection. Concurrent writers are safe because the `Store` port seals every
+    // append atomically under a per-chain lock (ADR-0093 §decision-2); this listener no longer
+    // carries that responsibility. A scoped thread borrows `ctx` for the life of the accept loop, so
+    // no `'static`/`Arc` is forced on the handler wiring.
+    std::thread::scope(|scope| {
+        for incoming in listener.incoming() {
+            match incoming {
+                Ok(stream) => {
+                    scope.spawn(move || {
+                        if let Err(e) = handle(ctx, stream) {
+                            // A failed connection must never stop the server. The usual cause is a
+                            // client that hung up mid-request, which is not worth ending over.
+                            eprintln!("connection error: {e:#}");
+                        }
+                    });
+                }
+                Err(e) => eprintln!("accept failed: {e:#}"),
+            }
+        }
+    });
     Ok(())
 }
 
@@ -118,32 +116,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loopback_addresses_are_accepted() {
-        assert!(require_loopback("127.0.0.1".parse().expect("v4")).is_ok());
-        assert!(require_loopback("::1".parse().expect("v6")).is_ok());
+    fn loopback_binds_without_a_verifier() {
+        assert!(permit_bind("127.0.0.1".parse().expect("v4"), false).is_ok());
+        assert!(permit_bind("::1".parse().expect("v6"), false).is_ok());
         // The whole 127/8 range is loopback, not just 127.0.0.1.
-        assert!(require_loopback("127.0.2.2".parse().expect("v4")).is_ok());
+        assert!(permit_bind("127.0.2.2".parse().expect("v4"), false).is_ok());
     }
 
     #[test]
-    fn a_routable_address_is_refused_with_the_reason_and_the_alternative() {
-        let err = require_loopback("0.0.0.0".parse().expect("v4")).expect_err("refused");
+    fn a_routable_bind_needs_a_verifier() {
+        // Without a verifier a routable bind is refused, with the reason and the SSH alternative.
+        let err = permit_bind("0.0.0.0".parse().expect("v4"), false).expect_err("refused");
         let text = format!("{err}");
         assert!(text.contains("no authentication"), "{text}");
         assert!(text.contains("ssh -L"), "{text}");
+        // With a verifier the same routable bind is allowed — the served backend authenticates.
+        assert!(permit_bind("0.0.0.0".parse().expect("v4"), true).is_ok());
     }
 
     #[test]
-    fn a_lan_address_is_refused() {
-        // The exact mistake console-docket's `next dev` makes, which is how this
-        // rule earned its test.
-        assert!(require_loopback("10.12.9.25".parse().expect("v4")).is_err());
-        assert!(require_loopback("192.168.1.4".parse().expect("v4")).is_err());
+    fn a_lan_address_without_a_verifier_is_refused() {
+        // The exact mistake console-docket's `next dev` makes, which is how this rule earned a test.
+        assert!(permit_bind("10.12.9.25".parse().expect("v4"), false).is_err());
+        assert!(permit_bind("192.168.1.4".parse().expect("v4"), false).is_err());
+        // …but permitted once a verifier is configured.
+        assert!(permit_bind("10.12.9.25".parse().expect("v4"), true).is_ok());
     }
 
     #[test]
-    fn every_unspecified_address_is_refused() {
-        assert!(require_loopback("0.0.0.0".parse().expect("v4")).is_err());
-        assert!(require_loopback("::".parse().expect("v6")).is_err());
+    fn every_unspecified_address_without_a_verifier_is_refused() {
+        assert!(permit_bind("0.0.0.0".parse().expect("v4"), false).is_err());
+        assert!(permit_bind("::".parse().expect("v6"), false).is_err());
     }
 }

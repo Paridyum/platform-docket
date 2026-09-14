@@ -1,0 +1,30 @@
+# What the staging cluster runs, committed so the deploy is reproducible from the repository.
+#
+#   helm upgrade docket ./helm -n platform -f helm/values-staging.yaml --set image.digest=sha256:…
+#
+# Stays ClusterIP: docket is reached by console-docket's server and by authenticated staff through
+# the cluster ingress, not as a public VIP of its own.
+
+imagePullSecrets:
+  - name: ghcr
+
+# Non-secret OIDC/tenant config for the serve binary, plus the database URL from a Secret. The
+# audience is the paridyum-operations project id (`make zitadel-apps`) — a token for any other
+# project is correctly rejected (wrong_audience), which is the ADR-0092 boundary. DOCKET_OIDC_JWKS
+# is omitted so the binary derives {issuer}/oauth/v2/keys, which is the Zitadel default.
+env:
+  - name: DOCKET_ROOT
+    value: "/app"
+  - name: DOCKET_STORE
+    value: "/var/lib/docket/store"
+  - name: DOCKET_OIDC_ISSUER
+    value: "https://id.paridyum.com"
+  - name: DOCKET_OIDC_AUDIENCE
+    value: "SET_FROM_zitadel-apps_OUTPUT"   # the paridyum-operations project id
+  - name: DOCKET_TENANT_ID
+    value: "SET_FROM_tenancy_OUTPUT"        # the Paridyum tenant uuid (platform-tenancy)
+  - name: DOCKET_DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: docket
+        key: database_url

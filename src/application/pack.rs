@@ -1,6 +1,7 @@
 //! Assembling a person's documents into a folder they can be handed.
 
-use crate::adapters::{registry::Registry, store};
+use crate::adapters::registry::Registry;
+use crate::adapters::store::Store;
 use crate::config::Paths;
 use crate::domain::escape;
 use crate::domain::lifecycle::{Document, Kind};
@@ -112,12 +113,12 @@ fn file_name(index: usize, title: &str) -> String {
 /// # Errors
 /// Fails if the registry or register cannot be read.
 pub fn grouped(
-    paths: &Paths,
+    store: &dyn Store,
     registry: &Registry,
     slug: &str,
     company: Option<&str>,
 ) -> Result<Vec<(Action, Vec<Entry>)>> {
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
     let by_code = registry.lifecycle.by_code()?;
     let owed: BTreeSet<&str> = registry
         .lifecycle
@@ -136,7 +137,7 @@ pub fn grouped(
     .map(|a| (a, Vec::new()))
     .collect();
 
-    for e in store::register(paths)? {
+    for e in store.register()? {
         if e.person_id != who.person_id {
             continue;
         }
@@ -164,6 +165,7 @@ pub fn grouped(
 /// # Errors
 /// Fails if the person has no issued documents, or the pack cannot be written.
 pub fn assemble(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -172,8 +174,8 @@ pub fn assemble(
     date: time::Date,
     by: &str,
 ) -> Result<Pack> {
-    let who = crate::application::personnel::identify_at(paths, slug, company)?;
-    let buckets = grouped(paths, registry, slug, company)?;
+    let who = crate::application::personnel::identify_at(store, slug, company)?;
+    let buckets = grouped(store, registry, slug, company)?;
     if buckets.iter().all(|(_, v)| v.is_empty()) {
         bail!("{slug} has no issued documents; run `docket onboard {slug}` first");
     }
@@ -186,7 +188,7 @@ pub fn assemble(
 
     // The cover sheet needs the contents, so it is issued after grouping and
     // before the files are placed.
-    let cover = issue_cover(paths, registry, slug, &buckets, date, by)?;
+    let cover = issue_cover(store, paths, registry, slug, &buckets, date, by)?;
 
     let mut files = Vec::new();
     for (action, entries) in &buckets {
@@ -243,6 +245,7 @@ pub fn assemble(
 
 /// Issue the cover sheet, with the pack contents rendered into it.
 fn issue_cover(
+    store: &dyn Store,
     paths: &Paths,
     registry: &Registry,
     slug: &str,
@@ -254,7 +257,7 @@ fn issue_cover(
     let Some(doc) = by_code.get("PCK") else {
         bail!("PCK (the pack cover sheet) is not declared in lifecycle.yaml");
     };
-    let person = store::person(paths, slug)?;
+    let person = store.person(slug)?;
 
     let mut extra = crate::domain::definitions::Definitions::new();
     for (action, entries) in buckets {
@@ -279,7 +282,16 @@ fn issue_cover(
         extra.set_raw(name, body);
     }
 
-    crate::application::issue::one_with(paths, registry, &person, doc, date, Some(&extra), by)
+    crate::application::issue::one_with(
+        store,
+        paths,
+        registry,
+        &person,
+        doc,
+        date,
+        Some(&extra),
+        by,
+    )
 }
 
 /// Where a pack is written by default.

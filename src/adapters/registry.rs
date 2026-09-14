@@ -85,6 +85,12 @@ pub struct Operator {
     /// Whether they may currently operate.
     #[serde(default = "yes")]
     pub active: bool,
+    /// The Zitadel control-plane subject (opaque, permanent user id) this operator authenticates as
+    /// through the served console (ADR-0092). The binding is on the subject, not the mutable
+    /// loginname, so a rename cannot reattribute the ledger. Absent for a CLI-only operator, who is
+    /// attributed by `--by` over a trusted connection but cannot sign in over OIDC until bound.
+    #[serde(default)]
+    pub subject: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -310,6 +316,24 @@ impl Registry {
             "unknown operator {id:?}; declared: {}. Pass --by <id>, or set DOCKET_OPERATOR",
             known.join(" ")
         )
+    }
+
+    /// Resolve the operator a Zitadel token's `sub` is bound to (ADR-0092). Active operators only,
+    /// matched on the opaque subject. An unbound or inactive subject is refused rather than
+    /// defaulted — a token that names nobody in the registry may not write.
+    ///
+    /// # Errors
+    /// Fails when no active operator is bound to the subject.
+    pub fn by_subject(&self, subject: &str) -> Result<&Operator> {
+        self.operators
+            .iter()
+            .find(|o| o.active && o.subject.as_deref() == Some(subject))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no active operator is bound to subject {subject:?}; bind one with a \
+                     `subject:` in registry/operators.yaml (ADR-0092)"
+                )
+            })
     }
 
     /// Signatories who may currently sign.

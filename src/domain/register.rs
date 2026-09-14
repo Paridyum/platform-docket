@@ -198,6 +198,34 @@ mod tests {
     }
 
     #[test]
+    fn the_seal_survives_a_json_round_trip() {
+        // ADR-0093 / migration 0006 store each sealed entry as JSONB, and RFC-0039 D1 is
+        // unconditional: the chain moves with its guarantees or the move does not happen. A JSONB
+        // column IS a record -> JSON -> record path, so proving that path preserves both the link
+        // and the digest proves the store move is safe. `verify` re-serialises the struct, so what
+        // must hold is that the struct survives the round trip byte-for-byte.
+        let sealed = chain_of(3);
+        let restored: Vec<Entry> = sealed
+            .iter()
+            .map(|e| {
+                let json = serde_json::to_string(e).expect("serialise as it would enter JSONB");
+                serde_json::from_str::<Entry>(&json).expect("deserialise as it would leave JSONB")
+            })
+            .collect();
+        for (before, after) in sealed.iter().zip(&restored) {
+            assert_eq!(
+                serde_json::to_value(before).expect("value"),
+                serde_json::to_value(after).expect("value"),
+                "the round trip changed the record, which would change its digest"
+            );
+        }
+        assert!(
+            verify_chain(&restored).expect("verifiable").is_empty(),
+            "the seal did not survive the JSON round trip"
+        );
+    }
+
+    #[test]
     fn the_first_entry_links_to_genesis() {
         let chain = chain_of(1);
         assert_eq!(chain.first().map(|e| e.prev_sha256.as_str()), Some(GENESIS));

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tool_docket::adapters::registry::Registry;
+use tool_docket::adapters::store::FileStore;
 use tool_docket::application::enrol;
 use tool_docket::config::Paths;
 
@@ -203,8 +204,8 @@ fn writing_a_record_refuses_to_overwrite_one() {
         people: dir.path().join("people"),
         store: dir.path().join("store"),
     };
-    enrol::write_record(&paths, "t", "version: 1\n").expect("writes");
-    assert!(enrol::write_record(&paths, "t", "version: 1\n").is_err());
+    enrol::write_record(&FileStore::new(&paths), "t", "version: 1\n").expect("writes");
+    assert!(enrol::write_record(&FileStore::new(&paths), "t", "version: 1\n").is_err());
 }
 
 #[test]
@@ -224,8 +225,14 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
     let reg = registry();
 
     let (answers, _) = interview(REQUIRED_ANSWERS);
-    enrol::write_record(&paths, "t", &enrol::to_yaml(&reg, "intern", &answers)).expect("writes");
+    enrol::write_record(
+        &FileStore::new(&paths),
+        "t",
+        &enrol::to_yaml(&reg, "intern", &answers),
+    )
+    .expect("writes");
     tool_docket::application::personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "t",
@@ -237,7 +244,8 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
     .expect("creates");
 
     let person = tool_docket::adapters::store::person(&paths, "t").expect("record");
-    let who = tool_docket::application::personnel::identify(&paths, "t").expect("identified");
+    let who = tool_docket::application::personnel::identify(&FileStore::new(&paths), "t")
+        .expect("identified");
     let blocked = tool_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
         .expect("checks");
 
@@ -271,6 +279,7 @@ fn a_complete_record_has_nothing_unrenderable() {
     let reg = registry();
 
     tool_docket::application::personnel::create(
+        &FileStore::new(&paths),
         &paths,
         &reg,
         "t",
@@ -282,7 +291,8 @@ fn a_complete_record_has_nothing_unrenderable() {
     .expect("creates");
 
     let person = tool_docket::adapters::store::person(&paths, "t").expect("record");
-    let who = tool_docket::application::personnel::identify(&paths, "t").expect("identified");
+    let who = tool_docket::application::personnel::identify(&FileStore::new(&paths), "t")
+        .expect("identified");
     let blocked = tool_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
         .expect("checks");
     assert!(
