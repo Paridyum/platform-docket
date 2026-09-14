@@ -64,15 +64,16 @@ spec:
               mountPath: /tmp
             - name: store
               mountPath: /var/lib/docket/store
-          # ADR-0020's probes. `/healthz` is the serve binary's unauthenticated liveness route
-          # (served.rs). Liveness is dumb (the process is up and serving); readiness answers the
-          # same today and is the place a database-reachability check belongs next (SOP).
+          # ADR-0020's probes. `/api/health` is the serve binary's unauthenticated health route
+          # (adapters/http/router.rs — returns 200 with {ok,version,contract}, no operator token).
+          # Liveness is dumb (the process is up and serving); readiness answers the same today and is
+          # the place a database-reachability check belongs next (SOP).
           livenessProbe:
-            httpGet: { path: /healthz, port: http }
+            httpGet: { path: /api/health, port: http }
             initialDelaySeconds: 3
             periodSeconds: 10
           readinessProbe:
-            httpGet: { path: /healthz, port: http }
+            httpGet: { path: /api/health, port: http }
             initialDelaySeconds: 2
             periodSeconds: 5
           resources: {{- toYaml .Values.resources | nindent 12 }}
