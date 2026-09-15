@@ -78,13 +78,21 @@ Paridyum identically from the DB config, then remove the git-registry fallback
 for tenants that have rows. The git files remain as the onboarding seed and as
 history until retired.
 
-### Stage 4 — onboarding a tenant
+### Stage 4 — onboarding a tenant  — DONE
 
-Extend platform-tenancy's `provision-org` path: a new Zitadel org → its derived
-tenant row (ADR-0082) → the `operator` role granted to its staff → a seeded
-default docket config (a starter company, the standard field defs and classes,
-the default lifecycle) the tenant then edits. Idempotent, like the rest of
-provision.
+`provision-org` already does the org → derived tenant row (ADR-0082) → `operator`
+role grant. Rather than couple it across repos to docket's config, onboarding is
+that step followed by docket's own seed:
+
+    provision-org --apply
+    seed-config.py --tenant <new> --defaults --operator "<id>|<name>|<role>|<subject>" --apply
+
+`--defaults` seeds only the generic document machinery (fields, classes,
+lifecycle + stages, messages, retention) — the reusable model, not another
+tenant's companies/operators/signatories, which stay empty until it configures
+them. `--operator` seeds the first operator's `docket_operators` row so the
+subject `provision-org` granted resolves (ADR-0092). Companies and signatories
+the tenant adds via Stage 5's admin surface. Idempotent (`ON CONFLICT`).
 
 ### Stage 5 — the web-docket admin surface (ADR-0098)
 

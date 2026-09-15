@@ -4,6 +4,31 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-15 — onboarding a tenant with default config (ADR-0099 stage 4)
+
+A tenant that `provision-org` has created (Zitadel org → derived tenant row → operator role grant)
+is authenticated but cannot yet DO anything: docket has no configuration for it, and its granted
+operator resolves to no `docket_operators` row. Stage 4 is the step that fills both, and the shape of
+it is a split `seed-config.py` learned:
+
+- **`--defaults` seeds only the generic document machinery** — fields, person classes, the document
+  lifecycle (+ stages), onboarding messages, retention. This is the reusable docket model every
+  tenant starts from, taken from the reference registry; it is NOT a tenant's companies, operators or
+  signatories, which are that tenant's own and stay empty until it configures them. A full seed
+  (no flag) still writes everything, which is how Paridyum — the first tenant, whose registry IS the
+  reference — seeds itself.
+- **`--operator "id|name|role|subject"` seeds the first operator's row**, because a granted operator
+  who signs in still fails `operator::resolve` (ADR-0092 binds by subject to a `docket_operators`
+  row) until that row exists. Its subject is the one `provision-org` granted the role to.
+
+So onboarding is: `provision-org --apply` (org, tenant, role, grant), then `seed-config.py --tenant
+<new> --defaults --operator "<id>|<name>|<role>|<subject>" --apply`. The tenant is then functional —
+it can enrol people and issue the standard documents — and adds its own companies and signatories
+next (Stage 5's admin surface). Proven on a non-superuser PG17: a fresh tenant seeded with
+`--defaults` gets the 108 generic records and zero companies/operators; adding `--operator` binds its
+first operator, and the subject resolves. Cross-tenant isolation holds throughout — Paridyum's rows
+are untouched by seeding another tenant.
+
 ## 2026-09-15 — the served backend reads config from the tenant's rows (ADR-0099 stage 3, cutover)
 
 The seed put each tenant's configuration in the 0008 tables; this makes the served backend READ it.

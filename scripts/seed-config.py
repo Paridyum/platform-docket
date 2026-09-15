@@ -31,17 +31,23 @@ PARIDYUM_TENANT = "68445ee9-175a-58a9-834e-a2f0c9c9b124"
 
 REGISTRY = Path(__file__).resolve().parent.parent / "registry"
 
-# (yaml file, the list key inside it, the target table). The record stored is each list entry.
+# (yaml file, the list key inside it, the target table, generic?). The record stored is each list
+# entry. `generic` marks the reusable document machinery every tenant starts from — the fields it
+# collects, the person classes, the document lifecycle, the onboarding messages, the retention policy.
+# The rest is TENANT-SPECIFIC: a tenant's own companies, the operators who act for it, the signatories
+# who sign for it. Onboarding seeds only the generic defaults (`--defaults`); a full seed
+# (`--all`, the default) also writes the source registry's tenant-specific rows, which is how Paridyum
+# — the first tenant, whose registry IS the reference — seeds itself.
 SOURCES = [
-    ("org.yaml", "companies", "docket_companies"),
-    ("operators.yaml", "operators", "docket_operators"),
-    ("signatories.yaml", "signatories", "docket_signatories"),
-    ("fields.yaml", "fields", "docket_field_defs"),
-    ("person-classes.yaml", "classes", "docket_person_classes"),
-    ("lifecycle.yaml", "documents", "docket_lifecycle"),
-    ("lifecycle.yaml", "stages", "docket_lifecycle_stages"),
-    ("communications.yaml", "messages", "docket_communications"),
-    ("retention.yaml", "classes", "docket_retention"),
+    ("org.yaml", "companies", "docket_companies", False),
+    ("operators.yaml", "operators", "docket_operators", False),
+    ("signatories.yaml", "signatories", "docket_signatories", False),
+    ("fields.yaml", "fields", "docket_field_defs", True),
+    ("person-classes.yaml", "classes", "docket_person_classes", True),
+    ("lifecycle.yaml", "documents", "docket_lifecycle", True),
+    ("lifecycle.yaml", "stages", "docket_lifecycle_stages", True),
+    ("communications.yaml", "messages", "docket_communications", True),
+    ("retention.yaml", "classes", "docket_retention", True),
 ]
 
 # Cluster connection (mirrors scripts/migrate.py in platform-tenancy).
@@ -73,13 +79,46 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tenant", default=PARIDYUM_TENANT, help="the tenant uuid to seed (default: Paridyum)")
     ap.add_argument("--apply", action="store_true", help="write; without it, only reports counts")
+    ap.add_argument(
+        "--defaults",
+        action="store_true",
+        help="seed ONLY the generic document machinery (fields, classes, lifecycle, messages, "
+        "retention) — for onboarding a new tenant, which then configures its own companies, "
+        "operators and signatories. Without it, every source is seeded (Paridyum's own path).",
+    )
+    ap.add_argument(
+        "--operator",
+        metavar="id|name|role|subject",
+        help="also seed one operator row (the tenant's first, whom provision-org granted the role): "
+        "its docket_operators row supplies the name/title a document is attributed to and the "
+        "Zitadel subject operator::resolve binds by (ADR-0092). Without it a granted operator can "
+        "sign in but cannot act, having no row to resolve to.",
+    )
     args = ap.parse_args()
 
+    operator_row = None
+    if args.operator:
+        fields_ = args.operator.split("|")
+        if len(fields_) != 4 or not all(f.strip() for f in fields_):
+            raise SystemExit("✘ --operator must be 'id|name|role|subject', all four non-empty")
+        oid, oname, orole, osub = (f.strip() for f in fields_)
+        operator_row = {"id": oid, "name": oname, "role": orole, "active": True, "subject": osub}
+
+    if args.defaults and args.tenant == PARIDYUM_TENANT:
+        # A guard, not a hard block: --defaults is for a NEW tenant; running it against Paridyum is
+        # almost certainly a mistake (Paridyum seeds its full registry, not just the defaults).
+        print("⚠ --defaults with the Paridyum tenant is unusual; pass --tenant <new-uuid>.")
+
+    sources = [s for s in SOURCES if s[3]] if args.defaults else SOURCES
     planned = []
-    for fname, key, table in SOURCES:
+    for fname, key, table, _generic in sources:
         items = entries(fname, key)
         planned.append((table, items))
         print(f"  {fname:22} → {table:24} {len(items):3} record(s)")
+
+    if operator_row is not None:
+        planned.append(("docket_operators", [operator_row]))
+        print(f"  --operator             → docket_operators           1 record (the first operator)")
 
     total = sum(len(i) for _, i in planned)
     if not args.apply:
