@@ -2371,6 +2371,9 @@ fn cmd_serve(
         registry,
         verifier: None,
         clock: &clock,
+        // The break-glass CLI honours the same gate as the served backend. It is the same data and
+        // the same ADR; a gate the operator can step around by using the other binary is not one.
+        backups_confirmed: std::env::var("PARIDYUM_BACKUPS_CONFIRMED").as_deref() == Ok("1"),
     };
     http::server::serve(&serving, SocketAddr::from(([127, 0, 0, 1], port)))?;
     Ok(ExitCode::SUCCESS)

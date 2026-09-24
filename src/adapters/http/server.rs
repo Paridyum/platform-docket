@@ -73,6 +73,14 @@ pub struct Serving<'a> {
     pub verifier: Option<&'a OperatorVerifier>,
     /// Injected clock (STD-0004); `Sync` so it is shared across request threads.
     pub clock: &'a (dyn Clock + Sync),
+    /// Whether an off-host backup destination exists and a restore has been rehearsed
+    /// (`PARIDYUM_BACKUPS_CONFIRMED=1`). While false, every route that would write a person record
+    /// refuses with 503 — ADR-0068 §5 and ADR-0093 §5, and migration 0006's own header.
+    ///
+    /// Resolved at startup and injected, never read from the environment inside a handler, for the
+    /// reason stated on `clock`: a rule that reads its own configuration is a rule no test can put
+    /// in the other position.
+    pub backups_confirmed: bool,
 }
 
 /// How long a connection may take to send its request, or to read its response.
@@ -185,6 +193,7 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                 registry: s.registry,
                 verifier: s.verifier,
                 clock: s.clock,
+                backups_confirmed: s.backups_confirmed,
             };
             router::route(&ctx, req)
         }
@@ -227,6 +236,7 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                 registry,
                 verifier: s.verifier,
                 clock: s.clock,
+                backups_confirmed: s.backups_confirmed,
             };
             router::route(&ctx, req)
         }
@@ -393,6 +403,7 @@ mod tests {
             registry: &reg,
             verifier: None,
             clock: &clock,
+            backups_confirmed: true,
         };
         let resp = dispatch(
             &s,
@@ -414,6 +425,9 @@ mod tests {
             registry: reg,
             verifier,
             clock,
+            // The existing suite asserts routing and auth, not the data gate, so it runs with
+            // backups confirmed. The gate's own tests set it false explicitly.
+            backups_confirmed: true,
         }
     }
 
@@ -499,6 +513,132 @@ mod tests {
         assert_eq!(dispatch(&s, &parse_req(&raw)).status, 200);
     }
 
+    // ── The off-host backup gate (ADR-0064 D3, ADR-0068 §5, ADR-0093 §5) ────────────────────
+    //
+    // Migration 0006's header states the condition and, until 2026-09-20, nothing in docket
+    // enforced it. `web-hiring` had enforced the identical rule on its apply route since it
+    // shipped, so the gate held for the surface that COLLECTS an application and not for the one
+    // that ENROLS a person.
+    //
+    // Each of these is watched in both positions. A 503 that is never observed turning into
+    // something else is indistinguishable from a route that is simply broken.
+
+    fn gated<'a>(
+        stores: &'a FakeStores,
+        reg: &'a Registry,
+        paths: &'a Paths,
+        clock: &'a SystemClock,
+        verifier: Option<&'a OperatorVerifier>,
+        backups_confirmed: bool,
+    ) -> Serving<'a> {
+        Serving {
+            backend: Backend::PerTenant { stores },
+            paths,
+            registry: reg,
+            verifier,
+            clock,
+            backups_confirmed,
+        }
+    }
+
+    #[test]
+    fn a_person_write_is_refused_while_the_backup_gate_is_shut() {
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, enc) = verifier_and_signer();
+        let s = gated(&stores, &reg, &paths, &clock, Some(&verifier), false);
+
+        // AUTHENTICATED, and that is the whole point. A tokenless request is 401 regardless of the
+        // backups, so refusing one proves nothing about this gate. What must be true is that a
+        // VERIFIED operator — someone with every right to enrol a person — is refused instead of
+        // succeeding.
+        let bearer = operator_bearer(&enc);
+        for path in [
+            "POST /api/person",
+            "POST /api/person/x/onboard",
+            "POST /api/person/x/sign",
+            "POST /api/person/x/advance",
+        ] {
+            let raw = format!("{path} HTTP/1.1\r\nAuthorization: {bearer}\r\n\r\n");
+            let resp = dispatch(&s, &parse_req(&raw));
+            assert_eq!(resp.status, 503, "expected 503 for: {path}");
+            let body = String::from_utf8_lossy(&resp.body);
+            assert!(
+                body.contains("PARIDYUM_BACKUPS_CONFIRMED"),
+                "the refusal must name what would lift it, got: {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn opening_the_gate_stops_the_503() {
+        // The other position, and the reason this test exists: with the gate open the SAME verified
+        // request must stop being 503. That is what distinguishes "the gate refused it" from "this
+        // route was never reachable".
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, enc) = verifier_and_signer();
+        let raw = format!(
+            "POST /api/person HTTP/1.1\r\nAuthorization: {}\r\n\r\n",
+            operator_bearer(&enc)
+        );
+
+        let shut = gated(&stores, &reg, &paths, &clock, Some(&verifier), false);
+        assert_eq!(dispatch(&shut, &parse_req(&raw)).status, 503);
+
+        let open = gated(&stores, &reg, &paths, &clock, Some(&verifier), true);
+        assert_ne!(
+            dispatch(&open, &parse_req(&raw)).status,
+            503,
+            "the gate is open; 503 must not survive it"
+        );
+    }
+
+    #[test]
+    fn an_unauthenticated_write_is_401_not_503_even_with_the_gate_shut() {
+        // Ordering, asserted rather than assumed. On the served backend the tenant is derived from
+        // the token, so authentication necessarily precedes this gate — and that is correct: a
+        // tokenless caller has not earned the right to learn the estate's operational state.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, _enc) = verifier_and_signer();
+        let s = gated(&stores, &reg, &paths, &clock, Some(&verifier), false);
+        assert_eq!(
+            dispatch(&s, &parse_req("POST /api/person HTTP/1.1\r\n\r\n")).status,
+            401
+        );
+    }
+
+    #[test]
+    fn reads_are_unaffected_by_the_backup_gate() {
+        // A gate that made the whole API inert would be turned off, and then it protects nothing.
+        // Synthetic rows and every read stay available with the gate shut — which is exactly what
+        // migration 0006 permits: "Schema and SYNTHETIC rows now".
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let s = gated(&stores, &reg, &paths, &clock, None, false);
+        assert_eq!(
+            dispatch(&s, &parse_req("GET /api/health HTTP/1.1\r\n\r\n")).status,
+            200
+        );
+    }
+
     #[test]
     fn handle_reads_one_request_and_writes_its_response() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -516,6 +656,7 @@ mod tests {
             registry: &reg,
             verifier: None,
             clock: &clock,
+            backups_confirmed: true,
         };
         let client = std::thread::spawn(move || {
             let mut c = TcpStream::connect(addr).expect("connect");
@@ -551,6 +692,7 @@ mod tests {
             registry: Box::leak(Box::new(registry())),
             verifier: None,
             clock: Box::leak(Box::new(SystemClock)),
+            backups_confirmed: true,
         }));
         std::thread::spawn(move || {
             let _ = serve(s, SocketAddr::from(([127, 0, 0, 1], port)));

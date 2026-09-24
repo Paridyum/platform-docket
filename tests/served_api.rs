@@ -112,6 +112,9 @@ fn an_operator_creates_and_lists_a_person_through_the_real_router() {
         registry: &registry,
         verifier: Some(&verifier),
         clock: &clock,
+        // This suite asserts authentication and the Postgres round-trip, not the backup gate, so
+        // it runs with the gate open. The gate's own tests hold it shut.
+        backups_confirmed: true,
     };
 
     // A write with NO token is 401 — the served path authenticates every write (ADR-0092), and the

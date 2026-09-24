@@ -20,6 +20,10 @@
 //! DOCKET_TENANT_ID      the tenant whose HR records this instance serves (a uuid)
 //! DOCKET_BIND           listen address (default 0.0.0.0:8080)
 //! DOCKET_ROOT           where registry/ lives (default: the current directory)
+//!
+//! PARIDYUM_BACKUPS_CONFIRMED  "1" once an off-host backup destination exists AND a restore has
+//!                             been rehearsed (ADR-0064 D3). Until then every route that writes a
+//!                             person record answers 503; reads are unaffected.
 //! ```
 
 use anyhow::{Context, Result};
@@ -96,6 +100,28 @@ fn main() -> Result<()> {
     // The record + blob stores are built PER REQUEST from the token's tenant (design §11, ADR-0099).
     let stores = PgTenantStores::new(pool, runtime.handle().clone(), paths.clone());
 
+    // ADR-0064 D3 / ADR-0068 §5 / ADR-0093 §5, and migration 0006's own header: schema and
+    // SYNTHETIC rows now, the first REAL personnel record only once an off-host backup destination
+    // exists and a restore has been rehearsed. `web-hiring` has enforced the identical gate on its
+    // apply route since it shipped; docket — which is what actually writes personnel records — has
+    // enforced nothing until now.
+    //
+    // Exactly "1", never a truthy string. `PARIDYUM_BACKUPS_CONFIRMED=false` reads as confirmation
+    // to any check that tests for presence, and that is the shape of accident this gate exists to
+    // stop.
+    let backups_confirmed = std::env::var("PARIDYUM_BACKUPS_CONFIRMED").as_deref() == Ok("1");
+    if backups_confirmed {
+        tracing::warn!(
+            "PARIDYUM_BACKUPS_CONFIRMED=1: real personnel records may be written. This asserts an \
+             off-host backup destination AND a rehearsed restore (ADR-0064 D3)."
+        );
+    } else {
+        tracing::info!(
+            "backup gate CLOSED: person writes return 503 until PARIDYUM_BACKUPS_CONFIRMED=1. \
+             Reads and synthetic use are unaffected."
+        );
+    }
+
     let serving = Serving {
         // The verifier's presence is exactly what permits a routable bind (design §5, server.rs).
         backend: Backend::PerTenant { stores: &stores },
@@ -103,6 +129,7 @@ fn main() -> Result<()> {
         registry: &registry,
         verifier: Some(&verifier),
         clock: &clock,
+        backups_confirmed,
     };
 
     tracing::info!(addr = %bind, "docket serving the real operator API over Postgres (multi-tenant)");

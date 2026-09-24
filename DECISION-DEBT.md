@@ -1212,3 +1212,62 @@ job is affected; fmt/clippy/deny/secret-scan run without it). **Fix:** a fine-gr
 and set as `PARIDYUM_PACKAGES_TOKEN` on tool-docket — the fine-grained replacement RUN-0001 already
 names as the answer to risk R3. A broad classic/OAuth token would work but re-widens R3, so it is not
 the fix. **Reopens/closes when:** that token is created and set.
+
+## D-70 — The adapter supplies no `account_id`, and tenancy migration 0012 is now applied  (OPEN, ⛔ docket's WRITE PATH IS BROKEN)
+
+**`platform-tenancy` migration 0012 adds `account_id uuid NOT NULL REFERENCES accounts (id)` to
+all five person-bearing docket tables** — `docket_persons`, `docket_identities`, `docket_register`,
+`docket_events`, `docket_signatures` — implementing ADR-0104 (a product instance is an account).
+**The migration was applied at 11:29 on 2026-09-24.** This is no longer a warning about a future
+apply — it is the current state of the live database. Docket pods are up and serving reads; every
+write fails. Not production, and docket can be redeployed once this is fixed.
+
+**This adapter cannot survive it.** `src/adapters/pg.rs`:
+
+- `enter()` sets `paridyum.tenant_id` and `paridyum.operator_scope`, and **never**
+  `paridyum.account_id`;
+- every insert names `(id, tenant_id, record)` or `(id, tenant_id, slug, record)` — no
+  `account_id`;
+- `account_id` / `accountId` appears in **none** of this repository's 74 Rust sources
+  (checked 2026-09-24).
+
+So every docket write fails the `NOT NULL` today. Once `0014` lands — the migration carrying the
+RLS corrections 0012 shipped without — reads and writes will additionally raise
+`paridyum.account_id is not set`, because `paridyum.current_account()` RAISES rather than returning
+NULL (ADR-0038). That is not a reason to hold `0014` back: it closes a real cross-account leak, and
+the write path is already broken by the NOT NULL alone.
+
+**Two of those three are not new, and that matters for blame-free sequencing.** The `NOT NULL`
+column is in every draft of the retrofit, including the deleted `0013_an_instance_is_an_account.sql`.
+The retrofit was written without its only writer being updated; the RLS correction of 2026-09-24
+did not introduce the break, it made a second, louder one land at the same moment.
+
+**Ordering — what is left to do, in order:**
+
+1. `migrate.py apply` lands **0014** (verify the 0012/0013 checksums first — see
+   `knowledge/HANDOFF-2026-09-24.md` §1);
+2. this adapter learns an account, **and creates the one it resolves** — `accounts` holds 0 rows,
+   so `product='docket', slug='default'` does not exist yet;
+3. redeploy docket; writes return.
+
+The ordering this entry originally recommended — adapter first, then apply — was overtaken by the
+11:29 apply. The remaining order is the one above.
+
+**What the adapter change actually needs**, and why it is not a one-line patch: `enter()` gains an
+account parameter and a third `set_config`, the inserts gain the column, and *something upstream
+has to decide which instance a request is for*. That last part is ADR-0104 D5 — instances are
+addressed by path, `<tenant-host>/<product>/<slug>` — and it is a routing feature this repository
+does not have. `TenantStores` / `RequestStores` in `adapters/http/server.rs` are keyed on tenant
+alone today.
+
+**The cheap interim that is NOT a silent default:** resolve the tenant's `accounts` row where
+`product = 'docket' AND slug = 'default'` and carry it explicitly. ADR-0104 cost 2 permits this —
+"a default instance is still an account, never a null" — so it is a real row and a real predicate,
+not a widening. It must be a *lookup that fails loudly* when the row is absent, never a
+`unwrap_or_default()` or a nil uuid: GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist
+because absence is how an end user silently acquires the whole tenant. Path routing then replaces
+the lookup without touching the SQL.
+
+**Closes when:** `enter()` sets all three session values, the five inserts carry `account_id`, and
+`platform-tenancy/scripts/prove-isolation.py` is extended to prove the docket account boundary
+behaviourally (it proves `applications` today).

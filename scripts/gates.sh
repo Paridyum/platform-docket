@@ -46,6 +46,15 @@ echo "gates:" >&2
 run fmt     cargo fmt --check
 run clippy  cargo clippy --all-targets -- -D warnings
 run test    cargo test
+# ADDED 2026-09-20, because this script was missing a gate CI runs and a change
+# passed here and failed there. CI's `docs` job sets RUSTDOCFLAGS and a broken
+# intra-doc link — `[\`refuse_without_backups\`]`, a function that had been
+# renamed — failed rustdoc while fmt, clippy and tests were all green locally.
+#
+# The point of this script is that green here means green there. A gate CI runs
+# and this does not makes it a subset that reads like a superset, which is the
+# same shape as a check that passes while enforcing nothing.
+run docs    env RUSTDOCFLAGS="-D warnings -D rustdoc::broken_intra_doc_links" cargo doc --no-deps
 run check   cargo run --quiet -- check
 
 failed=0

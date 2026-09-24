@@ -76,6 +76,9 @@ fn call(sandbox: &Sandbox, registry: &Registry, raw: &str) -> (u16, serde_json::
         registry,
         verifier: None,
         clock: &clock,
+        // This helper drives the loopback/CLI backend for routing and lifecycle assertions, not
+        // the backup gate. The gate's own tests hold it shut; everything here runs with it open.
+        backups_confirmed: true,
     };
     let req = request::parse(raw.as_bytes()).expect("request parses");
     let response = router::route(&ctx, &req);

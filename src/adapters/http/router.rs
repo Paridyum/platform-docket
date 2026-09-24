@@ -41,6 +41,37 @@ pub struct Context<'a> {
     /// arithmetic testable on a fixed date. `Sync` so the thread-per-request server can share the
     /// context across request threads (the store and verifier are already `Sync`).
     pub clock: &'a (dyn Clock + Sync),
+    /// Whether the off-host backup gate has been passed (`PARIDYUM_BACKUPS_CONFIRMED=1`).
+    ///
+    /// While false, every route that writes a person record answers 503 — ADR-0064 D3,
+    /// ADR-0068 §5, ADR-0093 §5, and migration 0006's own header. Reads are unaffected.
+    /// The private `writes_a_person_record` below names exactly which routes those are;
+    /// it is not linked because a public item may not link to a private one.
+    pub backups_confirmed: bool,
+}
+
+/// Routes that write a person record, and are therefore refused until the backup gate passes.
+///
+/// ADR-0064 D3, ADR-0068 §5 and ADR-0093 §5 all say the same thing, and `0006`'s own header
+/// states it as the condition on the migration: *"Schema and SYNTHETIC rows now; the first REAL
+/// person record waits for an off-host backup destination and a rehearsed restore."*
+///
+/// **It was stated in four places and enforced in none of them here.** `web-hiring` implements the
+/// same gate in software — `api/apply` returns 503 without it — and docket, which is what actually
+/// writes personnel records, checked nothing. So the rule held for the surface that collects an
+/// application and not for the one that enrols a person. Found 2026-09-20 by reading the migration
+/// header against the code rather than trusting either.
+///
+/// GET is deliberately unaffected. Reading a synthetic roster needs no backup, and a gate that
+/// makes the whole API inert would be routed around by turning it off.
+fn writes_a_person_record(method: &str, parts: &[&str]) -> bool {
+    matches!(
+        (method, parts),
+        (
+            "POST",
+            ["api", "person"] | ["api", "person", _, "onboard" | "sign" | "advance"]
+        )
+    )
 }
 
 /// Dispatch one request.
@@ -52,6 +83,28 @@ pub struct Context<'a> {
 pub fn route(ctx: &Context<'_>, req: &Request) -> Response {
     let segments = req.segments();
     let parts: Vec<&str> = segments;
+
+    // GATE 0 — the off-host backup gate, before any handler runs.
+    //
+    // WHERE THIS SITS RELATIVE TO AUTHENTICATION, because the first draft of this comment claimed
+    // the wrong thing and a test caught it. On the served backend authentication necessarily comes
+    // FIRST: the tenant is derived from the operator token (ADR-0099/ADR-0082) and the store cannot
+    // be built without it, so `dispatch` verifies before it ever reaches this function. On the
+    // loopback/break-glass backend there is no verifier and this is the first check.
+    //
+    // That ordering is correct rather than merely unavoidable. A tokenless request IS
+    // unauthenticated, whatever the state of the estate's backups, and 401 is the true answer to
+    // it; replying 503 would disclose operational state to a caller who has not earned the right
+    // to ask. The property that matters is the other one — a VERIFIED operator with every right to
+    // enrol someone is refused, and told why, instead of succeeding.
+    if !ctx.backups_confirmed && writes_a_person_record(req.method.as_str(), parts.as_slice()) {
+        return Response::error(
+            503,
+            "not_yet_accepting_person_records: an off-host backup destination and a rehearsed \
+             restore are required before the first real personnel record (ADR-0064 D3, ADR-0068 §5, \
+             ADR-0093 §5). Set PARIDYUM_BACKUPS_CONFIRMED=1 once T-G.7 is done.",
+        );
+    }
 
     // Every write resolves an operator first and refuses without one — see
     // `operator::resolve`, which is also what makes a cross-site form unable to
