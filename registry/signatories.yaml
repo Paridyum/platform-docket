@@ -136,3 +136,54 @@ signatories:
     active: true
     appointed_on: null
     instrument: null
+
+  # ── PARIDYUM MEDIA ──────────────────────────────────────────────────────────
+  #
+  # Appointed 2026-09-26 on operator direction. PMD had no signatory at all, so
+  # `docket check` refused the whole registry: "PMD has no active signatory, so
+  # nothing can be issued for it" (ADR-0077 decision 4). Nothing has ever been
+  # issued under `PMD/...` — the register holds 0 entries — so this appointment
+  # precedes the first document rather than repairing one.
+  #
+  # PRIYANSHU FIRST, SIGNING FOR THE HOLDING COMPANY, exactly as at Cyber.
+  # ADR-0077 D4 resolves signing through the ownership relationship, and PMD is
+  # `owned_by: PAR` in org.yaml. This is the same shape as `cyber-holding` and it
+  # is deliberately the same shape: two subsidiaries whose documents route
+  # differently for no stated reason is how a register stops being predictable.
+  #
+  # AND THE SAME POSTURE ON INCORPORATION. PMD is `legal_status: Incorporation
+  # in Process` with `cin: null`, and the Cyber block above already settles what
+  # an entry means in that state: "an operator decision about who acts, not a
+  # legal opinion about who may bind an unincorporated company. RFC-0042 §3 takes
+  # the same posture." Restated here because it is the objection a reader raises
+  # at exactly this point, and the answer is nine lines up rather than obvious.
+  #
+  # ROHAN IS SECOND BECAUSE ONE ENTRY WOULD NOT HAVE BEEN ENOUGH, and that is a
+  # property of the check rather than a preference: `countersignatories` counts
+  # DISTINCT PEOPLE, not entries, because `docket issue` refuses a document whose
+  # subject and signatory are the same person. With Priyanshu alone, PMD could
+  # issue nothing to Priyanshu — the one officer hardest to route around. He is
+  # already CTO at PAR and at PCY, so this invents no person and no new office.
+  #
+  # NO CEO ENTRY, deliberately. Cyber has one because Ruhani holds that office
+  # there. Nobody holds a media office yet, and inventing a title to fill a
+  # column is the fiction this register exists to keep out. ACADEMY IS EXPECTED
+  # TO LEAVE (org.yaml, RFC-0052 D3) and will need its own; that is the moment to
+  # appoint someone to it, not now.
+  - id: media-holding
+    company: PMD
+    legal_name: PRIYANSHU SHARMA
+    designation: Director, PARIDYUM -- for the holding company
+    short: For PARIDYUM
+    active: true
+    appointed_on: null
+    instrument: null
+
+  - id: media-cto
+    company: PMD
+    legal_name: ROHAN BATRA
+    designation: Chief Technology Officer (CTO)
+    short: CTO
+    active: true
+    appointed_on: null
+    instrument: null

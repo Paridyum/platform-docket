@@ -1517,3 +1517,56 @@ template's `FILL-ME` placeholder in `pre_existing_ip`. Both are data, in `regist
 
 Skills used: none. Governance retrieved: ADR-0044, ADR-0041 D3, ADR-0038, ADR-0078, ADR-0092 D3,
 ADR-0099, ADR-0104, ADR-0107, ANTI-0004, RFC-0045 §D, GLO-0005, TASKS T-G.2, tenancy migration 0010.
+
+## 2026-09-26 (later) — PMD can sign, and the published officers page named the wrong CEO
+
+**PMD had no signatory and `docket check` refused the whole registry for it** — *"PMD has no active
+signatory, so nothing can be issued for it"* (ADR-0077 D4). It had been red since RFC-0052 created the
+entity, and two tests in `tests/issuance.rs` failed with it.
+
+**I recommended against appointing anyone, and the file I was about to edit had already answered me.**
+My argument was that PMD is `legal_status: Incorporation in Process` with `cin: null`, so naming
+officers of a company that does not legally exist puts a fiction in the one register whose job is to
+say who held office on a date. The Cyber block eleven lines above where I was writing says:
+
+> This is an operator decision about who acts, not a legal opinion about who may bind an
+> unincorporated company. RFC-0042 §3 takes the same posture.
+
+So the question was settled on 2026-09-09 and my objection was to a claim the register does not make.
+Worth recording because it is the third time today that reading further would have been cheaper than
+reasoning from first principles.
+
+**Appointed on operator direction: PRIYANSHU SHARMA for the holding company**, the same shape as
+`cyber-holding`, because ADR-0077 D4 resolves signing through ownership and PMD is `owned_by: PAR`.
+Two subsidiaries whose documents route differently for no stated reason is how a register stops being
+predictable.
+
+**The second entry was required rather than chosen**, and the reason is a property of the check:
+`countersignatories` counts distinct **people**, not entries, because `docket issue` refuses a document
+whose subject and signatory are the same person. With Priyanshu alone, PMD could issue nothing to
+Priyanshu — the one officer hardest to route around. ROHAN BATRA is second; he is already CTO at PAR
+and PCY. **No CEO entry:** nobody holds a media office yet, and Academy is expected to leave
+(RFC-0052 D3), which is the moment to appoint to it.
+
+**Then the remaining warning turned out to be worse than a stale file.** `docket check` said the
+officers page had not been re-exported since 2026-09-07. Generating it showed why that matters:
+
+    published:  ceo  RUHANI KHURANA
+    generated:  ceo  PRIYANSHU SHARMA
+
+**`paridyum.com`'s officers page has been naming Ruhani Khurana as Paridyum's CEO.** She is CEO of
+**Paridyum Cyber** — a different company. A public page has been attributing the wrong company's office
+to a named person, and the warning that was trying to say so called it a re-export. It is pre-existing
+and unrelated to this change: the PAR entries did not move, the export was simply stale. Corrected in
+`web-paridyum` in the same pass.
+
+`documents_signed_by` for `director` moves from `CEO` to `CTO` with it — which is correct and follows
+from Priyanshu holding both offices, so his own documents fall through to the CTO (the 2026-09-09
+decision, arrived at by data rather than by a branch in code).
+
+**Verified:** `docket check` — **0 errors**, 1 warning (which the `team.json` export clears), 26
+documents, 5 stages, 0 register entries. The four `pre_existing_ip` placeholders are `None`, which is
+what both templates already shipped.
+
+Skills used: none. Governance retrieved: ADR-0077 D4/D5, ADR-0087 D1, RFC-0042 §3/§5, RFC-0052 D3,
+C-0004.

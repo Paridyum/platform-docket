@@ -94,6 +94,26 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   times a test has passed locally and failed on a runner, it was found by pushing and reading a
   log; that now takes seconds.
 
+- **PARIDYUM MEDIA can sign.** RFC-0052 created PMD as an entity and deliberately gave it no
+  signatory, so `docket check` refused the whole registry — *"PMD has no active signatory, so nothing
+  can be issued for it"* (ADR-0077 D4). Appointed on operator direction 2026-09-26: **PRIYANSHU
+  SHARMA** signing for the holding company, exactly as at Cyber, because ADR-0077 D4 resolves signing
+  through ownership and PMD is `owned_by: PAR`.
+
+  **A second entry was required rather than chosen.** `countersignatories` counts distinct *people*,
+  because `docket issue` refuses a document whose subject and signatory are the same person — so with
+  Priyanshu alone, PMD could issue nothing to Priyanshu. **ROHAN BATRA** is the second; he is already
+  CTO at PAR and PCY, so this invents no person and no office. **No CEO entry**, because nobody holds
+  a media office yet and inventing a title to fill a column is the fiction this register keeps out.
+
+  Nothing had been issued under `PMD/...` — the register holds 0 entries — so this precedes the first
+  document rather than repairing one. **`docket check` now reports 0 errors**, for the first time.
+
+- **The four `pre_existing_ip` placeholders are resolved as `None`**, which is what
+  `people/_TEMPLATE.yaml` and `_TEMPLATE-officer.yaml` already ship: the four real records were filled
+  from an older template and kept `FILL-ME`. Operator direction 2026-09-26 that there is no
+  pre-existing IP. (`people/` is gitignored, so only this note is in the repository.)
+
 - **`docket check` asserts that every class template is admitted back by `.gitignore`.** D-49.
   Checked against the file text rather than `git check-ignore`, which reports an already-tracked
   file as not ignored whether or not the negation exists — the difference that made an earlier
