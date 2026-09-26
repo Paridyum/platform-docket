@@ -94,6 +94,13 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   times a test has passed locally and failed on a runner, it was found by pushing and reading a
   log; that now takes seconds.
 
+- **The Director's public summary named the wrong countersignatory, in both languages.** It read
+  *"the CEO countersigns his"* — and Priyanshu holds the CEO office too, so `docket issue` finds both
+  his entries are the subject and falls through to the **CTO**. The prose contradicted the
+  `documents_signed_by` the same file generates. Corrected in `en` and `ar`, and it now says *why* the
+  fallthrough happens rather than only naming the officer, because the surprising part is that one
+  person holding two offices changes who signs.
+
 - **PARIDYUM MEDIA can sign.** RFC-0052 created PMD as an entity and deliberately gave it no
   signatory, so `docket check` refused the whole registry — *"PMD has no active signatory, so nothing
   can be issued for it"* (ADR-0077 D4). Appointed on operator direction 2026-09-26: **PRIYANSHU
