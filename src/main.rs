@@ -2384,6 +2384,11 @@ fn cmd_serve(
         // The break-glass CLI honours the same gate as the served backend. It is the same data and
         // the same ADR; a gate the operator can step around by using the other binary is not one.
         backups_confirmed: std::env::var("PARIDYUM_BACKUPS_CONFIRMED").as_deref() == Ok("1"),
+        // Recorded on audit events, of which this backend writes none — `Backend::Fixed` has no
+        // database (see `adapters/audit.rs`). Defaulted here rather than required, because requiring a
+        // region for a path that records nothing would be ceremony: the value is unused, and saying so
+        // is better than pretending it matters. `serve.rs`, where events ARE written, refuses without it.
+        region: "unaudited",
     };
     http::server::serve(&serving, SocketAddr::from(([127, 0, 0, 1], port)))?;
     Ok(ExitCode::SUCCESS)

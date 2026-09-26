@@ -122,14 +122,32 @@ fn main() -> Result<()> {
         );
     }
 
+    // Where this instance serves from (RFC-0014), recorded on every audit event. REQUIRED with no
+    // default: migration 0011 states the principle for `tenants.region` — a default means something
+    // acquires a jurisdiction by accident — and an audit row claiming the wrong one is that defect
+    // pointed at the evidence.
+    let region = std::env::var("PARIDYUM_REGION").context(
+        "PARIDYUM_REGION is unset. It is recorded on every audit event (ADR-0044 D6, RFC-0014) and \
+         is refused rather than defaulted: an audit row naming the wrong jurisdiction is worse than \
+         a service that will not start.",
+    )?;
+
     let serving = Serving {
         // The verifier's presence is exactly what permits a routable bind (design §5, server.rs).
-        backend: Backend::PerTenant { stores: &stores },
+        //
+        // `audit` is on this variant rather than on `Serving`, so "served but unaudited" is a state
+        // that does not typecheck. The same factory that builds the per-request stores is the sink:
+        // it holds the pool, and an audit row goes to the same database the records do.
+        backend: Backend::PerTenant {
+            stores: &stores,
+            audit: &stores,
+        },
         paths: &paths,
         registry: &registry,
         verifier: Some(&verifier),
         clock: &clock,
         backups_confirmed,
+        region: &region,
     };
 
     tracing::info!(addr = %bind, "docket serving the real operator API over Postgres (multi-tenant)");

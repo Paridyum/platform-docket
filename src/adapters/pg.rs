@@ -26,6 +26,7 @@
 //! the widening-by-absence GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist to forbid,
 //! and it would silently write one instance's people into another's.
 
+use crate::adapters::audit;
 use crate::adapters::blobs;
 use crate::adapters::correlation::CorrelationId;
 use crate::adapters::http::server::{RequestStores, TenantStores};
@@ -673,6 +674,62 @@ async fn read_config(
         .with_context(|| format!("reading config table {table}"))?;
     tx.commit().await.context("committing")?;
     Ok(rows.into_iter().map(|(json,)| json.0).collect())
+}
+
+/// The audit sink over the tenancy database (ADR-0110, ADR-0044).
+///
+/// **Its own transaction, always**, unlike `platform-tenancy`'s two-entry writer. There, a successful
+/// read and its audit row commit together because the read's transaction is still open. Here the
+/// operation has already finished — the dispatcher has a `Response` in hand — so there is nothing left
+/// to be atomic with, and a failed row must not be able to undo work that already succeeded.
+impl audit::Sink for PgTenantStores {
+    fn record(&self, ctx: audit::Context<'_>, event: &audit::Event) -> Result<()> {
+        self.handle.block_on(async {
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .context("beginning the audit transaction")?;
+            // The session values `audit_events`'s policies read. `enter()` is not used: it resolves a
+            // docket account, and an audit row is written for the OPERATION rather than for a silo the
+            // dispatcher may not have reached (see audit::Context). So the three values are set
+            // directly, with the nil account — `current_account()` raises rather than returning NULL
+            // (ADR-0038), and the write policy reads tenant only.
+            sqlx::query(
+                "SELECT set_config('paridyum.tenant_id', $1, true), \
+                        set_config('paridyum.account_id', '00000000-0000-0000-0000-000000000000', true), \
+                        set_config('paridyum.operator_scope', 'true', true), \
+                        set_config('paridyum.correlation_id', $2, true)",
+            )
+            .bind(ctx.tenant.to_string())
+            .bind(ctx.correlation.as_str())
+            .execute(&mut *tx)
+            .await
+            .context("setting the audit session values")?;
+
+            sqlx::query(audit::INSERT)
+                .bind(ctx.tenant)
+                .bind(ctx.correlation.as_str())
+                .bind(&event.actor)
+                .bind(&event.action)
+                .bind(&event.object)
+                .bind(event.outcome.as_str())
+                .bind(event.source.as_deref())
+                .bind(event.client.as_deref())
+                // TRUE, and it is a fact about this request rather than a convenience: docket's served
+                // backend refuses any token without the `operator` role (ADR-0092 D1), so every request
+                // that reaches here held operator scope. The day docket serves a non-operator, this
+                // becomes a lie and the compiler will not say so — which is why it is stated here.
+                .bind(true)
+                .bind(ctx.region)
+                .execute(&mut *tx)
+                .await
+                .context("appending the audit event")?;
+
+            tx.commit().await.context("committing the audit event")?;
+            Ok(())
+        })
+    }
 }
 
 impl TenantStores for PgTenantStores {

@@ -1341,3 +1341,45 @@ event per silo where an operation legitimately spans two, which is what `platfor
 **Closes when:** ADR-0110 is accepted, migration 0010 is applied, and docket writes an audit event for
 at least the issuing path and every refusal on it. Until then the correlation id is half a mechanism,
 which is worth having — the half that cannot be added retroactively (ADR-0041 D3).
+
+> **✔ MOSTLY DONE 2026-09-27.** ADR-0110 is accepted, and the **served backend writes one event per
+> request** — `adapters/audit.rs` plus the dispatcher, with the operation name from a closed vocabulary
+> rather than the path, and the outcome from the response status (401/403 denied, 5xx failed, everything
+> else allowed — a 404 is an allowed operation that found nothing, and recording typos as refusals would
+> fill a security review with typos).
+>
+> **What remains, and neither is effort:**
+>
+> 1. **Migration 0010 is unapplied**, so every insert will fail until it lands. Unlike
+>    `platform-tenancy`, that does **not** fail the request here — the work is already done and the
+>    response is in hand, so it is logged at error level. The consequence is that deploying before 0010
+>    lands produces a served API whose audit log is entirely absent and whose logs say so once per
+>    request.
+> 2. **File mode is not audited and cannot be** — see below.
+
+## File mode writes no audit event, and there is nowhere for one to go  (STATED 2026-09-27)
+
+`audit_events` lives in the tenancy database. **`Backend::Fixed` has no database** — it is the CLI's
+local file store and the loopback break-glass path — and no tenant in the sense the `NOT NULL` column
+means. So `docket issue` against local files writes no audit row.
+
+**Not solved with a local log file**, and the reason is the point: that would be a second audit store the
+tenant cannot read, and an audit trail only the auditee can read is exactly what RFC-0022 D5 exists to
+replace. A file on the operator's disk would make the coverage table in RFC-0022 §D5a *look* better while
+changing nothing a tenant could verify.
+
+**Closes when:** file mode stops being a path to a tenant's records — not when it grows a log. It is
+already the break-glass path (ADR-0093 §3); the honest end state is that reaching a tenant's data through
+it is a recorded exception, which is a procedure rather than a feature.
+
+## A served audit event names no account, and the dispatcher cannot know one  (OPEN 2026-09-27)
+
+ADR-0110 decision 3 wants one event per silo an operation touches. Docket's dispatcher writes its event
+with `account_id` NULL, because the account is resolved **inside** the store's transaction (`enter()`, per
+instance) and the dispatcher never sees it. A row naming an account the dispatcher had not looked up would
+be a guess about which silo was touched, so NULL — tenant-wide — is what the request honestly is at that
+point.
+
+The cost is real: a tenant running two dockets gets an audit stream that cannot distinguish which instance
+was read. **Closes when:** the operation carries the resolved account back out of the store — a return
+value, not a lookup, because a second lookup could name a different account than the work used.

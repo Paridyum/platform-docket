@@ -101,6 +101,28 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   fallthrough happens rather than only naming the officer, because the surprising part is that one
   person holding two offices changes who signs.
 
+- **The served backend writes one audit event per request** (ADR-0110, ADR-0044 D6, closing most of
+  D-72). `adapters/audit.rs` and the dispatcher: the operation name comes from a **closed vocabulary**
+  rather than the request path — a path echoed into the column would make every caller-supplied segment
+  part of a contract queries are written against — and the outcome comes from the response status. **401
+  and 403 are the only denials**; a 400, 404 or 409 is an allowed operation with a wrong request, because
+  recording typos as refusals makes "what was refused" unanswerable.
+
+  **One event, not one per query** — `docket check` reads four chains, a person store and a registry, and
+  nobody asked for a `SELECT` on `docket_signatures`. The writer is called from the dispatcher, where the
+  operation is known, rather than from the store, which only sees queries.
+
+  **A failed audit write does not change the response**, which is the opposite of `platform-tenancy`'s
+  choice and deliberate: there the row is written inside the read's transaction and nothing has been
+  served yet; here the work is done and the response is in hand, so a 500 would report a failure that did
+  not happen. Asserted by comparing a served response against a failing sink rather than against a
+  literal status.
+
+  **Two limits are asserted as tests rather than left to be discovered:** a rejected token writes nothing
+  (no tenant resolved, and `tenant_id` is `NOT NULL`), and `/api/health` writes nothing (answered before
+  the gate, and a row per probe would be the estate's highest-volume entry saying nothing about anyone's
+  data). `PARIDYUM_REGION` is now required by `serve.rs`, refused rather than defaulted.
+
 - **PARIDYUM MEDIA can sign.** RFC-0052 created PMD as an entity and deliberately gave it no
   signatory, so `docket check` refused the whole registry — *"PMD has no active signatory, so nothing
   can be issued for it"* (ADR-0077 D4). Appointed on operator direction 2026-09-26: **PRIYANSHU

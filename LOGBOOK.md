@@ -1570,3 +1570,65 @@ what both templates already shipped.
 
 Skills used: none. Governance retrieved: ADR-0077 D4/D5, ADR-0087 D1, RFC-0042 §3/§5, RFC-0052 D3,
 C-0004.
+
+## 2026-09-27 — docket writes one audit event per request, and two limits are tests rather than notes
+
+ADR-0110 was accepted this morning, which is what this was waiting on. D-72 said docket writes no audit
+event; the blocker was never effort, it was the **unit**.
+
+**One event per operation, which is why the writer is not in the store.** `docket check` opens several
+transactions and reads four sealed chains, a person store and a registry. Audited per store call that is
+tens of rows for one command — and nobody asked for a `SELECT` on `docket_signatures`, they asked for a
+document. So the call site is the **dispatcher**, where the operation is known, and `PgStore` — which only
+ever sees queries — is untouched. That also keeps the `Store` trait, which `FileStore` satisfies too, free
+of a parameter it has no use for.
+
+**The operation name is a closed vocabulary, not the path.** `operation_of` maps `(method, segments)` onto
+a fixed set and falls through to `request.unknown`. A path interpolated into `action` would make every
+caller-supplied segment part of a contract that queries against the trail are written against (ADR-0110
+accepted cost 2) — and would put caller-controlled text into a column read during an incident. There is a
+test that a request for `/api/../../etc/passwd` records `request.unknown` and that neither column contains
+`passwd`.
+
+**The outcome comes from the response status, and the mapping needed an argument.** 401 and 403 are the
+only denials. A 400, a 404 or a 409 is an **allowed** operation with a wrong request — recording typos as
+refusals would fill a security review with typos and make *"what was refused"* stop being answerable. A
+404 reading as `allowed` looks odd until you ask what the row is for: the operation was served, and "this
+tenant asked for a person who does not exist" is a fact worth keeping rather than a refusal.
+
+**A failed audit write does not change the response, and that is the opposite of what `platform-tenancy`
+does.** There, the row is written inside the read's transaction: nothing has been served, so a failure
+fails the request and an unrecorded access cannot happen. Here the work is finished and the response is in
+hand — turning it into a 500 would report a failure that did not occur and leave the caller unable to tell
+whether the operation took effect. So it logs at error level. **An unrecorded access is a gap in the log,
+not a gap in the work**, and the two call sites now say so in each other's terms.
+
+The test for it compares a served response against one served with a failing sink, rather than asserting
+`200`. The first version asserted the literal and **failed on the first run** — `FakeStores` answers that
+route with a 404 — which is the difference between testing the claim and testing the fixture.
+
+**Two limits are asserted rather than written in a comment.** A rejected token writes **nothing**:
+`audit_events.tenant_id` is `NOT NULL` and a token that failed verification yields no tenant to attribute
+the attempt to. A placeholder tenant would attribute an attempt to a tenancy that had nothing to do with
+it. And `/api/health` writes nothing — answered before the gate, and a row per probe would be the estate's
+highest-volume audit entry while saying nothing about anyone's data.
+
+**`audit` is a field on `Backend::PerTenant`, not an `Option` on `Serving`.** An `Option` would let the
+served backend run with no sink and look configured. A field on the variant that has a database makes
+"served but unaudited" a state that **does not typecheck** — the same reasoning as `Serving.verifier`
+being `None` only on the backend that has no token.
+
+**Three things recorded as debt rather than smoothed over.** Migration 0010 is unapplied, so every insert
+fails until it lands and the logs say so once per request. **File mode is not audited and cannot be** — no
+database, no tenant — and it is deliberately not solved with a local log file, which would be a second
+audit store the tenant cannot read, and an audit trail only the auditee can read is what RFC-0022 D5
+exists to replace. And a served event names **no account**, because the account is resolved inside the
+store's transaction and the dispatcher never sees it; a row naming an account nobody looked up would be a
+guess about which silo was touched.
+
+**Verified:** `scripts/gates.sh` — all green. `cargo test --lib` **301 passing**, up from 289; the twelve
+new ones are the status mapping, the vocabulary, the path-echo refusal, and the five dispatcher properties
+above.
+
+Skills used: none. Governance retrieved: ADR-0110, ADR-0044 D1/D6, ADR-0092 D1, ADR-0093 §3, ADR-0099,
+ADR-0038, RFC-0022 §D5/§D5a, RFC-0014, GLO-0004.

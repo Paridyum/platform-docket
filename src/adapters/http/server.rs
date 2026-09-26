@@ -5,6 +5,7 @@
 //! the `Store` port's atomic, advisory-locked seal-append (`adapters::pg`), not this listener's
 //! serialisation. So the "one request at a time" loop that protected the file chains is retired.
 
+use crate::adapters::audit;
 use crate::adapters::auth::OperatorVerifier;
 use crate::adapters::blobs::Blobs;
 use crate::adapters::clock::Clock;
@@ -62,6 +63,13 @@ pub enum Backend<'a> {
     PerTenant {
         /// Builds the record + blob stores for the request's derived tenant.
         stores: &'a dyn TenantStores,
+        /// Where one audit event per request goes (ADR-0110, ADR-0044 D6).
+        ///
+        /// **Carried on this variant and not on `Fixed`, because `Fixed` has no database.** An
+        /// `Option` on `Serving` would have let the served backend run without a sink and look
+        /// configured; a field on the variant that has one makes "served but unaudited" a state that
+        /// does not typecheck.
+        audit: &'a dyn audit::Sink,
     },
 }
 
@@ -86,6 +94,13 @@ pub struct Serving<'a> {
     /// reason stated on `clock`: a rule that reads its own configuration is a rule no test can put
     /// in the other position.
     pub backups_confirmed: bool,
+    /// The region this instance serves from (RFC-0014), recorded on every audit event.
+    ///
+    /// Configuration, injected like `clock` and for the same reason, and **refused rather than
+    /// defaulted**: migration 0011 states the principle for `tenants.region` — *"a default region means
+    /// provisioning that forgets to choose one still succeeds, and a tenant acquires a jurisdiction by
+    /// accident"*. An audit row claiming the wrong jurisdiction is that defect pointed at the evidence.
+    pub region: &'a str,
 }
 
 /// How long a connection may take to send its request, or to read its response.
@@ -202,7 +217,10 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
             };
             router::route(&ctx, req)
         }
-        Backend::PerTenant { stores } => {
+        Backend::PerTenant {
+            stores,
+            audit: sink,
+        } => {
             // Health names no tenant and the k8s probe sends no token; answer it before the gate.
             if req.method == "GET" && req.segments().as_slice() == ["api", "health"] {
                 return router::health();
@@ -218,14 +236,26 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                      `Authorization: Bearer …`.",
                 );
             };
-            let tenant = match verifier.verify(header) {
-                Ok(op) => op.tenant,
-                Err(e) => return Response::error(401, &format!("{e:#}")),
-            };
-            // ADR-0044 D1: the id comes off the request, and is minted here only when the client
-            // sent nothing usable. `req.header` matches case-insensitively (see request.rs), which is
-            // what makes `traceparent` from any client reach this.
+            // The correlation id is resolved BEFORE the token is verified, because a refused token is
+            // an attempt worth recording and it has to be joinable to the request that made it.
             let correlation = CorrelationId::from_headers(|name| req.header(name));
+            let operator = match verifier.verify(header) {
+                Ok(op) => op,
+                Err(e) => {
+                    // ⛔ AND THIS ONE CANNOT BE RECORDED. `audit_events.tenant_id` is NOT NULL, and a
+                    // token that failed verification yields no tenant to attribute the attempt to — so
+                    // a rejected token is a log line and not a row. The same limit `platform-tenancy`
+                    // hits, for the same reason, and recorded in DECISION-DEBT.md rather than solved
+                    // with a placeholder tenant that would attribute an attempt to a tenancy which had
+                    // nothing to do with it.
+                    tracing::warn!(
+                        correlation_id = correlation.as_str(),
+                        "an operator token was rejected; no tenant resolved, so no audit row"
+                    );
+                    return Response::error(401, &format!("{e:#}"));
+                }
+            };
+            let tenant = operator.tenant;
             let (store, blobs, config) = match stores.build(tenant, &correlation) {
                 Ok(built) => built,
                 Err(e) => {
@@ -247,9 +277,61 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                 clock: s.clock,
                 backups_confirmed: s.backups_confirmed,
             };
-            router::route(&ctx, req)
+            let response = router::route(&ctx, req);
+
+            // ONE EVENT PER OPERATION (ADR-0110 D1), written after the operation because the outcome
+            // is part of the record and only the response knows it. `of_status` maps it: 401 and 403
+            // are the only denials, a 5xx is a failure, and a 404 is an allowed operation that found
+            // nothing — recording a typo as a refusal would fill a security review with typos.
+            let (action, object) = audit::operation_of(&req.method, &req.segments());
+            let event = audit::Event {
+                action,
+                object,
+                outcome: audit::Outcome::of_status(response.status),
+                actor: operator.subject.clone(),
+                source: origin_of(req),
+                client: req.header("user-agent").map(str::to_owned),
+            };
+            if let Err(e) = sink.record(
+                audit::Context {
+                    tenant,
+                    correlation: &correlation,
+                    region: s.region,
+                },
+                &event,
+            ) {
+                // THE RESPONSE IS NOT CHANGED, and the asymmetry with `platform-tenancy` is deliberate.
+                // There, the audit row is written inside the read's transaction, so a failure fails the
+                // request and nothing has been served. Here the work is already done and the response
+                // is in hand: turning it into a 500 would report a failure that did not happen and
+                // would leave the caller unable to tell whether the operation took effect.
+                //
+                // So it is logged at error level, loudly, and `T-G.22`'s coverage table is where the
+                // consequence belongs: an unrecorded access is a gap in the log, not a gap in the work.
+                tracing::error!(
+                    correlation_id = correlation.as_str(),
+                    action = %event.action,
+                    error = %format!("{e:#}"),
+                    "an audit event could not be recorded"
+                );
+            }
+            response
         }
     }
+}
+
+/// The source address a request claims, or `None`.
+///
+/// **The right-most `X-Forwarded-For` entry**, because every hop appends and whatever the client sent
+/// arrives in it too — so the left-most is forgeable and the right-most is what a proxy added. Still a
+/// topology assumption, and the same one `platform-tenancy`'s `RequestOrigin` documents: with no trusted
+/// proxy in front, this is a value a caller chose. Never fabricated when absent.
+fn origin_of(req: &Request) -> Option<String> {
+    req.header("x-forwarded-for")
+        .and_then(|v| v.rsplit(',').next())
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && v.len() <= 200)
+        .map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -413,12 +495,64 @@ mod tests {
             verifier: None,
             clock: &clock,
             backups_confirmed: true,
+            region: "in",
         };
         let resp = dispatch(
             &s,
             &parse_req("GET /api/health HTTP/1.1\r\nHost: x\r\n\r\n"),
         );
         assert_eq!(resp.status, 200);
+    }
+
+    /// A sink that keeps what it was handed, so a test can assert the EVENT rather than the absence of
+    /// a panic. A no-op fake would make every assertion below vacuous, which is the shape of fake this
+    /// module's own `audit::Sink` documentation warns about.
+    #[derive(Default)]
+    struct RecordingSink {
+        events: std::sync::Mutex<Vec<(Uuid, String, audit::Event)>>,
+    }
+
+    impl audit::Sink for RecordingSink {
+        fn record(&self, ctx: audit::Context<'_>, event: &audit::Event) -> Result<()> {
+            self.events.lock().expect("the sink mutex").push((
+                ctx.tenant,
+                ctx.correlation.as_str().to_owned(),
+                event.clone(),
+            ));
+            Ok(())
+        }
+    }
+
+    /// A sink that always fails, for the one property that matters more than the row: a request that
+    /// succeeded is still answered when its audit write does not.
+    struct FailingSink;
+
+    impl audit::Sink for FailingSink {
+        fn record(&self, _ctx: audit::Context<'_>, _event: &audit::Event) -> Result<()> {
+            anyhow::bail!("the audit stream is unreachable")
+        }
+    }
+
+    fn pertenant_with<'a>(
+        verifier: Option<&'a OperatorVerifier>,
+        stores: &'a FakeStores,
+        reg: &'a Registry,
+        paths: &'a Paths,
+        clock: &'a SystemClock,
+        audit_sink: &'a dyn audit::Sink,
+    ) -> Serving<'a> {
+        Serving {
+            backend: Backend::PerTenant {
+                stores,
+                audit: audit_sink,
+            },
+            paths,
+            registry: reg,
+            verifier,
+            clock,
+            backups_confirmed: true,
+            region: "in",
+        }
     }
 
     fn pertenant<'a>(
@@ -428,8 +562,14 @@ mod tests {
         paths: &'a Paths,
         clock: &'a SystemClock,
     ) -> Serving<'a> {
+        // A leaked sink so the signature stays as the existing tests call it. One allocation per test
+        // process, in a test binary.
+        let sink: &'static RecordingSink = Box::leak(Box::new(RecordingSink::default()));
         Serving {
-            backend: Backend::PerTenant { stores },
+            backend: Backend::PerTenant {
+                stores,
+                audit: sink,
+            },
             paths,
             registry: reg,
             verifier,
@@ -437,7 +577,155 @@ mod tests {
             // The existing suite asserts routing and auth, not the data gate, so it runs with
             // backups confirmed. The gate's own tests set it false explicitly.
             backups_confirmed: true,
+            region: "in",
         }
+    }
+
+    // ── The audit stream (ADR-0110, ADR-0044 D6) ─────────────────────────────────────────────────
+
+    #[test]
+    fn a_served_request_writes_exactly_one_audit_event() {
+        // ADR-0110 D1: one event per operation a caller requested. "Exactly one" is the assertion —
+        // a per-query writer would put several rows here for one request, and the count is the only
+        // thing that distinguishes the two designs from outside.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, enc) = verifier_and_signer();
+        let sink = RecordingSink::default();
+        let s = pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &sink);
+        let raw = format!(
+            "GET /api/register HTTP/1.1\r\nAuthorization: {}\r\nUser-Agent: probe/1.0\r\n\
+             X-Forwarded-For: 10.0.0.1, 203.0.113.9\r\n\
+             traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\r\n\r\n",
+            operator_bearer(&enc)
+        );
+        dispatch(&s, &parse_req(&raw));
+
+        let events = sink.events.lock().expect("the sink mutex");
+        assert_eq!(events.len(), 1, "one operation, one event");
+        let (_, correlation, event) = &events[0];
+        assert_eq!(event.action, "register.read");
+        assert_eq!(event.object, "register");
+        // The actor is the token's subject, never a display name.
+        assert_eq!(event.actor, "op-subject");
+        // The trace id off the request, propagated unchanged (ADR-0044 D1) — not a minted one.
+        assert_eq!(correlation, "4bf92f3577b34da6a3ce929d0e0e4736");
+        // The RIGHT-most forwarded entry: the left-most is whatever the client claimed.
+        assert_eq!(event.source.as_deref(), Some("203.0.113.9"));
+        assert_eq!(event.client.as_deref(), Some("probe/1.0"));
+    }
+
+    #[test]
+    fn a_rejected_token_writes_no_event_because_no_tenant_resolved() {
+        // `audit_events.tenant_id` is NOT NULL, and a token that failed verification yields no tenant
+        // to attribute the attempt to. This asserts the LIMIT rather than a feature: the alternative
+        // would be a placeholder tenant, which attributes an attempt to a tenancy that had nothing to
+        // do with it. DECISION-DEBT carries it.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, _enc) = verifier_and_signer();
+        let sink = RecordingSink::default();
+        let s = pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &sink);
+        let resp = dispatch(
+            &s,
+            &parse_req("GET /api/register HTTP/1.1\r\nAuthorization: Bearer nonsense\r\n\r\n"),
+        );
+        assert_eq!(resp.status, 401);
+        assert!(
+            sink.events.lock().expect("the sink mutex").is_empty(),
+            "a rejected token has no tenant, so there is nothing to attribute the attempt to"
+        );
+    }
+
+    #[test]
+    fn health_writes_no_event_because_it_is_answered_before_the_gate() {
+        // The k8s probe carries no token and is answered before the tenant is derived. A row per probe
+        // would be the estate's highest-volume audit entry and would say nothing about anyone's data.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, _enc) = verifier_and_signer();
+        let sink = RecordingSink::default();
+        let s = pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &sink);
+        assert_eq!(
+            dispatch(&s, &parse_req("GET /api/health HTTP/1.1\r\n\r\n")).status,
+            200
+        );
+        assert!(sink.events.lock().expect("the sink mutex").is_empty());
+    }
+
+    #[test]
+    fn an_audit_write_failure_does_not_change_the_response() {
+        // THE PROPERTY THAT MATTERS MORE THAN THE ROW. The work is already done and the response is in
+        // hand; turning it into a 500 would report a failure that did not happen and leave the caller
+        // unable to tell whether the operation took effect. The asymmetry with `platform-tenancy` —
+        // where a failed audit write DOES fail the request — is deliberate and is documented at both
+        // call sites: there, nothing has been served yet.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, enc) = verifier_and_signer();
+        let raw = format!(
+            "GET /api/register HTTP/1.1\r\nAuthorization: {}\r\n\r\n",
+            operator_bearer(&enc)
+        );
+
+        // Compared against a working sink rather than asserted as a literal, because the property is
+        // "the audit write does not change the answer" and a hardcoded 200 would also pass if the route
+        // changed for an unrelated reason — and would fail, as it did on the first run, when `FakeStores`
+        // answers this route with a 404. Asserting equality tests the claim; asserting a number tests
+        // the fixture.
+        let ok_sink = RecordingSink::default();
+        let served = dispatch(
+            &pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &ok_sink),
+            &parse_req(&raw),
+        );
+        let unaudited = dispatch(
+            &pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &FailingSink),
+            &parse_req(&raw),
+        );
+        assert_eq!(
+            unaudited.status, served.status,
+            "an unrecordable access is a gap in the log, not a gap in the work"
+        );
+        assert_eq!(unaudited.body, served.body);
+    }
+
+    #[test]
+    fn an_unknown_route_records_the_attempt_without_echoing_the_path() {
+        // The path is caller-controlled text and the column is read during an incident.
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            FakeStores,
+        );
+        let (verifier, enc) = verifier_and_signer();
+        let sink = RecordingSink::default();
+        let s = pertenant_with(Some(&verifier), &stores, &reg, &paths, &clock, &sink);
+        let raw = format!(
+            "GET /api/not-a-route HTTP/1.1\r\nAuthorization: {}\r\n\r\n",
+            operator_bearer(&enc)
+        );
+        dispatch(&s, &parse_req(&raw));
+        let events = sink.events.lock().expect("the sink mutex");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].2.action, "request.unknown");
+        assert!(!events[0].2.object.contains("not-a-route"));
     }
 
     #[test]
@@ -540,13 +828,18 @@ mod tests {
         verifier: Option<&'a OperatorVerifier>,
         backups_confirmed: bool,
     ) -> Serving<'a> {
+        let sink: &'static RecordingSink = Box::leak(Box::new(RecordingSink::default()));
         Serving {
-            backend: Backend::PerTenant { stores },
+            backend: Backend::PerTenant {
+                stores,
+                audit: sink,
+            },
             paths,
             registry: reg,
             verifier,
             clock,
             backups_confirmed,
+            region: "in",
         }
     }
 
@@ -666,6 +959,7 @@ mod tests {
             verifier: None,
             clock: &clock,
             backups_confirmed: true,
+            region: "in",
         };
         let client = std::thread::spawn(move || {
             let mut c = TcpStream::connect(addr).expect("connect");
@@ -702,6 +996,7 @@ mod tests {
             verifier: None,
             clock: Box::leak(Box::new(SystemClock)),
             backups_confirmed: true,
+            region: "in",
         }));
         std::thread::spawn(move || {
             let _ = serve(s, SocketAddr::from(([127, 0, 0, 1], port)));

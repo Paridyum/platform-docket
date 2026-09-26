@@ -1,6 +1,7 @@
 //! Everything that touches the filesystem, the clock, the network or an external process.
 
 pub mod api;
+pub mod audit;
 pub mod auth;
 pub mod blobs;
 pub mod clock;
