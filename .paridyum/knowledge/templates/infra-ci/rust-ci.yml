@@ -13,6 +13,19 @@
 # this repository's GITHUB_TOKEN. Renovate keeps the pins current — the trailing
 # `# vX.Y.Z` comment is what it matches on, so do not remove it.
 
+# ADDING A STEP THAT CALLS A VENDORED SCRIPT IS A BREAKING CHANGE FOR CALLERS.
+#
+# The scripts come from each caller's own `.paridyum/knowledge/` snapshot, so a new
+# step calling a NEW script fails in every caller whose snapshot predates it —
+# `python3: can't open file ... No such file or directory`. That happened on
+# 2026-08-21 when the envelope step landed: two callers had refreshed their snapshot
+# and one had not, and its next push went red.
+#
+# Failing loudly is correct — a caller silently emitting no evidence would be worse,
+# because absence of evidence is indistinguishable from absence of tests, which is
+# the whole thing RFC-0034 exists to fix. So the rule is operational rather than
+# technical: refresh EVERY caller's snapshot in the same change that adds the step.
+#
 # WHY THE SCRIPTS COME FROM THE CALLER'S VENDORED SNAPSHOT, NOT FROM THIS REPOSITORY.
 #
 # Five jobs used to `actions/checkout` Paridyum/infra-ci at the pinned ref to get `scripts/`.

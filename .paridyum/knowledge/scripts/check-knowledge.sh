@@ -1929,6 +1929,131 @@ PY
   fi
 fi
 
+# --- 8g. tool registry (ADR-0066) -------------------------------------------
+#   knowledge.tool_registry_valid            the registry means what it says
+#   knowledge.tool_registry_holds_no_version exactly one home for every pin
+#
+# THE SIXTH INSTANCE of the argument sections 8, 8b, 8e and 8f each make, and the first where
+# the list being moved was hardcoded in NO place at all. `toolchain-registry.yaml` pins one
+# compiler per stack and its own header says so; everything else the estate installs -- gh, jq,
+# python3, the schema validator this gate depends on -- was declared nowhere and inherited from
+# whatever a workstation happened to have. That is the mechanism that put an end-of-life Node
+# runtime into three repositories, running unobserved on the tool half of the estate.
+#
+# THE SECOND CHECK IS THE LOAD-BEARING ONE and it is not about shape. `pin_home` names the file
+# that already owns a tool's version; an entry carrying both `pin_home` and `install.ref` is two
+# homes for one fact, which is RFC-0015 broken inside the registry written to stop exactly that.
+# The `neither` clause is not redundant with it: an entry with no pin and no pin_home records a
+# tool nobody can install reproducibly and does not admit it.
+#
+# `adopted_by` RESOLUTION IS WHY THIS IS NOT JUST A SCHEMA CALL. ADR-0066 decision 6 says a tool
+# with no artifact behind it is a decision nobody made. Without resolution that field is a string
+# anyone can type, and RFC-0030 exists because this repository has already been caught by a cited
+# id that resolved to nothing.
+#
+# NOT CHECKED, deliberately: whether every tool the estate uses APPEARS here.
+# `knowledge.tool_is_registered` was considered and not declared -- every mechanically decidable
+# reading is either too wide (every binary in every script) or too narrow (only what an installer
+# installs), and declaring an undecidable check is ADR-0002's failure. A tool can be adopted and
+# never registered, and nothing will say so. That is this section's standing gap, and this
+# comment is the record of it per STD-0011.
+printf '\n'
+TOOLREG="tool-registry.yaml"
+TOOLSCHEMA="tool-registry.schema.json"
+if [[ ! -f "$TOOLREG" ]]; then
+  err "$TOOLREG is missing — the tool list lives there (ADR-0066)"
+else
+  if [[ -f scripts/lib/validate-schema.py && -f "$TOOLSCHEMA" ]]; then
+    trout="$(python3 scripts/lib/validate-schema.py document "$TOOLSCHEMA" "$TOOLREG" 2>&1)"
+    case $? in
+      0) ;;
+      1) while IFS= read -r line; do [[ -n "$line" ]] && err "${line#✘ }"; done < <(grep '^✘' <<<"$trout") ;;
+      *) wrn "$TOOLREG: schema validation unavailable — cross-references checked, shape not" ;;
+    esac
+  fi
+
+  if ! command -v python3 >/dev/null; then
+    wrn "python3 unavailable — $TOOLREG cross-references and pin homes are unverified"
+  else
+    tregout="$(python3 - "$TOOLREG" -- "${FILES[@]}" <<'PY_TOOLREG'
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit(2)
+
+reg_p = sys.argv[1]
+artifacts = sys.argv[3:]
+
+with open(reg_p, encoding="utf-8") as fh:
+    reg = yaml.safe_load(fh) or {}
+
+errs = []
+
+# Artifact ids that exist, read off the filenames the gate is already walking. Cheaper than
+# parsing frontmatter again and it cannot disagree with what section 1 validated.
+live = set()
+for path in artifacts:
+    base = path.rsplit("/", 1)[-1]
+    head = base.split("-")
+    if len(head) >= 2 and head[1][:4].isdigit():
+        live.add(f"{head[0]}-{head[1][:4]}")
+
+seen, order = set(), []
+for t in reg.get("tools", []) or []:
+    if not isinstance(t, dict):
+        errs.append("a tools: entry is not a mapping")
+        continue
+    tid = t.get("id") or "<unnamed>"
+    order.append(tid)
+    if tid in seen:
+        errs.append(f"{tid}: declared twice — an id is the handle a script resolves, "
+                    f"and two entries mean one of them is never read")
+    seen.add(tid)
+
+    # knowledge.tool_registry_holds_no_version. One home for a pin, and exactly one.
+    has_pin = isinstance(t.get("install"), dict) and t["install"].get("ref")
+    has_home = bool(t.get("pin_home"))
+    if has_pin and has_home:
+        errs.append(f"{tid}: carries both install.ref and pin_home: {t['pin_home']} — "
+                    f"two homes for one version, which is the defect this registry exists "
+                    f"to close (RFC-0015, ADR-0066 decision 3)")
+    if not has_pin and not has_home:
+        errs.append(f"{tid}: carries neither install.ref nor pin_home — a tool nobody can "
+                    f"install reproducibly, recorded without admitting it (ADR-0066 decision 4)")
+
+    for aid in t.get("adopted_by", []) or []:
+        if aid not in live:
+            errs.append(f"{tid}: adopted_by names {aid}, which does not resolve — a tool with "
+                        f"no artifact behind it is a decision nobody made (ADR-0066 decision 6)")
+
+if order != sorted(order):
+    errs.append("tools: is not sorted by id — the file is read by humans diffing it, and an "
+                "unsorted registry makes an addition indistinguishable from a move")
+
+for e in errs:
+    print(f"\u2718 {e}")
+print(f"COUNT {len(seen)}")
+sys.exit(1 if errs else 0)
+PY_TOOLREG
+)"
+    trrc=$?
+    case $trrc in
+      0|1)
+        while IFS= read -r line; do [[ -n "$line" ]] && err "${line#✘ }"; done \
+          < <(grep '^✘' <<<"$tregout" || true)
+        tcount="$(grep '^COUNT ' <<<"$tregout" | awk '{print $2}')"
+        if [[ $trrc -eq 0 ]]; then
+          printf '%s✔%s %s\n' "$GRN" "$RST" \
+            "${tcount:-0} tool(s) registered — every pin has one home, every adoption an artifact"
+        fi
+        ;;
+      *) wrn "$TOOLREG: pyyaml unavailable — pin homes and adoption ids are unverified" ;;
+    esac
+  fi
+fi
+
 # --- 9. enforcement inventory (ADR-0014: reported at every run) -------------
 # Not gated on --audit. A backlog is worth nothing if seeing it requires
 # choosing to look.

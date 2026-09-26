@@ -1,0 +1,113 @@
+# Collect test evidence into the ledger (RFC-0034 step 5).
+#
+# Destination: Paridyum/infra-ci/.github/workflows/collect-evidence.yml
+# This one is NOT a reusable workflow. It runs in the repository that holds the
+# ledger, on a schedule, and nothing calls it.
+#
+# WHY PULL AND NOT PUSH — the decision the whole design turns on.
+#
+# REQ-0001 established by testing the live organisation on 2026-08-07 that
+# organisation-level Actions secrets do not work for private repositories on the Free
+# plan, and recorded the consequence: every repository's secrets must be set by hand,
+# in that repository, forever.
+#
+# A push design therefore needs one WRITE credential per repository, growing with the
+# estate, failing invisibly when one goes stale — and any repository able to forge any
+# other's results. Pull needs exactly one READ-ONLY credential, here. A leak exposes
+# read access to things its holder could already read, and no repository can write to
+# the ledger at all.
+#
+# THE ONE MANUAL STEP.
+#
+# `EVIDENCE_TOKEN` must be set as a repository secret on THIS repository. A
+# fine-grained personal access token, organisation-scoped, with:
+#
+#   Repository permissions: Actions: Read-only · Contents: Read-only · Metadata: Read-only
+#
+# Nothing else. It must not have write anywhere. If this workflow ever needs write
+# access outside this repository, REQ-0001's "What this does not cover" section stops
+# applying to it and the decision has to be taken again.
+#
+# Until that secret exists this workflow fails on its first step with a message
+# saying so, rather than running and silently collecting nothing.
+
+name: collect-evidence
+
+on:
+  schedule:
+    # Twice a day. The ledger is a durable record, not a live view — the console
+    # reads the API directly for that — so hourly would spend Actions minutes
+    # (capped on Free for private repos, ADR-0004) to shorten a lag nobody is
+    # waiting on.
+    - cron: "0 6,18 * * *"
+  workflow_dispatch:
+    inputs:
+      repositories:
+        description: Comma-separated owner/name to collect from. Empty uses the default list.
+        type: string
+        required: false
+
+permissions:
+  contents: write   # to commit the ledger; scoped to THIS repository only
+
+concurrency:
+  # The ledger is append-only and hash-chained. Two runs appending at once would
+  # race on the chain head and produce a fork, which `verify-evidence.py` would
+  # then report as tampering. Serialised, and never cancelled mid-append.
+  group: collect-evidence
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: The token must exist
+        env:
+          EVIDENCE_TOKEN: ${{ secrets.EVIDENCE_TOKEN }}
+        run: |
+          if [[ -z "${EVIDENCE_TOKEN}" ]]; then
+            echo "::error::EVIDENCE_TOKEN is not set on this repository."
+            echo "Create a fine-grained PAT with Actions/Contents/Metadata READ-ONLY"
+            echo "across the organisation, and add it as a repository secret here."
+            echo "Failing rather than running: a collector with no token would report"
+            echo "an empty ledger, which is indistinguishable from nothing having run."
+            exit 1
+          fi
+
+      - name: Collect envelopes and append them
+        env:
+          GH_TOKEN: ${{ secrets.EVIDENCE_TOKEN }}
+          REPOSITORIES: ${{ inputs.repositories }}
+        run: |
+          python3 scripts/collect-evidence.py \
+            --ledger evidence \
+            ${REPOSITORIES:+--repositories "$REPOSITORIES"}
+
+      # Verify BEFORE committing. A collector that appended a broken chain and then
+      # pushed it would make the tamper-evidence worthless at exactly the moment it
+      # mattered.
+      - name: The chain still verifies
+        run: python3 scripts/verify-evidence.py evidence
+
+      - name: Commit what was collected
+        run: |
+          if [[ -z "$(git status --porcelain evidence)" ]]; then
+            echo "nothing new to append"; exit 0
+          fi
+          # A machine identity, and one C-0003 accepts. The bot is the author because
+          # the bot did it; attributing a scheduled collection to a person would put a
+          # name against an act they did not perform.
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add evidence
+          # [skip ci] so committing the ledger does not trigger this repository's own
+          # pipeline, which would spend minutes checking a data file.
+          git commit -m "chore(evidence): collect test envelopes [skip ci]"
+          git push

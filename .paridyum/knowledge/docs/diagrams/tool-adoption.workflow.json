@@ -1,0 +1,293 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How a tool enters the estate",
+    "subtitle": "ADR-0066, REQ-0012, REQ-0014 · the exit plan is written while the integration is small",
+    "output": "docs/diagrams/tool-adoption.workflow.html",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "path",
+        "label": "The adoption path",
+        "focus": [
+          "need",
+          "retrieve",
+          "artifact",
+          "register",
+          "install"
+        ],
+        "note": "Retrieval first. Rebuilding a capability that already exists costs the original work twice."
+      },
+      {
+        "id": "refusals",
+        "label": "Where it is refused",
+        "focus": [
+          "retrieve",
+          "exists",
+          "licence",
+          "busl",
+          "debt"
+        ],
+        "note": "Three refusals: it already exists, it fails the exitability test, or its install cannot be pinned."
+      },
+      {
+        "id": "record",
+        "label": "What is left behind",
+        "focus": [
+          "artifact",
+          "register",
+          "debt"
+        ],
+        "note": "An artifact, a registry entry with an exit plan, and — where the honest answer is unpinned — a recorded debt rather than a guess."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "the need"
+        },
+        "security": {
+          "label": "a refusal"
+        },
+        "backend": {
+          "label": "an artifact written"
+        },
+        "database": {
+          "label": "a registry entry"
+        },
+        "cloud": {
+          "label": "the install"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "Before anything is installed"
+    },
+    {
+      "id": "decide",
+      "label": "Decide"
+    },
+    {
+      "id": "record",
+      "label": "Record"
+    },
+    {
+      "id": "refuse",
+      "label": "Refusals",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-look",
+      "label": "Look first",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p-decide",
+      "label": "Decide and justify",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-record",
+      "label": "Register, then install",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-gov",
+      "label": "Governance precedes the install, never the other way round",
+      "lane": "decide",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "need",
+    "retrieve",
+    "licence",
+    "artifact",
+    "register",
+    "install"
+  ],
+  "nodes": [
+    {
+      "id": "need",
+      "lane": "intake",
+      "col": 0,
+      "width": 124,
+      "type": "frontend",
+      "label": "A capability gap",
+      "sublabel": "something must be done"
+    },
+    {
+      "id": "retrieve",
+      "lane": "intake",
+      "col": 1,
+      "width": 132,
+      "type": "security",
+      "label": "Retrieve first",
+      "sublabel": "grep provides in manifests"
+    },
+    {
+      "id": "licence",
+      "lane": "decide",
+      "col": 2,
+      "width": 132,
+      "type": "security",
+      "label": "Exitability test",
+      "sublabel": "licence, and the way out",
+      "tag": "REQ-0012"
+    },
+    {
+      "id": "artifact",
+      "lane": "decide",
+      "col": 3,
+      "width": 132,
+      "type": "backend",
+      "label": "Write the artifact",
+      "sublabel": "an ADR, before the install"
+    },
+    {
+      "id": "register",
+      "lane": "record",
+      "col": 4,
+      "width": 136,
+      "type": "database",
+      "label": "tool-registry entry",
+      "sublabel": "purpose, exit, adopted_by"
+    },
+    {
+      "id": "install",
+      "lane": "record",
+      "col": 5,
+      "width": 132,
+      "type": "cloud",
+      "label": "install-tools.sh",
+      "sublabel": "clones at the pinned ref"
+    },
+    {
+      "id": "exists",
+      "lane": "refuse",
+      "col": 1,
+      "width": 132,
+      "type": "security",
+      "label": "It already exists",
+      "sublabel": "use it, do not rebuild"
+    },
+    {
+      "id": "busl",
+      "lane": "refuse",
+      "col": 2,
+      "width": 132,
+      "type": "security",
+      "label": "Fails exitability",
+      "sublabel": "the Terraform outcome"
+    },
+    {
+      "id": "debt",
+      "lane": "refuse",
+      "col": 4,
+      "width": 136,
+      "type": "security",
+      "label": "Cannot be pinned",
+      "sublabel": "record the debt, not a guess"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-need",
+      "from": "need",
+      "to": "retrieve",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-new",
+      "from": "retrieve",
+      "to": "licence",
+      "label": "genuinely new",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-exists",
+      "from": "retrieve",
+      "to": "exists",
+      "label": "refused",
+      "variant": "security"
+    },
+    {
+      "id": "e-pass",
+      "from": "licence",
+      "to": "artifact",
+      "label": "exitable",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-busl",
+      "from": "licence",
+      "to": "busl",
+      "label": "refused",
+      "variant": "security"
+    },
+    {
+      "id": "e-reg",
+      "from": "artifact",
+      "to": "register",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-inst",
+      "from": "register",
+      "to": "install",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-debt",
+      "from": "register",
+      "to": "debt",
+      "label": "honest",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Retrieval is the expensive half",
+      "items": [
+        "Rebuilding a capability that already exists costs the original work twice and leaves the first copy rotting",
+        "Nothing enforces this step, which is exactly why it comes first"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "The exitability test, every time",
+      "items": [
+        "Applied even when the answer is comfortable",
+        "Terraform failed it and OpenTofu replaced it",
+        "Skipping it is the characteristic drift, named in ADR-0052"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "An unpinned install is recorded, not invented",
+      "items": [
+        "Writing a version nobody argued for is a decision nobody made",
+        "Four cargo binaries are unpinned today and the registry says so",
+        "One of them sets the compiler floor for the whole estate"
+      ]
+    }
+  ]
+}

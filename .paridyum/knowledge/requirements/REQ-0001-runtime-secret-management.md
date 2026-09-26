@@ -2,7 +2,7 @@
 id: REQ-0001
 title: Runtime secrets are managed outside the repository and outside GitHub
 type: requirement
-status: deferred
+status: accepted
 created: 2026-08-07
 locked_at: null
 supersedes: null
@@ -22,15 +22,39 @@ enforced_by: []
 
 ## Status
 
-**DEFERRED** as of 2026-08-07. Real, understood, deliberately not scheduled.
+**ACCEPTED**, 2026-09-07. The trigger fired and the deferral text below it was left
+standing for longer than it was true, which is the failure mode ADR-0011 exists to catch.
 
-Not deferred because it is unimportant. Deferred because there is nothing to protect
-yet: zero services, zero deployments, zero runtime credentials. Building secret
-infrastructure now would be provisioning for a load that does not exist.
+**What fired it.** This requirement's own scope note names "the Zitadel masterkey" as the
+canonical in-scope secret. Zitadel runs on `sitar` and holds one, alongside a PostgreSQL
+password for its own database role. Both are runtime credentials that a running service
+needs to function, in production, today.
 
-`enforced_by` is empty and that is correct — ADR-0002 reserves `locked` for what can be
-mechanically rejected, and there is nothing to check until the trigger fires. This is
-ADR-0008's honest-inventory position applied to a requirement.
+**Why the old text was wrong and worth reading anyway.** It said "zero services, zero
+deployments, zero runtime credentials", and every clause of that was accurate on
+2026-08-07 and false by 2026-09-06. The deferral was correct when written. What was
+missing was anything that would notice when it stopped being correct — the trigger was a
+sentence in frontmatter that nothing read.
+
+**What is already satisfied, and by what.** ADR-0057 chose SOPS with age, which open
+question 4 below listed as unevaluated; the decision was taken after this requirement was
+written and is not reflected in the questions. Assessed against the five acceptance
+criteria as they stand:
+
+| # | Criterion | State |
+|---|---|---|
+| 1 | No credential committed | **Met.** SOPS commits ciphertext; the age private key never enters a repository. |
+| 2 | New repository needs no manual per-repository secrets | **Met, and for a reason worth naming** — deployment is run by the operator (ADR-0055), not by CI, so there is no per-repository GitHub secret to drift. |
+| 3 | Rotate without editing any repository | **NOT MET, BY DESIGN.** SOPS stores the ciphertext *in* the repository, so rotating a credential is a commit. This is the one criterion the chosen mechanism cannot satisfy, and it is recorded as a known gap rather than argued away. |
+| 4 | Private repository, GitHub Free | **Met.** SOPS needs no GitHub plan feature. |
+| 5 | Local, CI and production share one source of truth | **Unproven.** CI holds no age key, so CI is not yet a consumer. Untested rather than failed. |
+
+Criterion 3 is the open one. A secret store with a rotation API — Infisical, or another —
+is what closes it, and nothing here commits to which. What has changed is that the
+question is now live instead of deferred.
+
+`enforced_by` stays empty. ADR-0002 reserves `locked` for what can be mechanically
+rejected, and no check asserts that a running service's credentials came from SOPS.
 
 ## Requirement
 

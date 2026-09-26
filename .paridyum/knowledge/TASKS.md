@@ -59,14 +59,23 @@ Recorded in BET-0004's revision. BET-0005 makes it cheap: Paridyum builds and op
 itself, so engineer-days from scoping to first production tenant are directly observed rather than
 reconstructed. Actually recording it from product one is still on you.
 
-### T-0.6 ⛔ → Decide vertical one
+### ~~T-0.6 Decide vertical one~~ — **done 2026-08-23**
 BET-0004 *"does not settle the vertical order."* **BET-0005 supplies the criterion that was
 missing:** not *which vertical sounds attractive* but **which one can Paridyum plausibly operate as
 a real business, in India, without touching regulated data.** ANTI-0007 and C-0006 anti-goal 3 are
 hard filters and remove more candidates than they appear to — anything payments-adjacent, health, or
 regulated-financial is out.
-**Blocks:** Phase 3b, which is now where first revenue comes from.
-**Done when:** a BET- or ADR names vertical one and the reasoning that selected it.
+**Answered: `hosting`.** Promoted to `stage: building` in `product-registry.yaml` on
+2026-08-23 by operator decision, which is anti-goal 6's gate passed deliberately rather than
+by drift. The reasoning that selected it is in that entry and in MKT-0001…0003, which are
+external and dated as C-0006 requires.
+
+**The consequence is recorded rather than left to be rediscovered:** `veer-entitlements` is
+now blocked until hosting has a paying customer who RENEWED, per C-0009 obligation IV's own
+terms. Both registry entries say so.
+
+**Still owed by the promotion:** `catalogue` at `building` owes a REQ- and the
+`product-contract` slot. MKT- is already discharged.
 
 ### T-0.7 → Set the floor and the royalty
 BET-0007 fixes the shape — flat floor per running business **plus** a commission on the tenant's
@@ -246,6 +255,11 @@ allowed — but two implementations of one mechanism is ANTI-0004's version-skew
 security boundary.
 **Blocks:** `lib-tenancy`, which blocks every `platform-` service.
 **Done when:** RFC-0009 carries the answer, or a new ADR does.
+**Partially unblocked 2026-09-24 — the naming half only.** ADR-0107 decided how one capability is
+named when it exists in two stacks (`lib-auth-rust` / `lib-auth-typescript`, artifact name drops the
+segment), because `lib-auth` hit it first. **The substance of Q5 is untouched:** whether the
+isolation mechanism should exist twice at all, and what to do about the skew risk when it does, is
+still this task. A naming precedent is not an answer to a security question.
 
 ### T-1.2 Answer RFC-0009 Q2 — does `platform-audit` start as a table or a context?
 §7 says table. Open question 2 disagrees with §7: *"a table that every context writes to is
@@ -466,6 +480,79 @@ backfilled — only fixed forward.
 **Done when:** a fetch from a session whose working directory is above the repository is recorded, or
 the gate reports plainly that capture is not running rather than reporting zero reconciled sessions.
 
+### T-2.16 Four cargo binaries are unpinned, and one sets the estate's compiler floor
+Found 2026-09-05 while seeding `tool-registry.yaml` under ADR-0066. `RUN-0001` installs
+`sqlx-cli`, `cargo-deny`, `cargo-audit` and `cargo-chef` with a bare `cargo install` and no
+version, so four entries carry `ref: latest-unpinned` — a value chosen to fail
+`knowledge.declared_tool_install_is_pinned` rather than to satisfy it, because writing a number
+there would invent a decision nobody made.
+
+**`sqlx-cli` is the one that matters.** Its 0.9.0 minimum is the floor that forced the Rust
+toolchain pin and therefore created `toolchain-registry.yaml` at all — so the estate's most
+consequential version constraint is set by a binary nothing pins, installed from whatever crates.io
+had on the day.
+
+That check is deliberately left `owner: tool-forge` for now: implementing it turns the gate red on
+four pre-existing defects that this change did not create and has no mandate to decide. Picking
+versions for four binaries is four decisions.
+**Done when:** each of the four has a `--locked` install at an argued version, and
+`knowledge.declared_tool_install_is_pinned` is implemented and defect-tested.
+
+### T-2.17 `toolchain-registry.yaml` and `tool-registry.yaml` answer overlapping questions
+ADR-0066 decision 8. Seven tools — `sops`, `age`, `talosctl`, `helm`, `kubectl`, `cilium`,
+`ansible-lint` — have their versions parked under a `tooling:` key inside whichever stack needed
+them first, which is why `sops` and `age` are filed under `ansible` although ADR-0057 makes them
+estate-wide, and why `cilium` (a Helm chart version) is filed as a tool at all.
+
+`tool-registry.yaml` covers all of them with `pin_home: toolchain-registry` and no version, so
+coverage is complete and no fact has two homes. What remains is that a reader asking "what version
+of sops do we run" must know the answer is in the file NOT named after tools. Migrating the pins
+was rejected in the same change: changing behaviour while moving it is the failure
+`artifact-registry.yaml` records about ADR-0010's `ci: false`, and it would make a registry's first
+change also its first regression.
+**Done when:** a decision exists either way, recorded rather than drifted into.
+
+### T-2.18 `pin_home: os` is an admission, not a pin — and most `critical` tools carry it
+Written as "nineteen of thirty-four" and corrected the same day against the file, which is the
+fourth time a hand-counted figure in this repository has been wrong and the reason it is now
+written as a shape. Count it with:
+
+```sh
+python3 -c "import yaml;print([t['id'] for t in yaml.safe_load(open('tool-registry.yaml'))['tools'] if t.get('pin_home')=='os' and t['tier']=='critical'])"
+```
+
+Every entry with `pin_home: os` says its version belongs to the OS package manager. `brew install
+jq` on two workstations on two days installs two versions and nothing compares them — and the
+majority of the `critical` tier is in that state, including `python3`, whose
+`scripts/lib/validate-schema.py` is the mechanism behind every `*_registry_valid` check, and
+`claude-code`, which self-updates and is pinned by nothing at all.
+
+This is not a defect introduced by the registry; it is the pre-existing state, made countable for
+the first time. Recorded here rather than resolved because the fix is either a lockfile-shaped
+workstation manifest or an accepted risk, and neither has been argued.
+**Done when:** the `critical`-tier entries carrying `pin_home: os` either gain a real pin or an
+argued acceptance.
+
+### T-2.19 The rendered diagram fetches a font, and we delete the line by hand
+`scripts/render-diagram.sh` exists to strip three `<link>` elements archify's template writes for
+JetBrains Mono. The diagram works offline either way; what the strip buys is that opening a
+committed governance diagram does not tell a third party someone read it (ADR-0065 decision 7).
+
+The cost is the typeface — diagrams render in system monospace — and a small permanent maintenance
+burden anchored on two hostnames that moves whenever upstream's template does.
+**Fix shape:** embed the font as a data URI, or upstream a flag. MIT permits the fork and the
+change is four lines in `assets/template.html`. Not done here because a forked renderer is a second
+thing to pin.
+**Done when:** the strip is unnecessary, or the fork is adopted and pinned in its place.
+
+### T-2.20 Nothing generates an architecture diagram, and hand-authoring one is forbidden
+ADR-0065 decision 2 makes architecture-kind IR generated output from the set of manifests, and
+`docs.architecture_ir_is_hand_authored` rejects one written by hand. The generator is `forge`,
+which does not exist — so the rule currently forbids more than it enables, and the C4 Level 1 and
+Level 2 views ADR-0040 made *possible* on 2026-08-09 are still not *produced*.
+**Done when:** `forge` renders the system-context and container views from `manifest.yaml` into
+archify architecture IR, and `docs.system_view_is_current` compares them.
+
 ### T-2.7 `check-registry.yaml` cannot express "owed by a component that is not tool-forge"
 Found 2026-08-15 while trying to declare STD-0011's check. `owner` is the **only** signal the gate
 uses for implemented-versus-owed: `tool-forge` means owed, and **every other value counts as
@@ -536,6 +623,14 @@ decision 4 — two replicas here, three on metal — which is what decided it ov
 rather than any judgement that it is the better product. Rook-Ceph lost on Sidero's own
 documentation (slow on small clusters, dependent on CPU parallelisation — the two things nested L2
 degrades most); Piraeus/LINSTOR is the runner-up and lost on operational familiarity alone.
+
+### ~~T-2b.3 closed 2026-09-21 — it runs~~
+
+`longhorn-system` has been `Active` 15d with `csi-attacher`, `csi-provisioner` and `csi-resizer`
+all 2/2. The done-when was *"one driver is chosen and runs on the staging cluster"* — both halves
+are now met, and the paragraph below was written while only the first was.
+
+**Original entry follows.**
 
 **The half of this task that is still open is the half that matters.** A driver is chosen; nothing
 has run it. RFC-0023 decision 7 cost 2 and risk R5 are the reason to expect the running to be
@@ -609,6 +704,20 @@ whose price is uncited**, and RFC-0016 decision 4 cost 1 refuses to write a figu
 source. Get the number before building on it: against stage B1's budget it is plausibly the largest
 line, and if it is unaffordable the residency criterion becomes *unmet* rather than met.
 
+### ~~T-2b.6 closed 2026-09-21 — SOPS is the mechanism and nothing is plaintext~~
+`.sops.yaml` in all four infra repositories; seven of the eight files under
+`infra-kubernetes/secrets/` carry a `sops:` block. The eighth is
+`postgres-backup-creds.sops.example.yaml`, a template whose values are the literal `REPLACE` —
+read to confirm, not assumed from the filename. **And its real counterpart does not exist**, which
+is the T-G.7 evidence recorded below.
+
+### ~~T-2b.7 and T-2b.8 closed 2026-09-21 — the whole chain, verified~~
+Four hostnames answer from the public internet through the rented edge to a pod:
+`paridyum.com`, `careers.paridyum.com`, `admin.paridyum.com` (307 → 200) and `id.paridyum.com`
+(302 → 200), each with `x-edge-cache: HIT`. That is T-2b.7's *"a hostname resolves through the
+edge to a service on the staging cluster"* and T-2b.8's *"a request from the public internet
+reaches a pod and returns"*, together, four times over.
+
 ### T-2b.8 Deploy something trivial end to end
 The smallest possible service, through git → build → Terraform → cluster → edge. This is what
 proves the chain, and it is also the first thing the `post-deploy` tier has ever had to run against.
@@ -662,6 +771,12 @@ silent on it, and T-1.1 is where the one-library-or-two question gets settled. W
 the mechanism lands here and the ANTI-0004 skew risk lands with it.
 **Done when:** the isolation denial is asserted as a test per STD-0009, and T-2.3's check watches
 it.
+**Not answered by ADR-0107, deliberately.** `platform-tenancy` copied `platform-identity`'s token
+verifier rather than inventing a shared crate, precisely so this task would not be decided as a side
+effect; ADR-0107 then extracted `lib-auth-rust` on ADR-0092 D3's own trigger and answered the naming
+question it ran into. **The tenancy mechanism is still undecided** — one library or one per stack,
+and the ANTI-0004 skew risk on the RLS boundary — and it stays undecided here rather than being
+inferred from what `auth` did.
 
 ### T-3.6 ⛔ Product one, **operated by Paridyum** — Phase 3b
 Named by T-0.6. This is BET-0005's core move and the point at which the company first has income.
@@ -719,6 +834,456 @@ Related: ADR-0042 consequence 4 — *"deferring billing means entitlement has no
 which bites once tenants are on different floors.
 **Done when:** ADR-0042 is amended or a note records that the trigger, not the reason, is what
 holds billing back.
+
+---
+
+## Sprint Genesis — from nothing deployed to tenant zero running its products
+
+*Opened 2026-09-15. Resumable by name: **Genesis**.*
+
+**The arc, in one sentence:** the estate governs no running software; Genesis ends when Paridyum —
+as tenant zero, holding no scope a customer could not hold — runs its own landing, careers, docket
+and control plane as deployed products, each one a thing any other tenant could also deploy.
+
+**Its artifacts.** Genesis implements RFC-0045 (the isolation envelope), ADR-0103 (containment as an
+entitlement attribute), RFC-0046 (BYOK, build-gated), RFC-0048 (public surfaces are tenant-served)
+and RFC-0049 (a tenant is a set of releases). RFC-0047 (renting the platform) is designed and gated
+and is **not** in Genesis. All are `proposed`; none is accepted; per ADR-0013 §4 each lands in its own
+commit before the work it justifies.
+
+**Ordering principle: irreversibility, not architecture.** What gets permanently worse with time goes
+first, regardless of how small it is. Two items are lossy — an unwritten audit history cannot be
+reconstructed, and a region never recorded cannot be recovered — and they are both cheap today.
+
+---
+
+### Wave 0 — decisions, before code
+
+*Five answers only a human can give. Three of them block waves.*
+
+#### ~~T-G.0 Authorise the sixth bounded context~~ — **closed 2026-09-20, TASKS.md updated 2026-09-24**
+ADR-0101 (accepted 2026-09-20) authorised `platform-deployment` and supersedes ADR-0042. This line
+sat stale for four days — the ADR itself names *"T-G.0 — the Genesis task this closes"* — because
+nothing had walked TASKS.md back to close it. Waves 2, 3 and 4 are unblocked on this front.
+
+#### ~~T-G.0b Is there a second failure domain?~~ — **decided 2026-09-24: declined, for now**
+ADR-0105. No second hypervisor is bought or rented ahead of a funded need; the trigger is a
+specific commercial one (a C2/C3 sale, a franchisee's recovery-objective contract), not a
+calendar. Every attestation (T-G.18) must report RPO/RTO against `sitar` as the sole failure
+domain — no field may read as though a warm second site exists. RFC-0045 slice 7, RFC-0046, and
+RFC-0047 stay undeliverable, which is now a decision rather than an unanswered question.
+
+#### ~~T-G.0c Flat or nested — where does a partner's tenant live?~~ — **answered 2026-09-24: nested**
+RFC-0047 open question 9, answered in the RFC rather than left for a successor document. Researched
+against three external references before deciding (RFC-0020): no mature multi-tenant platform found
+(Salesforce Hyperforce, Auth0) offers per-sub-tenant region pinning inside one shared database — it
+requires either a dedicated deployment per customer (Auth0 Private Cloud) or a geo-distributed SQL
+engine built for row-level placement (CockroachDB), neither of which matches ADR-0023/ADR-0064's
+plain-Postgres, one-hypervisor design. The region-per-account idea raised in this session (tenant
+stays put, an individual account's data is placed near its own end-customer) is therefore resolved
+as **a variant of nested, not a third architecture**: a partner's stamp chooses its own region at
+its own provisioning (extending RFC-0047 §Proposal P3), rather than a `region` column added to
+`accounts` in a shared database. Still gated exactly as before — on ADR-0105's declined second
+failure domain and ADR-0024 D9 — so this closes the *design* question without changing when it is
+buildable.
+
+#### ~~T-G.0d docket's account silo — retrofit or accept?~~ — **retrofitted 2026-09-24**
+ADR-0104 (accepted 2026-09-20, supersedes ADR-0102) decided the general question — a tenant may run
+more than one instance of a product, and `account_id` is the discriminator between instances, not
+only between "distinct client organisations" as ADR-0102's narrower first draft had it. The
+`accounts` table and the five-table retrofit that decision described were still unwritten;
+migration `0011_accounts_and_the_docket_instance_retrofit.sql` does it now, while every table is
+still empty (verified against the schema before writing it). ~~RLS stays tenant + operator-scope,
+unchanged, per ADR-0104 decision 7's accepted cost 4 (per-instance operator grants are a separate,
+undecided question).~~
+
+> **⛔ THE STRUCK SENTENCE WAS WRONG, AND IT WAS WRONG IN THE MIGRATION TOO. Corrected 2026-09-24.**
+>
+> **Cost 4 does not license it.** ADR-0104 accepted cost 4 leaves *per-instance operator grants*
+> undecided — which operator may reach which instance, the `operator_grants` (0010) question. It
+> says nothing about whether the policy carries the discriminator. **Accepted cost 1 governs that**
+> and says the opposite: *"Every docket query and policy gains an inner predicate, permanently…
+> That is the price of the boundary being real rather than notional."*
+>
+> **What the estate actually had, for four days:** `account_id` as a NOT NULL column on all five
+> docket tables and an inner boundary enforced in **no** layer — not RLS (dropped), not the
+> application (`account_id` appears in none of tool-docket's 74 Rust sources), not lib-auth
+> (`assertAccount` returns early for operator sessions, by design). Two dockets under one tenant
+> would have shared every person record. GLO-0004 rates that crossing catastrophic.
+>
+> **How it was lost:** `HANDOFF-2026-09-21` §1 resolved a two-files-both-numbered-0011 collision by
+> keeping this file and deleting `0013_an_instance_is_an_account.sql`. The deleted file carried the
+> inner predicate and the five `paridyum:rescope` directives; the survivor carried neither. The
+> collision everyone was looking at was the numbering.
+>
+> **`check-migrations.sh` catches it and was not re-run** — 10 errors against the working tree,
+> clean at `HEAD`. Fixed in place (the migrations are `pending`, never applied), gate now green.
+> See `platform-tenancy/LOGBOOK.md` 2026-09-24 and `HANDOFF-2026-09-24.md`.
+>
+> The file is now numbered `0012_accounts_and_the_docket_instance_retrofit.sql`.
+
+#### ~~T-G.0e Confirm ADR-0103's §Status reading~~ — **confirmed 2026-09-24**
+ADR-0103 moved to `accepted`. The operator confirmed the reading: naming a containment rung
+publicly, with no price and no self-serve path, is not "publishing a tier" under ADR-0024 D8.
+ADR-0024 stands unsuperseded.
+
+---
+
+### Wave 1 — stop the loss
+
+*Nothing here deploys anything. Everything here gets worse if deferred.*
+
+#### T-G.1 A cache key carries the tenant ⏱
+`careers/page.tsx` sets `revalidate = 60`. Next.js ISR keys on pathname, not `Host`, so the commit
+that makes the app multi-tenant serves one tenant's postings to another — with RLS forced, the policy
+correct, and the query never running. ANTI-0009 has existed as prose with no owner since it was
+written; `web.cache_key_carries_tenancy` is now declared.
+**The only latent defect in Genesis.** Everything else is a missing feature.
+**Done when:** the resolved tenant is in the route, not a `cacheTag`, and the check fails a build that
+omits it. Implements RFC-0048 slice 1.
+
+#### T-G.2 One correlation id, one append-only audit stream ⏱
+ADR-0041 D3: a shared correlation id must exist *"from the first request"* because it spans Zitadel's
+event log and our own records, and *"retrofitting one across two systems means reconstructing history
+that was never written."* Every request written so far has none.
+**Permanently lossy. Each day of traffic is history that cannot be recovered.**
+**Done when:** a fourth `SET LOCAL` carries the correlation id, `audit_events` exists append-only by
+the trigger pattern 0006 and 0007 already use, and grants record who granted, to whom, when and how
+they end. Implements RFC-0045 slice 1.
+
+> **Checked 2026-09-24: the actual blocker is that RFC-0045 is `status: proposed`, not accepted.**
+> §D gives `audit_events`'s exact column list (`correlation_id`, `actor`, `action`, `object`,
+> `tenant_id`, `operator_scope`, `actor_region`, `at`) precisely enough to draft as a migration
+> today — but building a migration against a still-`proposed` RFC is implementing a design before
+> it is decided (CLAUDE.md precedence: `proposed` is "direction, not yet binding"). The `grants`
+> table §D3 describes is *not* column-specified at all ("who granted it, to whom, when, and how it
+> ends" is a sentence, not a schema) — that half cannot be drafted without inventing architecture
+> RFC-0045 itself hasn't fixed. **Next action is getting RFC-0045 accepted**, not writing SQL
+> against it; once accepted, `audit_events` is a same-shaped migration to 0011/0013 and genuinely
+> small, and `grants`'s shape becomes the RFC's to fix during that acceptance, not this task's to
+> guess.
+
+#### T-G.3 `region` on `tenants`, immutable ⏱
+ADR-0039 step 1 already says *"insert tenant row (with `region`)"* and ADR-0041 D3 calls it
+contractual and immutable. No column exists. Trivial against one live region; a migration against
+live rows once there are two.
+**Done when:** the column is `NOT NULL` with no `DEFAULT`, constrained to a `status: live` region in
+`region-registry.yaml`, refused rather than defaulted at provisioning, and an `UPDATE` trigger
+refuses a move. `db.region_is_chosen_at_provisioning_and_immutable` passes. Implements RFC-0045 slice 2.
+
+> **Checked 2026-09-24: written, not applied.** `platform-tenancy/migrations/0011_region_is_chosen_
+> at_provisioning_and_never_moves.sql` exists, is fully argued (backfills the one live `tenants` row
+> to `in`, adds `NOT NULL` with no `DEFAULT`), and `scripts/migrate.py status` reports it — and
+> 0012, 0013 behind it — `pending`, not applied. Applying pending migrations to the live database is
+> DDL against a populated table and was correctly refused by this session's own permission
+> classifier rather than pushed through unattended. **Next action is `python3 scripts/migrate.py
+> apply` from `platform-tenancy`, run by a human present for it** (or with the classifier's
+> permission extended for that one command) — not a redesign; the migration is already written and
+> reviewed.
+>
+> **✔ APPLIED 2026-09-24 11:29 — and the warning below arrived too late. T-G.3 IS DONE; read the
+> rest, because two things it predicted came true.**
+>
+> `migrate.py apply` ran at 11:29 and applied 0011, 0012 and 0013 from uncommitted working-tree
+> files. `tenants.region` exists; this task is closed. Two consequences:
+>
+> 1. **docket's write path is broken right now.** 0012 added `account_id uuid NOT NULL` to the five
+>    person-bearing tables and `tool-docket/src/adapters/pg.rs` inserts `(id, tenant_id, record)`
+>    and sets only `paridyum.tenant_id` + `paridyum.operator_scope`. Reads serve; writes fail. Not
+>    production, and docket can be redeployed. **T-G.19** is now the repair, not the precondition.
+> 2. **What was applied is not what was reviewed.** The review finished at ~17:15 and found the
+>    inner `account_id` predicate missing from every policy 0012/0013 touched. Editing them would
+>    have broken REQ-0008 immutability — and did cause checksum drift that blocked `migrate.py`
+>    entirely, `status` included. 0012/0013 are now back to **exactly the bytes applied**, and the
+>    corrections live in **`0014_the_inner_boundary_the_retrofit_left_out.sql`**, not yet applied.
+>
+> **Verify before the next `apply`:** `SELECT seq, sha256 FROM paridyum._migrations WHERE seq IN
+> ('0012','0013')` should read `0012` = `04c4b4f9c15be4adf318f497cfcf5e091c635938897691c6fff3fc142bc00786`,
+> `0013` = `40ca59e5b3fa3055257b2a2df77f237f953ccc04f21f607e4b312f9480eeeb85`. 0013's bytes were
+> recovered byte-exact from git's index; **0012's were reconstructed and are corroborated but not
+> proven** — it was untracked, so it is in no commit. If that checksum disagrees, stop.
+>
+> See `HANDOFF-2026-09-24.md` §0.
+
+#### ~~T-G.4 Clear the red gate~~ — **done 2026-09-16**
+
+`scripts/check-knowledge.sh` reports **zero errors, 41 warnings**. The three errors this task named
+— one ADR's `supersedes` typed as a string, and two ADR numbers reserved by RFC-0044 and cited by
+it and ADR-0100 without existing — are all closed.
+
+**The line above was stale when it was read, and the task says why.** It ends *"run the gate for
+the current list rather than trusting this line (ADR-0035)"*, which is what happened on 2026-09-16:
+the gate was re-run, found clean, and the task was still open. A task whose own text warns against
+trusting its text is a task that needs its **done-when** executed periodically rather than its
+**why** re-read — this one sat closed-in-fact for an unknown period. Original entry follows.
+
+**Original:** *"Three errors stand on every run…"* — **Done when:** `check-knowledge.sh` reports
+zero errors.
+
+#### T-G.5 Repair the `operator` ambiguity → 
+GLO-0001 says an operator *"is our customer"* and owns 1..N tenants; GLO-0004's tree and BET-0005's
+table both put **Paridyum** at that level. Harmless while one party provisions everything, and every
+design above inherits it. `operator_id` is declared in the glossary and present in no migration.
+**Done when:** one reading is chosen, the losing artifacts are corrected or superseded, and the column
+either appears in a migration or stops being claimed. → produces a glossary correction.
+
+#### T-G.6 Declare `product:` on the web manifests
+`web-admin` declares `product: [identity]`; `web-hiring` and `web-paridyum` declare none, and under
+ADR-0050 an absent value means *every* product.
+**Done when:** both manifests declare a product and `knowledge.product_slugs_resolve` passes.
+Implements RFC-0048 slice 2.
+
+#### ~~T-G.7 Off-host backup with a stated RPO, and one rehearsed restore~~ — **done 2026-09-24**
+
+> **All four done-when items landed 2026-09-24.** The restore rehearsal — the item every reading
+> below calls "not yet run" — succeeded on the third attempt, once storage capacity (item 3 below)
+> and a `serverName` bug were both fixed.
+>
+> **The `serverName` bug, found after the storage fix:** the first working attempt still failed
+> with CNPG's `"no target backup found"`. Root cause: `externalCluster.barmanObjectStore` without
+> an explicit `serverName` defaults it to the `externalCluster`'s own `.name`
+> (`paridyum-backup-source`), so CNPG looked for backups under
+> `s3://postgres-backups/paridyum-postgres/paridyum-backup-source/` — which doesn't exist. The real
+> path, confirmed by listing the bucket directly with a throwaway `rclone lsf` Job, is
+> `.../paridyum-postgres/paridyum/...` — `paridyum`, the *original* cluster's name.
+> `postgres/backup.yaml` never hits this because it never sets an `externalCluster` at all.
+> `postgres/restore-rehearsal.yaml` now sets `serverName: paridyum` explicitly, with the failure
+> mode recorded in the file so it isn't rediscovered.
+>
+> **Verified, not just green.** After recreating with both fixes, the rehearsal cluster reported
+> `Cluster in healthy state` in under 2 minutes, and querying it directly confirmed real, correct
+> data: all 20 tables present, `tenants` holding its one real row —
+> `id=68445ee9-175a-58a9-834e-a2f0c9c9b124, slug=paridyum, created_at=2026-09-12 07:37:53+00` —
+> matching production exactly. Recovered to the latest available point (no `recoveryTarget` set),
+> confirming PITR via continuous WAL archiving works, not only the nightly base backup.
+>
+> **The RPO the attestation can cite:** sub-minute, bounded by WAL-archiving lag rather than the
+> nightly base backup, *within the single failure domain* — `sitar` is still the only place any of
+> this runs (ADR-0064, ADR-0105), so this restore proves the backup is real and restorable, not
+> that jurisdiction-level loss has a recovery path. RFC-0015's revision and ADR-0105 already say
+> that plainly; this rehearsal doesn't change it.
+>
+> **Torn down cleanly, and the cleanup itself is now proof the fix works.** `longhorn-scratch`'s
+> `reclaimPolicy: Delete` meant `make postgres-restore-rehearsal-cleanup` alone left **zero**
+> orphaned PVs or Longhorn volumes — no second `kubectl delete volumes.longhorn.io` needed, unlike
+> every attempt before the storage fix. Production (`postgres/paridyum-1`, `paridyum-1-wal`)
+> confirmed `Bound`/healthy and `Cluster in healthy state` throughout.
+>
+> Everything below is the history of how this closed — kept rather than deleted, because most of
+> it (the storage diagnosis, the two bugs fixed) is exactly the kind of thing STD-0011 says to
+> keep.
+>
+> **1. The in-cluster credential exists and the cluster backs up for real.**
+> `garage-consumer-secrets` minted `postgres-backup-creds` in `postgres`, `postgres-backup-enable`
+> applied `postgres/backup.yaml`, and the live `Cluster` confirms it:
+> `firstRecoverabilityPoint: "2026-09-14T02:00:13Z"`, `lastSuccessfulBackup: "2026-09-23T21:32:38Z"`.
+> Closes the 2026-09-21 reading, which said this credential had never been created.
+>
+> **2. The off-host-emulated sync runs end to end.** `storage/garage/backup-sync-offhost-emulated.yaml`
+> (CronJob, 02:30 UTC) copies `postgres-backups` to a second Garage bucket under a separate
+> credential — rehearsing the off-host *process*, not yet a real off-host *destination* (ADR-0105
+> still declines a second failure domain; the failure domain here is unchanged from decision 1's).
+> Verified: a manual run transferred 329.835 MiB / 2445 objects, `Complete`, 25.3s. Two bugs fixed
+> to get there — the source-namespace credential didn't exist in `storage` (secrets are
+> namespace-scoped; `make postgres-backup-sync-secret` mirrors it) and
+> `RCLONE_CONFIG_{SRC,DST}_REGION` was unset, so rclone signed as `us-east-1` against Garage's
+> `s3_region = "garage"` and got `AuthorizationHeaderMalformed`. Both fixed in the tracked manifest
+> and Makefile.
+>
+> **3. Storage capacity was blocking the restore rehearsal; found, diagnosed, and fixed.**
+> `postgres/restore-rehearsal.yaml` + `make postgres-restore-rehearsal-run`/`-cleanup` stand up a
+> disposable `Cluster`, bootstrapped via CNPG `recovery` against the real `postgres-backups`
+> bucket — read-only, `paridyum` in `postgres` never touched. Two attempts both failed on a
+> Longhorn fault, not a backup-content problem: `longhorn-manager` logs named it exactly —
+> *"insufficient storage… does not have enough storage available"* — and
+> `kubectl -n longhorn-system get nodes.longhorn.io` showed each worker's ~12.8GB disk already
+> ~100–170% `storageScheduled`. Root cause, found in `infra-terraform/tofu/variables.tf`'s own
+> sizing comment: `data_disk_gb` defaults to 12 and the comment names its own trigger — *"the first
+> workload that needs more than 12 GiB replicated"* — which this was. Two layers of orphaned
+> storage were cleaned along the way, both requiring `kubectl delete volumes.longhorn.io` in
+> addition to `kubectl delete pv` (deleting a PV under `reclaimPolicy: Retain` does not delete the
+> backing Longhorn `Volume` or its replicas — a two-step cleanup, easy to do only half of): two
+> pre-existing orphans (10d old, predate this session) and three left over from the two failed
+> attempts. After full cleanup, `storageScheduled` settled at **12.9GB on both workers — matching
+> the legitimate footprint (`paridyum` 4+2Gi, `garage-0` 5+1Gi ≈ 12Gi) almost exactly.** No more
+> debris exists anywhere; the disk is honestly ~100% committed by real data, zero headroom for
+> anything new. Production (`postgres/paridyum-1`, `paridyum-1-wal`) stayed `Bound`/healthy
+> throughout every step.
+>
+> **Fixed properly rather than waiting on the Proxmox disk resize:** `longhorn/storageclass-scratch.yaml`
+> (new) declares `longhorn-scratch` — `numberOfReplicas: "1"` (half the footprint of the estate
+> default's 2) and `reclaimPolicy: Delete` (so a normal `kubectl delete` is enough cleanup, no
+> second orphan-hunt). `postgres/restore-rehearsal.yaml` now requests it instead of the default
+> `longhorn` class; `postgres-restore-rehearsal-run` applies it automatically. Both manifests
+> dry-run clean. **This does not fix the underlying capacity gap** — `data_disk_gb` still needs
+> raising in `infra-terraform/tofu/variables.tf`, gated on checking the Proxmox `local-lvm` pool's
+> actual free space first (the same file's sizing comment explains why that check isn't optional:
+> at the last count 5 nodes × current defaults already approached the documented 118GiB pool
+> budget) — it only unblocks *disposable* work like this rehearsal without waiting for that.
+>
+> **Next action, historical:** `make postgres-restore-rehearsal-run`, watched by a human — this is
+> what was run, plus the `serverName` fix above, to close the task.
+>
+> *(2026-09-21 reading, superseded above: backups ran but to the same failure domain, the off-host
+> credential had never been created, and `kubectl -n postgres get backup` returned no `Backup`
+> resources despite a reported recent one — unchased, not evidence of failure, a gap in what could
+> be verified from outside.)*
+`0001_tenancy_foundation.sql` states in its own header that no real applicant may be inserted until
+ADR-0064 D3's gate passes: an off-host destination **and** a rehearsed restore. ADR-0094 supplied the
+endpoint and left the copy manual, so the estate's recovery point is a human's memory.
+**The largest task in Genesis and the one everything waits on.** It unblocks Paridyum's own hiring,
+`paridyum` → `stage: operated`, and — through that — every later stage in the product registry.
+**Done when:** the off-host copy is scheduled with a stated RPO, one restore has been performed and
+recorded, and the RPO is a number the attestation can cite. Implements RFC-0045 slice 4.
+
+---
+
+### Wave 2 — make the estate visible
+
+*Requires T-G.0. The first wave that produces the picture the control plane was always missing.*
+
+#### T-G.8 `Release` as a schema and a read model
+Record what is already deployed before deploying anything. Validates the entity shape against reality
+before a saga is written against it.
+**Done when:** every running deployment in the estate appears as a `Release` row with tenant, product,
+version, placement and state. Implements RFC-0049 slice 1.
+
+> **Checked 2026-09-24: the schema half is written, nothing is populated yet.**
+> `platform-tenancy/migrations/0013_release_is_a_product_running_for_a_tenant.sql` defines
+> `releases` and `release_events` exactly to RFC-0049 §A's tuple, and is `pending` in
+> `scripts/migrate.py status` — along with 0012, which it depends on for `accounts`. The
+> done-when needs more than the migration: the nine live Helm releases (PLAN-THREE-SURFACES.md
+> F0b) still need to be recorded as rows once the tables exist. Applying 0012+0013 unblocks this
+> task's remainder; it does not finish it.
+>
+> **Updated 2026-09-24 — 0012+0013 are applied (11:29); `0014` is not.** The tables exist, so the
+> nine Helm releases can be recorded as soon as `0014` lands and an `accounts` row exists — the
+> seed creates the `default` one itself. Separately, `scripts/seed-releases.py` was broken against its own schema
+> in three ways and is fixed: it inserted `name` where 0012 says `display_name`, omitted an `id`
+> that had lost its `DEFAULT uuidv7()`, and set two session values after a comment explaining at
+> length why three were required. `release_events` also became account-scoped in the same pass —
+> it was tenant-readable and leaked every sibling instance's deploy history by join, while passing
+> the gate, because the account check only interrogates tables that already carry the column.
+
+#### T-G.9 `/dashboard` renders the estate
+Tenants → Releases → version, placement, state, health. `/dashboard` stays a BFF and owns nothing
+(ADR-0100 D1); it gains the half it never had.
+**Done when:** Paridyum appears in `/dashboard` as one tenant among N, listing its landing, careers, docket,
+admin and `app`. Implements RFC-0049 slice 2.
+
+#### T-G.10 The placement resolver, inert
+`poolFor(tenantId)` replaces the module-level `pool()`. At C0 it returns the one pool that exists, so
+the change is behaviourally inert — and it is the seam every later containment rung needs.
+**Done when:** no request path constructs a pool directly, and an unresolvable tenant raises rather
+than falling back to a default. Implements RFC-0045 slice 3.
+
+#### T-G.11 The landing content schema → 
+RFC-0048 open question 1. `job_postings` had a natural schema because a posting is a known shape; a
+landing page's sections are not, and **an over-general schema is how a product becomes a page-builder
+by accident** — which is the C-0006 line the corrected RFC-0048 §B depends on staying the right side
+of.
+**Done when:** a migration defines tenant-scoped, localized (ADR-0096) landing content with a closed
+set of section types, and Paridyum's own copy is seeded as rows. → produces a migration.
+
+---
+
+### Wave 3 — the first real deploy
+
+#### T-G.12 Careers resolves its tenant from the request
+`paridyumTenantId()` is deleted. Public surfaces resolve the tenant from the hostname; an unresolvable
+host 404s rather than falling back. The ADR-0099 move, applied to the public half.
+**Done when:** two tenants' careers pages are served from one deployment, each showing only its own
+postings, and the config path is gone rather than retained as a fallback. RFC-0048 slices 3–4.
+
+#### T-G.13 The deploy saga, one product end to end
+`requested → deploying → active`, compensating to the previous Release and never to a deletion.
+Careers first because it is the simplest.
+**Done when:** a careers Release can be deployed, rolled back, and shown failing honestly in `/dashboard`.
+Implements RFC-0049 slice 3.
+
+#### T-G.14 The tenant-scoped extractor
+One walk of the declared scopes, pointed three ways: export (Art. 20), restore (from a PITR clone),
+delete (Art. 17, with a certificate written to a stream that outlives the data).
+**Done when:** a tenant's data can be exported, restored and erased without a superuser and without
+hand-written SQL. Implements RFC-0045 slice 5.
+
+---
+
+### Wave 4 — self-hosting and evidence
+
+#### T-G.15 Provisioning requests the entitled Releases
+ADR-0039's saga currently ends at `active` with nothing running. A tenant should become `active` when
+its products are running, not when its row is written.
+**Done when:** a newly provisioned tenant reaches `active` with its entitled products deployed.
+Implements RFC-0049 slice 4.
+
+#### T-G.16 Upgrade, rollback, channel
+Version per Release, channel per tenant. Solves RFC-0047's version-skew problem once, for everyone,
+rather than inventing it later for partners.
+**Done when:** a product can be upgraded and rolled back per tenant, and skew is visible in `/dashboard`.
+
+#### T-G.17 `app` registers its own Release
+Genesis versus steady state (RFC-0049 §D): `/dashboard` cannot bring itself into existence, and can manage
+its own existence thereafter. ADR-0100 D4 narrows from *the provisioner is not provisioned* to *the
+provisioner's first deployment is not provisioned*.
+**The mitigations are the task, not the feature.** Rollback must not depend on the new version
+working; the genesis path must stay runnable by a human; and a path nobody uses must be exercised on
+a schedule or it will not work when it is needed.
+**Done when:** `/dashboard` upgrades itself, rolls itself back, and the genesis path has been rehearsed and
+scheduled. Implements RFC-0049 slice 6.
+
+#### T-G.18 The isolation attestation
+Every field produced by a check rather than typed by a human; no framework claimed as satisfied
+(ADR-0041 D4); a field that cannot be produced is absent or `unknown`, never defaulted.
+**Done when:** a tenant can obtain a dated, signed statement of its placement, containment, proof
+time, recovery point and last privileged access — without asking an operator. Fills REQ-0022's empty
+`enforced_by`. Implements RFC-0045 slice 7.
+
+#### T-G.19 docket learns which instance it is serving ⛔ BLOCKS APPLYING 0012
+**⛔ docket's write path is broken until this lands — 0012 applied at 11:29 on 2026-09-24.**
+`tool-docket/src/adapters/pg.rs` has no concept of an account: `enter()` sets two session values and
+the inserts name no `account_id`, while the column is now NOT NULL in the live database. Reads
+serve; writes fail. Not production, and docket can be redeployed once this is in.
+
+It also needs to **create** the account it resolves: `accounts` holds 0 rows, so the
+`product='docket', slug='default'` row does not exist yet.
+
+The honest shape is ADR-0104 D5 path routing — `<tenant-host>/<product>/<slug>` — which this
+repository does not have. The permitted interim is to resolve the tenant's
+`product='docket', slug='default'` account row and carry it explicitly (ADR-0104 cost 2: a default
+instance is still an account, never a null). **It must fail loudly when that row is absent** — never
+a nil uuid, an `unwrap_or_default`, or a coalesce, which is precisely the widening-by-absence
+GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist to forbid.
+
+**Done when:** `enter()` sets all three session values, the five inserts carry `account_id`, and
+`prove-isolation.py` proves the docket account boundary behaviourally rather than by configuration.
+Full statement of the problem: `tool-docket/DECISION-DEBT.md` D-70.
+
+#### T-G.20 Decide how a non-operator session reads its own account → 
+`releases_read` lets a tenant read its own Release without operator scope (ADR-0100 D3 needs that:
+`<host>/dashboard` is a signed-in tenant surface). But `accounts` carries exactly one policy,
+`accounts_operator`, which is `FOR ALL` and requires `has_operator_scope()` — and `product` lives
+**only** on `accounts`, deliberately, because RFC-0015 forbids the second copy.
+
+So a dashboard session can read its Release row and cannot name the product it is an instance of.
+Either `accounts` gains a SELECT policy for the owning account, or those sessions carry operator
+scope and ADR-0100 D3 means something narrower than it reads. **This was left undecided rather than
+answered in a migration** — the estate's rule is that the artifact precedes the code, and this is a
+decision about who may read what.
+
+**Done when:** an ADR or an amendment to ADR-0100 settles it, and 0012's `accounts` policies match.
+**Blocks:** T-G.9, which cannot render a product name without it.
+
+---
+
+### What Genesis deliberately excludes
+
+- **RFC-0047 (renting the platform)** — designed, gated, and blocked on T-G.0c and ADR-0024 D9.
+- **RFC-0046 (BYOK)** — designed, build-gated on explicit direction, and blocked on T-G.0b.
+- **Quotas** (RFC-0045 slice 8) — real and unowned, but they degrade rather than leak, so they sit
+  behind everything that leaks or loses.
+- **`paridyum` → `stage: operated`** — a consequence of T-G.7 and the first real workload, not a task.
+  The registry's own note is the authority on when it becomes honest.
 
 ---
 

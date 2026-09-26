@@ -6,7 +6,7 @@ status: accepted
 created: 2026-08-21
 locked_at: null
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0098
 scope: [org]
 applies_to: ["*"]
 tags: [classes, naming, web, typescript, deployment, adr-0020, adr-0046, c-0005]

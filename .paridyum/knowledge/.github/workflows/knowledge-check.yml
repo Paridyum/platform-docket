@@ -17,6 +17,22 @@ on:
 
 permissions:
   contents: read
+  # ⚠️ WITHOUT THIS, THE PR-SIZE EXCEPTION MECHANISM CANNOT WORK — and it never has.
+  #
+  # check-pr.sh tells an author to put `Review-budget-exception: <reason>` in the PR body, and
+  # the step below reads that body with `gh pr view --json body`. Reading a PR body requires
+  # `pull-requests: read`; with `contents: read` alone the call is refused, the step's
+  # `|| : > /tmp/pr-body.md` fallback writes an EMPTY FILE, and check-pr.sh correctly reports
+  # that no exception was given.
+  #
+  # So the failure is silent by construction: a permission error and a genuinely absent
+  # exception produce byte-identical input. Every PR over 400 lines was unwaivable, and the
+  # error message told the author to do the one thing that could not take effect.
+  #
+  # Found 2026-09-20 on knowledge#1, by adding a valid exception and watching the check still
+  # refuse it. Same shape as console-docket's missing `packages: read`, which made that
+  # repository's CI die at startup for a week.
+  pull-requests: read
 
 jobs:
   knowledge:
@@ -67,7 +83,18 @@ jobs:
           GITHUB_BASE_REF: origin/${{ github.base_ref }}
         run: |
           git fetch --quiet origin "${{ github.base_ref }}"
-          gh pr view "${{ github.event.number }}" --json body -q .body > /tmp/pr-body.md || : > /tmp/pr-body.md
+          # `|| :` USED TO SWALLOW THE ERROR HERE, and that is what hid the missing
+          # `pull-requests: read` permission for the life of this workflow: a refused API call
+          # and a PR with genuinely no exception both produced an empty file, so check-pr.sh
+          # reported the same thing for both and the author was told to add a line that could
+          # never be read.
+          #
+          # Now it says which happened. An empty body is still tolerated — a PR may legitimately
+          # have none — but a FAILED fetch is reported as a failed fetch.
+          if ! gh pr view "${{ github.event.number }}" --json body -q .body > /tmp/pr-body.md; then
+            echo "::error::could not read the PR body — check-pr.sh cannot see a Review-budget-exception. This needs 'pull-requests: read'."
+            exit 1
+          fi
           ./scripts/check-pr.sh --body /tmp/pr-body.md
 
       - name: Commit identity and attribution (C-0003)

@@ -117,6 +117,18 @@ classes:
       second prefix. It does not: `library` is the same concept either way, and C-0005's
       crate-naming and no-binary rules bind the `rust` stack rather than the `lib-` prefix,
       so a TypeScript package under lib- is simply not governed by them.
+      THE OTHER HALF OF THAT QUESTION WENT UNANSWERED FOR SEVEN WEEKS AND IS ANSWERED BY
+      ADR-0107. RFC-0004 asked whether `lib-` becomes stack-parameterised OR a second prefix
+      appears; the paragraph above answers only the second half. It became load-bearing when
+      one capability — verifying a Zitadel token — needed a repository in both stacks, and a
+      repository declares exactly one `stack`, so two repositories wanted one name. The rule:
+      where a class declares MORE THAN ONE STACK, the repository name carries the stack as a
+      trailing segment (`lib-auth-rust`, `lib-auth-typescript`) and the published artifact
+      drops it (`paridyum-auth`, `@paridyum/auth`), because cargo and npm namespaces are
+      already per-stack. C-0007 carries the narrowing of its own "never a technology" rule.
+      IT IS WRITTEN AGAINST `stacks`, NOT AGAINST `lib-`, so `mobile` below — typescript and
+      dart — is governed by it without either entry being rewritten. That is the same reason
+      `deployable` and `ci` replaced ADR-0003's and ADR-0010's prefix globs.
 
   - class: mobile
     prefix: mobile-

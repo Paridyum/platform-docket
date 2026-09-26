@@ -96,6 +96,30 @@ provisioning stacks, two monitoring stacks, two on-call rotations, for one perso
 **Is there an arrangement where hosting and platform share everything that is safe to share, and
 share nothing that is not?**
 
+## Addendum, 2026-08-24 — B1 hardware is provisioned on a distribution whose libvirt confines
+
+RFC-0035 decision 3 requires sVirt confinement of QEMU. **Arch's libvirt cannot provide it** —
+AppArmor is not compiled in, there is no `virt-aa-helper`, and no configuration enables it. The
+full finding and its measured mitigations are in that decision's erratum.
+
+The consequence lands here rather than there, because this RFC owns the stages. **Stage B0 is
+permitted to run without hypervisor confinement**, on the same reasoning decision 6 of RFC-0035
+uses for nested virtualisation: sVirt's primary beneficiary is VM-to-VM isolation, and B0
+carries no workload Paridyum does not control.
+
+**Stage B1 is not.** B1 is the first fleet carrying external customers — mutually untrusted
+guests on shared hardware, which is precisely the configuration sVirt exists for and precisely
+the configuration both 2026 KVM escapes name as their worst case.
+
+**This costs nothing, because B1 buys hardware.** The B1 line already reads *"one rented Indian
+node as `fleet-shared`"* — new metal, provisioned fresh. Provisioning it on Proxmox VE's Debian
+base satisfies RFC-0035 D3 by construction, and `sitar` is never migrated: it remains the Arch
+workstation RFC-0023 licensed, and the operating-system question resolves where RFC-0023 said it
+would, *"the moment the machine stops being a workstation."*
+
+Recorded now rather than at B1, because the moment to discover that a stage requires a different
+operating system is not while buying the machine for it.
+
 ## Decision 1 — the fleet manager is shared, the data plane is not
 
 **One fleet manager. At least two physically separate fleets.**

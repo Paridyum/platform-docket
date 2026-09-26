@@ -1,0 +1,785 @@
+# Paridyum tool registry — every tool the estate uses, declared under ADR-0066.
+#
+# WHAT THIS FILE OWNS: adoption. Purpose, licence, source, criticality, exit path, and the
+# artifact that decided it. It is the answer to "what do we use, why, under what licence, and
+# how would we leave", which before 2026-09-05 was answerable only by reading the adopting
+# artifacts one at a time and a workstation runbook.
+#
+# ════════════════════════════════════════════════════════════════════════════════════════
+# WHAT THIS FILE DOES NOT OWN: A VERSION NUMBER, WHERE ANOTHER FILE HOLDS ONE.
+#
+# `pin_home` names the file or system that owns the pin. An entry carrying `pin_home` MUST NOT
+# carry `install.ref`, and `knowledge.tool_registry_holds_no_version` rejects one that does.
+#
+#   pin_home: toolchain-registry  — the number is in toolchain-registry.yaml, under some
+#                                   stack's `tooling:` key. That placement is odd and is
+#                                   ADR-0066 decision 8's recorded debt, not this file's to fix.
+#   pin_home: os                  — the OS package manager owns it. THIS IS AN ADMISSION, NOT
+#                                   A PIN. `brew install jq` on two workstations on two days
+#                                   installs two versions and nothing compares them. It is the
+#                                   honest state, it is a reproducibility gap, and it is in
+#                                   DECISION-DEBT.md rather than papered over with a number
+#                                   nobody decided.
+#   pin_home: agent-harness       — ADR-0007's plugin distribution owns it.
+#
+# RFC-0015 is the rule. A version copied into a second registry is this repository's oldest
+# defect moved sideways, and it is exactly how an end-of-life Node runtime reached three
+# repositories: not by anyone deciding wrongly, but by a fact having no home and then two.
+#
+# ════════════════════════════════════════════════════════════════════════════════════════
+# WHAT COUNTS AS A TOOL. ADR-0066 decision 7: a program the estate installs, pins, or depends
+# on the behaviour of. The test is "would a clean workstation fail without it, AND did someone
+# choose it?" — both, not either.
+#
+#   IN:  jq, gh, ripgrep — installed choices a machine may lack.
+#   OUT: sed, awk, grep, curl, make — POSIX surface. Nobody chose them and nothing pins them.
+#
+# The boundary is a judgement and no check makes it. `knowledge.tool_is_registered` was
+# considered and deliberately not declared: every mechanically decidable reading is either too
+# wide (every binary in every script) or too narrow (only what an installer installs). Declaring
+# it would be ADR-0002's failure — a rule marked enforced that enforces nothing. So a tool can
+# be adopted and never appear here, and nothing will say so. That is this file's standing gap.
+#
+# ════════════════════════════════════════════════════════════════════════════════════════
+# `adopted_by` AND RETROSPECTIVE ENTRIES. Most entries below name an artifact that RECORDS the
+# tool rather than one that decided it, because this registry arrived on 2026-09-05 and the
+# estate has been using `git`, `jq` and `gh` since 2026-08-06. Those say so in `notes`.
+# Recorded rather than backdated — the same choice toolchain-registry.yaml made for the
+# OpenTofu entry it added eight days late, and for the same reason: the gap between
+# `adopted_by`'s artifact and `declared` is the honest measure of how late governance was.
+#
+# RUN-0001 CARRIES A TABLE OF MOST OF THESE and it is not superseded by this file. It answers
+# "how do I install this on Fedora", which is a workstation question; this answers "why do we
+# have it and how would we leave", which is a governance question. Neither is generated from
+# the other today, which means they can disagree — the second-copy risk this registry exists to
+# reduce, arriving inside it. TASKS T-2.17.
+#
+# Schema: tool-registry.schema.json. Validated by knowledge.tool_registry_valid.
+# Sorted by id, ascending.
+# ════════════════════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+tools:
+  - id: act
+    purpose: Runs GitHub Actions workflows locally so a CI change is tested before it is pushed.
+    licence: MIT
+    source: https://github.com/nektos/act
+    tier: convenience
+    adopted_by: [ADR-0010]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Loss costs nothing but a slower feedback loop — the same workflow runs on GitHub, which
+      is where it is authoritative anyway. Replacement is pushing a branch and waiting.
+    notes: >
+      RETROSPECTIVE. Used by the CI work ADR-0010 describes; never decided by an artifact.
+      Pulls runner images, hence `network: always`.
+
+  - id: age
+    purpose: The key backend sops encrypts to, holding the identity that decrypts estate secrets.
+    licence: BSD-3-Clause
+    source: https://github.com/FiloSottile/age
+    tier: critical
+    adopted_by: [ADR-0057, RFC-0023]
+    pin_home: toolchain-registry
+    network: none
+    declared: 2026-09-05
+    exit: >
+      The X25519 recipient format is documented and small, and an emergency decrypt is
+      possible with any conforming implementation — rage is one. The real cost of leaving is
+      not the tool but the identity: RFC-0023 decision 5 generates it on the substrate and
+      keeps it off the authoring host, so a key format change means re-encrypting every secret
+      in the estate from the one machine that can read them.
+    notes: >
+      Pinned under `stack: ansible` in toolchain-registry.yaml although ADR-0057 makes it
+      estate-wide — it must exist wherever a secret is read, which is not only where Ansible
+      runs. That placement is ADR-0066 decision 8's debt.
+
+  - id: ansible
+    purpose: Configuration management for hosts the estate operates rather than provisions.
+    licence: GPL-3.0-or-later
+    source: https://github.com/ansible/ansible
+    tier: critical
+    adopted_by: [ADR-0056]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Losing Ansible costs the host configuration layer between OpenTofu and a running service.
+      The replacement is either a shell provisioner invoked from OpenTofu or a switch to an
+      immutable image, and both are weeks — the playbooks encode host knowledge that exists
+      nowhere else. STD-0016 is what would have to be rewritten. GPL is not an exit obstacle
+      here because the estate runs it rather than links against it.
+
+  - id: ansible-lint
+    purpose: Enforces STD-0016's playbook rules mechanically instead of at review.
+    licence: GPL-3.0-or-later
+    source: https://github.com/ansible/ansible-lint
+    tier: supporting
+    adopted_by: [STD-0016]
+    pin_home: toolchain-registry
+    network: none
+    declared: 2026-09-05
+    exit: >
+      Loss costs mechanical enforcement of STD-0016, not the ability to run playbooks. The
+      fallback is review, which is the state every rule is in before its check exists.
+
+  - id: archify
+    name: Archify
+    purpose: >
+      Renders workflow, sequence, dataflow and lifecycle diagrams from typed JSON IR into
+      single self-contained HTML files, for the four things no manifest models.
+    licence: MIT
+    source: https://github.com/tt-a1i/archify
+    tier: supporting
+    adopted_by: [ADR-0065, RFC-0040, STD-0020]
+    install:
+      method: git
+      ref: d8e4daf2610d512821365f41b139d874b29efe81
+      ref_dated: 2026-09-05
+      path: archify/bin/archify.mjs
+    network: explicit
+    declared: 2026-09-05
+    exit: >
+      Losing archify costs the renderer and not the content: the IR is plain JSON in our
+      repositories, validated against schemas we hold a copy of, and the rendered HTML already
+      committed keeps opening. STD-0002's Mermaid block remains in every ARCHITECTURE.md and is
+      the working fallback rather than a theoretical one, which is why ADR-0065 decision 4
+      refuses to retire it. Replacing the renderer means writing one against our own IR —
+      days, not weeks, because the IR is the expensive half and it is ours. A fork is the
+      cheaper path and MIT permits it.
+    notes: >
+      THE PIN IS A COMMIT SHA BECAUSE NOTHING ELSE IS AVAILABLE. `package.json` is
+      `"private": true` — the package is NOT published to npm, so there is no registry
+      signature, no provenance attestation and no immutable published artifact. Its newest tag
+      is v2.9.0 against a shipped version of 2.17.0-dev.1, so NO RELEASE TAG CORRESPONDS TO THE
+      CODE ANYONE WOULD RUN and a version pin would pin to something that does not exist.
+
+      THE DOCUMENTED INSTALL IS DECLINED. `npx skills add tt-a1i/archify -g` delegates the
+      clone to a third-party CLI at no pinned revision, which is an unpinned dependency
+      fetching an unpinned dependency. A plain `git clone` at a sha needs neither and is
+      content-addressed. ADR-0065 decision 5.
+
+      `network: explicit` is checked rather than assumed: `schemas/README.md` states that render
+      and validate never perform an unpinned network capture, and `archify brands capture` is
+      the only command that fetches. That command MUST NEVER be pointed at Paridyum's own mark
+      — STD-0015's `ui.mark_is_not_redrawn` requires byte-identity against the source board and
+      a capture is a re-export by definition.
+
+      Zero runtime dependencies; ajv, parse5, saxes and simple-icons are devDependencies.
+      Single maintainer, and 2.17.0-dev.1 is a development version by its own label. Verified
+      on this workstation 2026-09-05: `doctor` reports all fifteen subsystems ok under Node
+      26.8.1 and all five renderers render their bundled examples.
+
+  - id: cargo-audit
+    purpose: Reports RustSec advisories against a lockfile in CI.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/rustsec/rustsec
+    tier: supporting
+    adopted_by: [RUN-0001, REQ-0014]
+    install:
+      method: cargo
+      ref: latest-unpinned
+      ref_dated: 2026-09-05
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Overlaps cargo-deny's advisories check almost entirely; losing it costs little while
+      cargo-deny runs. The reason to keep both is stated nowhere, which is itself worth knowing.
+    notes: >
+      `ref: latest-unpinned` IS A DELIBERATE LIE-DETECTOR AND WILL FAIL
+      `knowledge.declared_tool_install_is_pinned` WHEN THAT CHECK IS BUILT. RUN-0001 says
+      `cargo install cargo-audit` with no version, so the honest record of the current state is
+      an unpinned install, and writing a version here would invent a decision nobody made. The
+      failing check is the correct outcome: four cargo-installed binaries are unpinned today
+      and the registry should say so loudly rather than quietly. DECISION-DEBT.md.
+
+  - id: cargo-chef
+    purpose: Caches the dependency layer of a Rust Docker build so images rebuild in seconds.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/LukeMathWalker/cargo-chef
+    tier: convenience
+    adopted_by: [RUN-0001]
+    install:
+      method: cargo
+      ref: latest-unpinned
+      ref_dated: 2026-09-05
+    network: none
+    declared: 2026-09-05
+    exit: >
+      Loss costs build time and nothing else — a Dockerfile without it builds correctly and
+      slowly. The replacement is a hand-written dependency-caching stage, an afternoon.
+    notes: Unpinned; see cargo-audit's note.
+
+  - id: cargo-deny
+    purpose: Enforces licence, advisory, ban and source policy on the Rust dependency graph in CI.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/EmbarkStudios/cargo-deny
+    tier: critical
+    adopted_by: [STD-0003, REQ-0012, REQ-0014]
+    install:
+      method: cargo
+      ref: latest-unpinned
+      ref_dated: 2026-09-05
+    network: always
+    declared: 2026-09-05
+    exit: >
+      This is REQ-0012's licence gate for the Rust half of the estate — the mechanism that
+      makes the exitability test automatic rather than remembered. Losing it means licence
+      review returns to a human reading a lockfile, which ADR-0052 names as the point where
+      the test gets skipped. No equivalent tool covers all four of licences, advisories, bans
+      and sources; replacing it means three tools and a wrapper.
+    notes: Unpinned; see cargo-audit's note. `deny.toml` in templates/rust-service is the policy.
+
+  - id: claude-code
+    name: Claude Code
+    purpose: >
+      The agent harness the estate's governance is enforced inside — hooks, skills and the
+      PreToolUse layer ADR-0007 describes as impossible to reason around.
+    licence: proprietary
+    source: https://claude.com/claude-code
+    tier: critical
+    adopted_by: [ADR-0007, REQ-0007]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      THE HARDEST EXIT IN THIS FILE AND THE ONE MOST WORTH WRITING DOWN. Three of ADR-0007's
+      four enforcement layers are harness-specific: the PreToolUse hooks, the SessionStart
+      artifact listing, and the Stop-hook checkpoint. Layers that survive a harness change are
+      the CI gates and the vendored knowledge snapshot, and those are the majority of what is
+      binding. Migrating means reimplementing the plugin against another harness's hook model
+      — weeks, and the skills are markdown that mostly ports. The estate is NOT dependent on
+      this vendor for its rules, only for their in-session enforcement, and that separation is
+      ADR-0007's design rather than luck. REQ-0012 §6 concentration applies: this vendor also
+      processes the repository.
+    notes: >
+      RETROSPECTIVE and unpinned. Installed from the vendor's own channel and self-updating,
+      so `pin_home: os` is generous — nothing pins it at all. REQ-0012 §1 wants approval
+      before adoption and this was adopted before REQ-0012 fired.
+
+  - id: cosign
+    purpose: Signs and verifies container images and attestations.
+    licence: Apache-2.0
+    source: https://github.com/sigstore/cosign
+    tier: supporting
+    adopted_by: [REQ-0014, ADR-0010]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Sigstore is the only credible free option for keyless signing; the alternative is a
+      long-lived signing key the estate must then custody, which REQ-0001 has no answer for
+      yet. Loss means unsigned artifacts, which is where the estate is today anyway.
+    notes: RETROSPECTIVE and aspirational — named in CI templates, not yet running anywhere.
+
+  - id: docker
+    purpose: Builds service images and runs local dependencies such as Postgres during tests.
+    licence: Apache-2.0
+    source: https://github.com/docker
+    tier: critical
+    adopted_by: [ADR-0010, ADR-0020, RUN-0001]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      The image FORMAT is an open standard and is not the lock-in; Docker Desktop's licence on
+      macOS is. Podman is a near-drop-in for both build and run, and testcontainers supports
+      it — days, not weeks. Worth revisiting before headcount makes Desktop's terms billable.
+    notes: RETROSPECTIVE. Podman was never evaluated against it; nobody chose Docker over it.
+
+  - id: ffmpeg
+    name: FFmpeg
+    purpose: >
+      Encodes the frames `vhs` captures into a GIF or video. Required by `vhs`; not invoked
+      directly by anything in this estate.
+    licence: LGPL-2.1-or-later
+    source: https://github.com/FFmpeg/FFmpeg
+    tier: supporting
+    adopted_by: [ADR-0075]
+    pin_home: os
+    network: none
+    declared: 2026-09-09
+    exit: >
+      Same path as `ttyd`: it is `vhs`'s dependency and exits with it. Nothing else in the estate
+      encodes video, so there is no second consumer to strand.
+    notes: >
+      Declared for `vhs` only. LICENCE DIFFERS FROM THE REST OF THIS FILE — LGPL rather than a
+      permissive licence. Unproblematic as an unmodified separate binary invoked by another
+      process, which is the only way it is used here; it would need thought before being linked
+      into anything shipped.
+
+  - id: gh
+    name: GitHub CLI
+    purpose: The GitHub API client every org-level script and forge operation goes through.
+    licence: MIT
+    source: https://github.com/cli/cli
+    tier: critical
+    adopted_by: [ADR-0004, RUN-0001]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Trivially replaceable by curl against the same REST API — the value is authentication
+      handling, not capability. The real dependency is GitHub itself (ADR-0004), and REQ-0012
+      §6 already records that this org's entire source of truth sits in one failure domain.
+    notes: RETROSPECTIVE. Used by check-org.sh and scripts/lib since 2026-08-06.
+
+  - id: git
+    purpose: Source control, and the substrate every artifact's immutability argument rests on.
+    licence: GPL-2.0-only
+    source: https://git-scm.com
+    tier: critical
+    adopted_by: [ADR-0001, C-0004]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      No exit. ADR-0031's errata model, C-0003's identity gate, ADR-0043's per-session
+      checkpoint branches and the whole locked-artifact record are git semantics, not merely
+      stored in git. Replacing it is replacing the governance model. Listed anyway because a
+      dependency with no exit is the most important kind to have written down.
+    notes: RETROSPECTIVE.
+
+  - id: gitleaks
+    purpose: Scans the tree and history for committed credentials, in CI and in pre-commit.
+    licence: MIT
+    source: https://github.com/gitleaks/gitleaks
+    tier: critical
+    adopted_by: [C-0004, REQ-0001]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      C-0004 makes a committed credential unremovable, so this is the only control standing
+      between a mistake and a permanent one. trufflehog is an equivalent substitute and the
+      `.gitleaks.toml` allowlist would need porting — a day. Not optional in the interval.
+    notes: RETROSPECTIVE. `repo.secret_scan_clean` is the check it implements.
+
+  - id: helm
+    purpose: Installs and templates cluster charts from values held in git.
+    licence: Apache-2.0
+    source: https://github.com/helm/helm
+    tier: critical
+    adopted_by: [ADR-0020]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      The charts are upstream's, so leaving Helm means rendering them once and maintaining the
+      output, or moving to a Kubernetes-native alternative that reads the same charts. Weeks,
+      and the cost is ongoing rather than one-off.
+    notes: >
+      toolchain-registry.yaml deliberately declines the `cilium` CLI on the grounds that it
+      wraps Helm and hides which values were applied. That reasoning is Helm's own argument
+      for being here.
+
+  - id: jq
+    purpose: Parses JSON in the enforcement hooks, which must run without a language runtime.
+    licence: MIT
+    source: https://github.com/jqlang/jq
+    tier: critical
+    adopted_by: [ADR-0007, RUN-0001]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      The PreToolUse and Stop hooks parse the harness's JSON payload and must stay fast and
+      dependency-free — artifact-registry.yaml's header records that a YAML parse per keystroke
+      is a hook people disable, and the same argument forbids reaching for Python here.
+      Replacement is a small parser in the hook itself, which is a day of work and a permanent
+      liability.
+    notes: RETROSPECTIVE. RUN-0001 calls it "required by the enforcement hooks", which is exact.
+
+  - id: just
+    purpose: The task runner generated repositories expose their commands through.
+    licence: CC0-1.0
+    source: https://github.com/casey/just
+    tier: supporting
+    adopted_by: [RUN-0001, STD-0004]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      A justfile is close enough to a makefile that porting is mechanical. The cost is that
+      every repository's documented commands change at once, so it is a wide, shallow change.
+    notes: RETROSPECTIVE.
+
+  - id: kubectl
+    purpose: The client that reaches the cluster.
+    licence: Apache-2.0
+    source: https://github.com/kubernetes/kubectl
+    tier: critical
+    adopted_by: [ADR-0020]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: No exit while ADR-0020 stands. It is the API's reference client.
+
+  - id: mermaid
+    name: Mermaid
+    purpose: >
+      Renders the one diagram STD-0002 requires in every ARCHITECTURE.md, inline in markdown so
+      it appears in a GitHub diff and a pull request review.
+    licence: MIT
+    source: https://github.com/mermaid-js/mermaid
+    tier: critical
+    adopted_by: [STD-0002, ADR-0040, ADR-0065]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      There is no substitute for the property that matters: GitHub renders Mermaid in a diff
+      and renders nothing else. Leaving it means every ARCHITECTURE.md diagram becomes an image
+      or a link, and a diagram a reviewer must leave the review to see is a diagram nobody
+      checks. This is also archify's exit path (ADR-0065 decision 4), so retiring Mermaid to
+      "avoid two tools" would trade a small redundancy for an unbounded switching cost.
+    notes: >
+      TIER `critical` WITH NO LOCAL INSTALL, WHICH LOOKS WRONG AND IS NOT. Nothing on a
+      workstation renders Mermaid — GitHub does it server-side, which is the entire reason it
+      was chosen. `pin_home: os` is a placeholder for "whatever GitHub runs", and nobody here
+      controls that version.
+
+      `docs.diagram_parses` HAS NO PARSER. It has been declared against tool-forge since
+      2026-08-09 and ADR-0040 calls it the cheapest of the checks that artifact declares.
+      Implementing it needs
+      `@mermaid-js/mermaid-cli` as a real, pinned entry in this file — which is the first thing
+      this registry has made visible that was previously only a gap in a backlog.
+
+  - id: netbird
+    purpose: The overlay network every operator session to a substrate host runs over.
+    licence: BSD-3-Clause
+    source: https://github.com/netbirdio/netbird
+    tier: critical
+    adopted_by: [ADR-0058, RFC-0036]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      WireGuard underneath is standard, so the exit is to self-managed WireGuard plus a
+      coordination story the estate would then own — days of work and a permanent operational
+      burden. Tailscale is the like-for-like substitute and fails the same test ADR-0052
+      applied to Terraform if its terms change. The self-hosted control plane is the mitigation
+      and it is not deployed.
+    notes: RETROSPECTIVE.
+
+  - id: node
+    name: Node.js
+    purpose: The runtime for the TypeScript stack, and what archify renders under.
+    licence: MIT
+    source: https://github.com/nodejs/node
+    tier: critical
+    adopted_by: [ADR-0046, RFC-0003, ADR-0065]
+    pin_home: toolchain-registry
+    network: none
+    declared: 2026-09-05
+    exit: >
+      No practical exit for the web stack while ADR-0046 stands. Deno and Bun run much of the
+      same code and neither is a drop-in for Next.js's build.
+    notes: >
+      THE WORKSTATION RUNS 26.8.1 AND toolchain-registry.yaml PINS 24.19.0. Measured
+      2026-09-05. Node 26 became LTS on 2026-10-28 by that file's own note, so this is a
+      workstation ahead of the pin rather than the end-of-life case that produced the pin —
+      but it is the same class of drift, found the same way, and no repository has been
+      rebuilt against 26 to know whether it holds. DECISION-DEBT.md.
+
+  - id: openssh
+    purpose: The transport for every operator session to a host, carried inside the tunnel.
+    licence: BSD-2-Clause
+    source: https://www.openssh.com
+    tier: critical
+    adopted_by: [ADR-0058]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      No exit and none wanted. ADR-0058 chose it over the alternatives precisely because it is
+      the thing every host already runs.
+    notes: RETROSPECTIVE.
+
+  - id: pnpm
+    purpose: The package manager that enforces RFC-0003's supply-chain posture for TypeScript.
+    licence: MIT
+    source: https://github.com/pnpm/pnpm
+    tier: critical
+    adopted_by: [RFC-0003, ADR-0046]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      npm and yarn both install the same registry, so the exit is mechanical — but the
+      lockfile format and the strict non-hoisted node_modules layout are what make phantom
+      dependencies fail loudly, and that property is lost with npm. Days to switch, a
+      permanent reduction in what the lockfile proves.
+
+  - id: pre-commit
+    purpose: Runs the bootstrap gates locally so a violation is caught before it is committed.
+    licence: MIT
+    source: https://github.com/pre-commit/pre-commit
+    tier: supporting
+    adopted_by: [ADR-0002, ADR-0007]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      The gates are shell scripts and run identically from a plain `.git/hooks/pre-commit`;
+      `scripts/install-hooks.sh` already does the wiring. Loss costs the local half of the
+      enforcement, never the CI half — ADR-0002 makes CI the lock, deliberately, for exactly
+      this reason.
+    notes: RETROSPECTIVE.
+
+  - id: python3
+    purpose: >
+      Runs the JSON Schema validator the knowledge gate depends on, and nothing else on a
+      delivered path.
+    licence: PSF-2.0
+    source: https://github.com/python/cpython
+    tier: critical
+    adopted_by: [ADR-0022, ADR-0014]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      `scripts/lib/validate-schema.py` is the only consumer and it is the mechanism behind
+      every `*_registry_valid` check. Rewriting it in Rust is what tool-forge is for and is
+      the intended path; until then the estate's registry validation depends on an interpreter
+      nothing pins.
+    notes: >
+      RETROSPECTIVE and load-bearing. check-knowledge.sh keeps bash fallbacks for when the
+      validator cannot run, which is the honest acknowledgement that this dependency is
+      unpinned. `pin_home: os` and a `critical` tier in the same entry is the shape of a real
+      gap, not a bookkeeping error.
+
+  - id: ripgrep
+    name: rg
+    purpose: The search used for retrieval across the estate before any capability is rebuilt.
+    licence: MIT OR Unlicense
+    source: https://github.com/BurntSushi/ripgrep
+    tier: convenience
+    adopted_by: [STD-0013]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: "`grep -r` does the same job slowly. There is no dependency here worth the word."
+    notes: >
+      RETROSPECTIVE. Listed because STD-0013's retrieval rule — find the capability before
+      rebuilding it — is upheld by a search nobody declared, and the rule is only as good as
+      the search being present.
+
+  - id: rustup
+    purpose: Installs and switches the Rust toolchain per repository from `rust-toolchain.toml`.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/rust-lang/rustup
+    tier: critical
+    adopted_by: [ADR-0005, STD-0003]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      No exit while ADR-0005 stands. RUN-0001 is explicit that a distro or Homebrew Rust
+      package cannot switch toolchains and will silently disagree with CI about the compiler
+      version, so the package-manager alternative is not an alternative.
+
+  - id: shellcheck
+    purpose: Lints the bootstrap gates, which are the only enforcement running today.
+    licence: GPL-3.0-only
+    source: https://github.com/koalaman/shellcheck
+    tier: supporting
+    adopted_by: [STD-0003, ADR-0002]
+    pin_home: os
+    network: none
+    declared: 2026-09-05
+    exit: >
+      No substitute of comparable quality. Loss returns shell review to a human, and the class
+      of defect it catches — unquoted expansion, a bash-4 builtin on macOS's bash 3.2 — is
+      exactly the class that already broke check-knowledge.sh once.
+    notes: RETROSPECTIVE.
+
+  - id: sops
+    purpose: Encrypts secrets at rest in git, decrypting only where a key exists.
+    licence: MPL-2.0
+    source: https://github.com/getsops/sops
+    tier: critical
+    adopted_by: [ADR-0057, RFC-0023]
+    pin_home: toolchain-registry
+    network: none
+    declared: 2026-09-05
+    exit: >
+      The file format is documented and the encryption is age underneath, so an emergency
+      decrypt is possible without the tool. Replacing it operationally means either sealed-
+      secrets in-cluster or an external manager REQ-0001 has not chosen yet. Weeks, and it
+      touches every repository that holds an encrypted file.
+    notes: >
+      Pinned under `stack: ansible` in toolchain-registry.yaml although ADR-0057 makes it
+      estate-wide. Same debt as the `age` entry records.
+
+  - id: sqlx-cli
+    purpose: Runs migrations and prepares offline query metadata for the Rust services.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/launchbadge/sqlx
+    tier: critical
+    adopted_by: [ADR-0008, STD-0006]
+    install:
+      method: cargo
+      ref: latest-unpinned
+      ref_dated: 2026-09-05
+    network: always
+    declared: 2026-09-05
+    exit: >
+      The migrations are plain SQL and portable; the offline query metadata is not, and
+      compile-time-checked queries are the reason sqlx was chosen. Leaving means either a live
+      database in CI or an ORM, and both are architectural rather than tooling changes.
+    notes: >
+      Unpinned; see cargo-audit's note. This is the tool whose 0.9.0 floor forced the Rust
+      toolchain pin that created toolchain-registry.yaml — the estate's most consequential
+      version constraint is set by a binary nothing pins.
+
+  - id: talosctl
+    purpose: Generates Talos machine configuration and talks to cluster nodes.
+    licence: MPL-2.0
+    source: https://github.com/siderolabs/talos
+    tier: critical
+    adopted_by: [RFC-0019, ADR-0020]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Bound to Talos itself rather than a separable choice — leaving the client means leaving
+      the node OS. RFC-0025 already rejected Sidero Omni on REQ-0012's exitability test while
+      keeping the open-source client, which is the line this entry sits on.
+
+  - id: texlive
+    purpose: >
+      Typesets tool-docket's LaTeX into the PDFs it issues. `pdflatex` specifically; the class
+      `latex/paridyum.cls` uses `pdfx` for PDF/A, which is what fixes the engine.
+    licence: LPPL-1.3c
+    source: https://tug.org/texlive/
+    tier: critical
+    adopted_by: [ADR-0005]
+    pin_home: os
+    network: none
+    declared: 2026-09-12
+    exit: >
+      There is no drop-in replacement, and that was established by trying one. Tectonic --
+      a single binary that fetches its own packages, and the obvious choice for CI -- cannot
+      render these documents: under its XeTeX engine `pdfx` fails with "CreationDate is not
+      properly supported". Leaving TeX Live therefore means dropping PDF/A or rewriting the
+      class, neither of which is a package swap. DECISION-DEBT D-57 holds the detail.
+    notes: >
+      DECLARED WHEN CI STARTED INSTALLING IT (D-30, D-35). A typesetter was a dependency of this
+      estate's only user-facing output from the beginning and was in no registry, because it
+      arrived as "whatever the developer already had" rather than as a decision.
+
+      `pin_home: os` is an admission rather than a pin, in this file's own words: CI installs
+      the Ubuntu runner's current packages and a developer installs whatever MacTeX ships, and
+      nothing compares the two. The mitigation that exists is ADR-0053's: a document's bytes are
+      verified against a recorded hash rather than by re-rendering, so an engine difference
+      cannot silently change what a stored document verifies as. D-8 and D-11 hold that.
+
+      CI installs a TARGETED SET, not `texlive-full` (~5GB): latex-base, latex-recommended,
+      latex-extra, pictures, fonts-recommended. Adding a \RequirePackage to the class may mean
+      adding a package to `.github/workflows/ci.yml`.
+
+  - id: tofu
+    name: OpenTofu
+    purpose: Provisions the substrate and service infrastructure declaratively.
+    licence: MPL-2.0
+    source: https://github.com/opentofu/opentofu
+    tier: critical
+    adopted_by: [ADR-0052]
+    pin_home: toolchain-registry
+    network: always
+    declared: 2026-09-05
+    exit: >
+      The state file and HCL are shared with Terraform, so the mechanical exit is a rename —
+      and it is the wrong direction: ADR-0052 chose OpenTofu BECAUSE Terraform has shipped
+      under BUSL since 1.6 and fails REQ-0012's exitability test. The meaningful exit is to a
+      different provisioning model entirely, which is months.
+    notes: >
+      Replaced `terraform` on 2026-08-20. ADR-0020 still requires a directory named
+      `terraform/` and `terraform.fmt_and_validate` is still the check id — ADR-0052 decision 2
+      keeps both deliberately. Do not "correct" either to match this entry.
+
+  - id: trivy
+    purpose: Scans images and filesystems for known vulnerabilities in CI.
+    licence: Apache-2.0
+    source: https://github.com/aquasecurity/trivy
+    tier: supporting
+    adopted_by: [REQ-0014, ADR-0010]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: grype is a direct substitute reading the same advisory sources; a day of work.
+    notes: RETROSPECTIVE and aspirational — named in CI templates, not yet gating anything.
+
+  - id: ttyd
+    name: ttyd
+    purpose: >
+      Shares a terminal over a local websocket. Required by `vhs`, which drives it to obtain a
+      virtual terminal to record; not invoked directly by anything in this estate.
+    licence: MIT
+    source: https://github.com/tsl0922/ttyd
+    tier: supporting
+    adopted_by: [ADR-0075]
+    pin_home: os
+    network: none
+    declared: 2026-09-09
+    exit: >
+      Not chosen and not replaceable independently — it is `vhs`'s dependency, so it exits when
+      `vhs` does and by the same path. Registered separately because ADR-0075 decision 5 refuses
+      to let a transitive binary go undeclared: an undeclared dependency is precisely the one
+      that breaks a build on a machine that is not the author's.
+    notes: >
+      Declared for `vhs` only. Its own capability — serving a terminal over the network — is
+      NOT adopted and must not be used: it is the shape ADR-0068 decision 1 refuses.
+
+  - id: uv
+    purpose: Resolves the Python environment for the schema validator when one is needed.
+    licence: MIT OR Apache-2.0
+    source: https://github.com/astral-sh/uv
+    tier: convenience
+    adopted_by: [ADR-0022]
+    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      pip does the same job. The validator is deliberately written to run against a stdlib
+      interpreter where possible, precisely so this is not load-bearing.
+    notes: RETROSPECTIVE. Used once in scripts; the dependency is thinner than the entry implies.
+
+  - id: vhs
+    name: VHS
+    purpose: >
+      Runs a declarative `.tape` script against a virtual terminal and emits a GIF or PNG frame
+      sequence, so a documented command SEQUENCE — the loop, the ordering, and the refusals that
+      are a tool's safety properties — is executed in CI rather than pasted by hand.
+    licence: MIT
+    source: https://github.com/charmbracelet/vhs
+    tier: supporting
+    adopted_by: [ADR-0075]
+    install:
+      method: os-package
+      ref: v0.11.0
+      ref_dated: 2026-03-10
+    network: none
+    declared: 2026-09-09
+    exit: >
+      Losing VHS costs the picture, never the assertion. ADR-0075's rejected alternatives name
+      the replacement explicitly: a shell script that runs the same sequence and diffs a text
+      transcript covers decision 2's assertion half with no pins at all, and is the stated
+      fallback rather than a theoretical one. Committed casts keep rendering; tapes are plain
+      text describing a sequence we own. MIT permits a fork, but the likelier path is that the
+      transcript script is written and the recorder is simply not replaced.
+    notes: >
+      THREE PINS, AND TWO OF THEM ARE THE WEAK KIND. VHS requires `ttyd` and `ffmpeg` on `PATH`,
+      registered separately below because the registry's rule is that every pin has one home.
+      Both are `pin_home: os`, the same posture `python3` carries with its RETROSPECTIVE note,
+      and it is the honest reading: a documentation build depending on three binaries this
+      estate does not pin will break on a machine that is not the author's.
+      DETERMINISM IS UNPROVEN. Upstream documentation does not address frame-level
+      reproducibility and the renderer is timing-based, so identical tapes may produce
+      differing bytes across machines. ADR-0075's consequences record this rather than assume
+      it away; if casts churn without behaviour changing, commit them less often.
+      DOCUMENTATION BUILD ONLY. Never on a delivered path.

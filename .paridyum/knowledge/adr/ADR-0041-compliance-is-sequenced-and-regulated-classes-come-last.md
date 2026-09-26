@@ -25,6 +25,17 @@ enforced_by:
     rationale: >
       An audit record whose instant nobody recorded cannot evidence when access occurred, which
       is the question every one of these frameworks asks first.
+  - check: db.region_is_chosen_at_provisioning_and_immutable
+    severity: error
+    rationale: >
+      Decision 3 calls region contractual and immutable. This is that decision made mechanical: a
+      DEFAULTed region places a tenant in a jurisdiction nobody chose, which decision 3 names as a
+      residency breach every existing check reports as green.
+  - check: domain.a_named_rung_is_an_operable_rung
+    severity: error
+    rationale: >
+      Decision 3's companion for containment. A rung named in an attestation that nothing can
+      actually operate is a claim, and decision 4 forbids claiming what is not true.
 ---
 
 # ADR-0041 — Compliance is sequenced

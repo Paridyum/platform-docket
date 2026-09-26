@@ -1,27 +1,31 @@
 //! Verifying an operator's Zitadel token (ADR-0092).
 //!
 //! The served console forwards a bearer token from the control-plane instance (id.paridyum.com).
-//! This validates it against that instance's JWKS, pins the issuer and the `paridyum-operations`
-//! audience — a correctly-signed token minted for another application is otherwise accepted
-//! (ADR-0047 D5 / ADR-0070 D4) — requires the `operator` role, and returns the opaque subject. The
-//! subject is then bound to a docket operator by `registry::Registry::by_subject` (ADR-0092 §2), on
-//! the permanent id rather than the mutable loginname so a rename cannot reattribute the ledger.
+//! **The verification is `paridyum-auth`** (`lib-auth-rust`) since 2026-09-24: this module was the
+//! estate's second in-crate RSA/JWKS verifier and ADR-0092 §3 recorded it as debt until a third
+//! consumer appeared. `platform-tenancy` was the third; ADR-0107 settled the name and the crate
+//! exists, so what remains here is docket's own policy, which a shared library must not hold
+//! (ANTI-0004):
 //!
-//! This is the estate's second in-crate RSA/JWKS verifier (platform-identity has the first);
-//! ADR-0092 §3 records that a shared Rust `lib-auth` waits for a third consumer rather than being
-//! extracted speculatively.
+//! - the issuer and audience this tool pins — one plane, `id.paridyum.com`, and the
+//!   `paridyum-operations` project, so a tenant-plane token is refused outright rather than
+//!   downgraded (ADR-0047 D5 / ADR-0070 D4);
+//! - the `operator` **role** requirement (ADR-0092 D1);
+//! - deriving the tenant uuid from the `resourceowner` claim (ADR-0082 / ADR-0099).
+//!
+//! The subject is then bound to a docket operator by `registry::Registry::by_subject` (ADR-0092 §2),
+//! on the permanent id rather than the mutable loginname so a rename cannot reattribute the ledger.
 
 use crate::domain::tenant::derive_tenant_id;
 use anyhow::{Context, Result, bail};
-use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
-use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use jsonwebtoken::DecodingKey;
+use paridyum_auth::{JwksVerifier, Pins, Plane, TokenVerifier as _};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
-/// The Zitadel claim carrying the signing-in user's organization id — present when the
-/// `urn:zitadel:iam:user:resourceowner` scope is requested (oidc.rs / web-admin do). ADR-0099
-/// derives the tenant uuid from it (ADR-0082), which is the RLS context for the request.
-const RESOURCEOWNER_ID_CLAIM: &str = "urn:zitadel:iam:user:resourceowner:id";
+// Re-exported so `serve.rs` parses a fetched JWKS without naming the shared crate: the fetch stays
+// here (a startup concern of the deployable, ADR-0047 D4) and the parsing is the library's.
+pub use paridyum_auth::keys_from_jwks;
 
 /// The role a token must carry to operate docket.
 const OPERATOR_ROLE: &str = "operator";
@@ -40,103 +44,52 @@ pub struct VerifiedOperator {
 }
 
 /// Validates operator tokens against the control-plane instance's published keys.
-pub struct OperatorVerifier {
-    keys: BTreeMap<String, DecodingKey>,
-    issuer: String,
-    audience: String,
-}
+pub struct OperatorVerifier(JwksVerifier);
 
 impl OperatorVerifier {
     /// Build a verifier from `kid`-keyed decoding keys and the pins it enforces.
+    ///
+    /// One plane, deliberately: a token from the tenant instance is not an operator, and pinning a
+    /// single issuer is what refuses it rather than accepting it with fewer privileges.
     #[must_use]
     pub fn new(keys: BTreeMap<String, DecodingKey>, issuer: String, audience: String) -> Self {
-        Self {
+        Self(JwksVerifier::new(
             keys,
-            issuer,
-            audience,
-        }
+            Pins::single_plane(Plane::Control, issuer, audience),
+        ))
     }
 
-    /// Verify a bearer token, returning the operator subject or an error naming the first failure.
+    /// Verify a bearer token, returning the operator subject and tenant, or an error naming the
+    /// first failure.
     ///
     /// # Errors
     /// Fails on a missing or unknown key id, a bad signature, the wrong issuer or audience, an
-    /// expired token, a token without the `operator` role, or one carrying no subject.
+    /// expired token, a token without the `operator` role, or one carrying no `resourceowner`.
     pub fn verify(&self, token: &str) -> Result<VerifiedOperator> {
+        // Lenient about the `Bearer ` prefix, as this adapter has always been. The shared crate's
+        // `strip_bearer` is strict and is used by the platform services; tightening this caller
+        // while moving its code would be a behaviour change smuggled in as a refactor.
         let token = token.strip_prefix(BEARER).unwrap_or(token).trim();
-        let header = decode_header(token).context("the token header is undecodable")?;
-        let kid = header.kid.context("the token header carries no key id")?;
-        let key = self
-            .keys
-            .get(&kid)
-            .context("no published key matches the token's key id")?;
+        let principal = self
+            .0
+            .verify(token)
+            .map_err(|e| anyhow::anyhow!("{e}"))
+            .context("the token was rejected")?;
 
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-        validation.set_issuer(&[self.issuer.as_str()]);
-        validation.set_audience(&[self.audience.as_str()]);
-        let data = decode::<Value>(token, key, &validation).context("the token was rejected")?;
-
-        if !roles_from_claims(&data.claims).contains(OPERATOR_ROLE) {
+        if !principal.has_role(OPERATOR_ROLE) {
             bail!("the token does not carry the '{OPERATOR_ROLE}' role");
         }
-        let subject = data
-            .claims
-            .get("sub")
-            .and_then(Value::as_str)
-            .context("the token carries no subject")?
-            .to_owned();
-        let org = data
-            .claims
-            .get(RESOURCEOWNER_ID_CLAIM)
-            .and_then(Value::as_str)
-            .context(
-                "the token carries no resourceowner (org id). The CLI/console must request the \
-                 `urn:zitadel:iam:user:resourceowner` scope so docket can derive the tenant \
-                 (ADR-0099); a multi-tenant request cannot be defaulted to one.",
-            )?;
+        let org = principal.organization_id().context(
+            "the token carries no resourceowner (org id). The CLI/console must request the \
+             `urn:zitadel:iam:user:resourceowner` scope so docket can derive the tenant \
+             (ADR-0099); a multi-tenant request cannot be defaulted to one.",
+        )?;
         let tenant = derive_tenant_id(org)?;
-        Ok(VerifiedOperator { subject, tenant })
+        Ok(VerifiedOperator {
+            subject: principal.subject().to_owned(),
+            tenant,
+        })
     }
-}
-
-/// Pull the roles out of Zitadel's `urn:zitadel:iam:org:project:{projectId}:roles` claim, whose key
-/// carries the project id and whose value is an object keyed by role name.
-fn roles_from_claims(claims: &Value) -> BTreeSet<String> {
-    let Some(map) = claims.as_object() else {
-        return BTreeSet::new();
-    };
-    for (key, value) in map {
-        if !(key.starts_with("urn:zitadel:iam:org:project:") && key.ends_with(":roles")) {
-            continue;
-        }
-        if let Some(roles) = value.as_object() {
-            return roles.keys().cloned().collect();
-        }
-    }
-    BTreeSet::new()
-}
-
-/// Parse a JWKS document into `kid`-keyed decoding keys. Extracted from the binary's startup fetch
-/// so the parsing is unit-testable and stays off the request path (ADR-0047 D4).
-#[must_use]
-pub fn keys_from_jwks(jwks: &Value) -> BTreeMap<String, DecodingKey> {
-    let mut out = BTreeMap::new();
-    let Some(keys) = jwks.get("keys").and_then(Value::as_array) else {
-        return out;
-    };
-    for key in keys {
-        let (Some(kid), Some(n), Some(e)) = (
-            key.get("kid").and_then(Value::as_str),
-            key.get("n").and_then(Value::as_str),
-            key.get("e").and_then(Value::as_str),
-        ) else {
-            continue;
-        };
-        if let Ok(dk) = DecodingKey::from_rsa_components(n, e) {
-            out.insert(kid.to_owned(), dk);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -148,7 +101,7 @@ mod tests {
     use jsonwebtoken::{EncodingKey, Header, encode};
     use rsa::RsaPrivateKey;
     use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     const ISS: &str = "https://id.paridyum.com";
     const AUD: &str = "390606436373103770"; // the paridyum-operations project (control plane)
@@ -214,7 +167,10 @@ mod tests {
     fn a_bearer_prefix_is_accepted() {
         let (enc, v) = keypair();
         let token = format!("Bearer {}", sign(&enc, &operator_claims()));
-        assert!(v.verify(&token).is_ok());
+        assert!(
+            v.verify(&token).is_ok(),
+            "this adapter has always tolerated the prefix, and still must"
+        );
     }
 
     #[test]
@@ -225,6 +181,9 @@ mod tests {
         assert!(v.verify(&sign(&enc, &claims)).is_err());
     }
 
+    // The next three assert THIS TOOL'S PINS rather than the library's logic: that docket pins one
+    // plane and the operations project, and therefore refuses what it should. The library tests
+    // cover the verification itself.
     #[test]
     fn the_wrong_issuer_is_refused() {
         let (enc, v) = keypair();
@@ -253,14 +212,5 @@ mod tests {
         let mut claims = operator_claims();
         claims["exp"] = json!(1_000u64);
         assert!(v.verify(&sign(&enc, &claims)).is_err());
-    }
-
-    #[test]
-    fn an_unknown_key_id_is_refused() {
-        let (enc, v) = keypair();
-        let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
-        header.kid = Some("unknown".to_owned());
-        let token = encode(&header, &operator_claims(), &enc).expect("sign");
-        assert!(v.verify(&token).is_err());
     }
 }

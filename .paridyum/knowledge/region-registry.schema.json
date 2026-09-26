@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://paridyum.com/schema/region-registry.schema.json",
   "title": "Paridyum region registry",
-  "description": "Proposed under RFC-0014. TWO BLOCKS, deliberately separate. `jurisdictions` is the namespace — legal boundaries we intend to serve, from which nothing infrastructural is generated. `regions` is what exists; every region code must name a declared jurisdiction. A jurisdiction with no region is the normal case. The archive declared eight regions and deployed one, all eight seeded pointing at the same endpoint; that is the failure this separation prevents.",
+  "description": "Proposed under RFC-0014. TWO BLOCKS, deliberately separate. `jurisdictions` is the namespace \u2014 legal boundaries we intend to serve, from which nothing infrastructural is generated. `regions` is what exists; every region code must name a declared jurisdiction. A jurisdiction with no region is the normal case. The archive declared eight regions and deployed one, all eight seeded pointing at the same endpoint; that is the failure this separation prevents.",
   "type": "object",
   "required": [
     "jurisdictions",
@@ -43,7 +43,7 @@
         "code": {
           "type": "string",
           "pattern": "^[a-z]{2}(-[a-z]{2,8})?$",
-          "description": "The key, and the only identifier anything else may reference. MUST name a jurisdiction declared in `jurisdictions` — a region is a jurisdiction that has been built. Never carries a number: two locations in one jurisdiction are two datacentres by this model's own definition, so a number could only ever distinguish buildings. The archive's AWS-shaped codes are the counter-example — `ap-south-1` and `ap-south-2` are Mumbai and Hyderabad, both India, and AWS calls them two REGIONS. Immutable: tenant.region references it and ADR-0041 makes that contractual."
+          "description": "The key, and the only identifier anything else may reference. MUST name a jurisdiction declared in `jurisdictions` \u2014 a region is a jurisdiction that has been built. Never carries a number: two locations in one jurisdiction are two datacentres by this model's own definition, so a number could only ever distinguish buildings. The archive's AWS-shaped codes are the counter-example \u2014 `ap-south-1` and `ap-south-2` are Mumbai and Hyderabad, both India, and AWS calls them two REGIONS. Immutable: tenant.region references it and ADR-0041 makes that contractual."
         },
         "name": {
           "type": "string",
@@ -87,7 +87,7 @@
         "datacentres": {
           "type": "array",
           "minItems": 1,
-          "description": "Failure domains inside the residency boundary. AT LEAST ONE MUST BE `live`: a region whose datacentres are all planned is a region that does not exist, and belongs in `jurisdictions` until one of them does. That is the archive's defect stated as a constraint — it declared eight regions, deployed one, and seeded all eight pointing at the same cluster-local endpoint. A count of one live datacentre also means RFC-0015 decision 3 gives this region restore-from-backup rather than fast recovery, which is why the count is per-region data rather than a platform-wide assumption.",
+          "description": "Failure domains inside the residency boundary. AT LEAST ONE MUST BE `live`: a region whose datacentres are all planned is a region that does not exist, and belongs in `jurisdictions` until one of them does. That is the archive's defect stated as a constraint \u2014 it declared eight regions, deployed one, and seeded all eight pointing at the same cluster-local endpoint. A count of one live datacentre also means RFC-0015 decision 3 gives this region restore-from-backup rather than fast recovery, which is why the count is per-region data rather than a platform-wide assumption.",
           "items": {
             "$ref": "#/$defs/datacentre"
           },
@@ -125,7 +125,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z]{2}(-[a-z]{2,8})?-[a-z]{3}-[0-9]+$",
-          "description": "`<region code>-<IATA city code>-<ordinal>`, e.g. `in-mum-1`. The ordinal distinguishes buildings and nothing else. Never appears in a tenant-facing surface, a contract, or an API response — naming one there would make an operational fact contractual by accident."
+          "description": "`<region code>-<IATA city code>-<ordinal>`, e.g. `in-mum-1`. The ordinal distinguishes buildings and nothing else. Never appears in a tenant-facing surface, a contract, or an API response \u2014 naming one there would make an operational fact contractual by accident."
         },
         "status": {
           "enum": [
@@ -160,7 +160,7 @@
         },
         "continent": {
           "type": "string",
-          "description": "Grouping for display only. Carries no legal meaning — `eu` spans a continent's subset, not the continent."
+          "description": "Grouping for display only. Carries no legal meaning \u2014 `eu` spans a continent's subset, not the continent."
         },
         "countries": {
           "type": "array",
@@ -173,7 +173,7 @@
         },
         "regime": {
           "type": "string",
-          "description": "The governing law, named. Records what the boundary IS, never that we satisfy it — ADR-0041 decision 4 forbids claiming a framework before an audit says so."
+          "description": "The governing law, named. Records what the boundary IS, never that we satisfy it \u2014 ADR-0041 decision 4 forbids claiming a framework before an audit says so."
         },
         "localization": {
           "enum": [
@@ -181,10 +181,18 @@
             "sectoral",
             "general"
           ],
-          "description": "Whether the regime forces data to stay in-country. `none` for most — transfer is permitted with safeguards. `sectoral` is the field that matters: Indonesian banking and healthcare, Indian payment data. A sectoral mandate fires on the first customer in that SECTOR, not that country, which a country-driven region plan would miss entirely."
+          "description": "Whether the regime forces data to stay in-country. `none` for most \u2014 transfer is permitted with safeguards. `sectoral` is the field that matters: Indonesian banking and healthcare, Indian payment data. A sectoral mandate fires on the first customer in that SECTOR, not that country, which a country-driven region plan would miss entirely."
         },
         "notes": {
           "type": "string"
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "coming_soon",
+            "on_request"
+          ],
+          "description": "What a tenant-facing surface says about a jurisdiction that has NO live region (RFC-0051 \u00a7A2). Absent is the normal case and means the jurisdiction's availability is read from the regions list rather than claimed here \u2014 if a live region exists the jurisdiction is operational, and this field is meaningless. It exists because 'coming soon' is a CLAIM about intent, and STD-0021 forbids a surface manufacturing credibility it has not earned: a screen implying thirteen jurisdictions are queued, when nothing in the estate says they are, is that failure arriving through a form control. Putting the claim here makes it wrong in an artifact rather than only in a UI. `coming_soon` asserts a build is intended. `on_request` asserts none is planned and a contract could start one, and is the honest default for a jurisdiction nobody has committed to. This does NOT add a second status authority (RFC-0014 decision 1): a region's status remains the one switch, and this is a property of a jurisdiction, which has no status."
         }
       }
     }

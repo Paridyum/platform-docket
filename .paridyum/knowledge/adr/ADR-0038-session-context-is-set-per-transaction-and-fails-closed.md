@@ -100,7 +100,12 @@ default to `false` on an unset setting.** A default of `false` is safe for reads
 rule: it converts a configuration failure into a silently narrower result set, which nobody
 reports and which hides the bug until the day the value is needed and still absent.
 
-**3. The settings are set with `SET LOCAL`, inside the transaction, by `lib-auth`.**
+**3. The settings are set with `SET LOCAL`, inside the transaction, by `lib-auth-typescript`.**
+
+> **Named `lib-auth` when this was written.** The repository was renamed on 2026-09-24 under
+> ADR-0107, when the same capability needed a Rust sibling and two repositories wanted one name.
+> The published package — `@paridyum/auth` — did not change, so every code reference in this ADR
+> still resolves. STD-0022 requires the live name here rather than the historical one.
 
 ```sql
 SET LOCAL paridyum.tenant_id     = '...';
@@ -135,7 +140,7 @@ trustworthy as the signature that carries it.
 
 **Account.** Zitadel has no isolation level below the organization — the vendor's own words:
 *"ZITADEL does not enforce a native hierarchy or inheritance for users or organizations."* So an
-account is not a Zitadel object at all; it is Paridyum's entity, and `lib-auth` resolves it from
+account is not a Zitadel object at all; it is Paridyum's entity, and `lib-auth-typescript` resolves it from
 Paridyum's tables. Storing `account_id` in Zitadel user metadata was considered and rejected
 under **ANTI-0001**: it would create a second writer for a fact this organisation owns, and the
 drift would land on the inner silo.
@@ -149,14 +154,14 @@ protect.
 **5. The repository layer asserts the account discriminator on every row it returns.** Added
 2026-08-08 in response to ADR-0045 risk R1.
 
-`lib-auth` compares each returned row's `account_id` against `paridyum.account_id` and raises on
+`lib-auth-typescript` compares each returned row's `account_id` against `paridyum.account_id` and raises on
 a mismatch — a defect, never a filtered result. This is **deliberately redundant with RLS**, and
 the redundancy is the point: since RFC-0012 moved tenants to Zitadel organizations, the
 account↔account boundary is enforced by exactly one control, and GLO-0004 rates crossing it
 *"catastrophic for that business."*
 
 The two controls fail independently. RLS fails through a policy that omits `account_id`, a
-missing `FORCE`, or a role holding `BYPASSRLS`. The assertion fails only if `lib-auth` itself is
+missing `FORCE`, or a role holding `BYPASSRLS`. The assertion fails only if `lib-auth-typescript` itself is
 wrong. Neither catches the other's failure, which is what makes two of them worth the cost.
 
 It is cheap — one comparison per row, on data already in memory — and it must **raise rather than

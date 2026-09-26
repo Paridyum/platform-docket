@@ -2,11 +2,11 @@
 id: ADR-0042
 title: The runtime decomposes into five first-wave bounded contexts, one repository each
 type: adr
-status: accepted
+status: superseded
 created: 2026-08-08
 locked_at: null
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0101
 scope: [org, platform, service, spec]
 applies_to: ["*"]
 tags: [decomposition, bounded-contexts, tenancy, identity, adr-0019, rfc-0009]

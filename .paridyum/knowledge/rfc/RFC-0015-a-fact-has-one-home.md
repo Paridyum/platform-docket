@@ -12,13 +12,53 @@ applies_to: ["*"]
 tags: [region, residency, replication, disaster-recovery, entitlement, placement, gdpr, adr-0041, adr-0047]
 breaking: false
 enforced_by: []
+sources:
+  - url: https://www.datacenterdynamics.com/en/news/aws-unable-to-restore-access-to-data-centers-hit-by-iran-strikes/
+    title: "Datacentre Dynamics — AWS 'unable to restore access' to data centers hit by Iran strikes"
+    retrieved: 2026-09-24
+    supports: >
+      AWS declared data hosted exclusively in one damaged UAE availability zone permanently
+      unrecoverable, and damage in Bahrain spanned multiple zones — physical destruction exceeded
+      the level the region's multi-zone design was built to withstand. The failure a sealed
+      off-jurisdiction copy addresses is real at building scale, not hypothetical.
+  - url: https://www.chosun.com/english/industry-en/2026/09/16/OQE6F6MFLNASVAG2YRPVOUABAA/
+    title: "Chosun — AWS permanent data loss in the Middle East after Iran attacks"
+    retrieved: 2026-09-24
+    supports: >
+      Data that had not been copied out of the region was completely lost; the mitigation was
+      migration to another region. The copy that survived was the copy outside the damaged
+      facility — the class of copy decision 3's revision distinguishes.
+  - url: https://www.edps.europa.eu/sites/default/files/publication/edpb_recommendations_on_supplementary_measures_-_dpo_meeting_11_dec_2020_en.pdf
+    title: "EDPB Recommendations 01/2020 on measures that supplement transfer tools"
+    retrieved: 2026-09-24
+    supports: >
+      Encryption can be an effective supplementary measure for a third-country transfer — the
+      recommendations' hosting scenario is storage abroad under keys retained by the exporter — but
+      it supplements the transfer rules rather than exempting a transfer from them, because the
+      exporter keeps the keys. The legal reading the revision's conditions implement. The condition
+      is specifically that keys are held by the exporter, or an entity in the EEA or an adequate
+      third country — not merely "not the destination" — which is a narrower bar than ADR-0071
+      states and is the reason this RFC's key-custody gap (see the 2026-09-24 review note below)
+      is a real one rather than a formality.
+  - url: https://www.dpdpa.com/dpdparules/rule15.html
+    title: "DPDP Rules 2025, Rule 15 — transfer of personal data outside India"
+    retrieved: 2026-09-24
+    supports: >
+      Rule 15, finalised with the Rules' notification on 2025-11-13, is a permissive default: a
+      Data Fiduciary may transfer personal data outside India, restricted only by a Central
+      Government general or special order naming a country or sector. No such order exists yet —
+      no blacklist, no mandated encryption, no required DPA. This RFC's four sealed-copy conditions
+      are therefore stricter than current Indian law requires; MKT-0003's "negative list, not yet
+      published" framing is confirmed current, not stale.
 ---
 
 # RFC-0015 — A fact has one home
 
 ## Status
 
-**PROPOSED** as of 2026-08-11. Feedback deadline **2026-09-10**.
+**PROPOSED** as of 2026-08-11. Feedback deadline **2026-09-10**. **Revised 2026-09-24** — decision 3,
+and the revision is part of what review now reads; the status stays `proposed` until a human accepts
+it.
 
 **Second of four.** RFC-0014 defines the structure — what a region is, what the planes are, how a
 table declares its plane. This RFC decides how those planes behave: what may cross between them,
@@ -177,6 +217,93 @@ gated actions and provisioning, so its recovery objectives are not one row in a 
 estate's worst case. REQ-0004 item 12 requires an RPO and RTO stated and *"restores drilled"*; an
 unverified backup is not a backup. Those figures are not chosen here.
 
+### Sealed copies are not replication — REVISED 2026-09-24
+
+**This decision was written on 2026-08-11, before ADR-0071 (2026-09-07) chose an off-host store
+that sits in Canada.** The estate therefore already sends an encrypted copy out of the jurisdiction
+while the paragraphs above, read literally, say no backup may cross. Two accepted positions, three
+weeks apart, never reconciled — and a reader of this section alone would conclude the Sync copy is
+a violation. It is not, and this revision states the distinction the original draft did not have.
+
+**What is refused is a copy with operational consequences.** D1's objection is not geography for
+its own sake. A copy that serves a request, resolves an entitlement, holds a session or is kept in
+sync must stay consistent, must go stale correctly, and must be reachable by a deletion and by a
+suspension — D4's rule, that anything of a tenant's outside its region *"reintroduces exactly the
+coordination problem this design does not have."* Those are the costs this decision refuses to pay
+across a boundary.
+
+**A sealed copy has none of those properties.** It is written once, never read by a request, never
+reconciled with anything, and reached by erasure only as destruction. It is a backup in the sense
+ADR-0064 D3 requires, not a replica in the sense this decision refuses.
+
+**The rule. A copy that is restore-only, encrypted before it leaves, and on no request path MAY
+cross a region boundary. A copy that serves a request, resolves an entitlement, holds a session or
+is kept in sync MAY NOT.** The first requires all four conditions:
+
+1. **Ciphertext before egress** — encrypted while still in-region, to a key the destination does
+   not hold (ADR-0071 decision 1).
+2. **Opaque paths** — ids, never names (ADR-0071 decision 4): a file name is metadata a
+   zero-knowledge store does not necessarily encrypt.
+3. **No automated restore path** — restoring is a deliberate, recorded operator action; the copy
+   never mounts into a running region.
+4. **Named, not hidden** — the copy appears in the DPA, in the attestation RFC-0045 §E generates,
+   and in the honest RPO/RTO ADR-0105 decision 3 requires. The disclosure the refused alternative
+   demanded is now the condition of the permitted one, rather than a reason to keep no copy at all.
+
+**What this does not change.** No standby, no replica, no second live region; nothing a tenant can
+reach lives outside its region (D4 stands untouched); the control plane does not move; and ADR-0105
+is unaffected — a sealed copy is not a second failure domain, because there is still nowhere to
+run. Jurisdiction-level loss changes from *no copy survives* to *a cold copy survives, and recovery
+is restore-elsewhere under a contract amendment*. Availability is still lost with the jurisdiction,
+and this revision does not present a restore as a failover; ADR-0105's honest-number rule is what
+keeps the two apart in every attestation. At a rung where the key is the tenant's (RFC-0046), a
+sealed copy is ciphertext under their DEK and *"no longer proof of recoverability"* — the
+attestation says which rung it describes.
+
+**The alternative this revision had to beat was keeping the rule and moving the copy in-region.**
+It loses on facts already recorded: MinIO on `sitar` is on the source's own hypervisor, which
+ADR-0064 D3 names as not a backup and ADR-0071 rejected for that reason, and the cloud-S3 option
+was rejected at this stage on cost and control with its revisit trigger written into ADR-0071
+decision 2. The live choice was therefore this copy or none — and none fails ADR-0064 D3's gate,
+the gate the first real applicant waits behind.
+
+**The evidence that makes this the weakest paragraph of the original decision is dated.** In March
+2026 strikes destroyed AWS facilities in the UAE and Bahrain at a scale AWS's own multi-zone design
+did not withstand, and in September AWS declared data permanently unrecoverable where no copy
+existed outside the damaged facility; its mitigation was migration to another region. That is the
+failure a sealed copy addresses, and it is cited in this artifact's `sources` rather than carried
+as a memory. It does not make the estate ready to recover — ADR-0105 and T-G.7 own that — but it
+means *"both datacentres and every backup are inside it"* is a sentence this RFC may no longer say
+without the copy this revision permits.
+
+**A tenant's contract may refuse even this.** The permission is the estate's default, not a term
+imposed on every tenant: where a regime or a contract forbids it, the attestation records the
+posture instead. A permission, not an obligation.
+
+**Reviewed 2026-09-24 — three gaps found, none blocking, none closed by this artifact:**
+
+1. **Key custody jurisdiction is unstated.** RUN-0004 places the single age private key in "the
+   operator's password manager" and names neither the product nor its jurisdiction. EDPB's own
+   condition (see `sources`) is that a key must be held by the exporter or an entity in the EEA
+   or an adequate country — a narrower bar than "not held by Sync.com." Not load-bearing under
+   DPDP today (Rule 15 is unrestricted, see `sources`), and becomes load-bearing the day RFC-0017
+   is accepted and an EU-resident operator exists. Nothing here decides it; RUN-0004 is where it
+   would be recorded.
+2. **Sync.com's own file-version retention is not addressed for the database dump.** ADR-0069
+   states it for the document vault — *"Sync.com keeps file versions. Deleting a file there is not
+   erasure"* — but ADR-0071 decision 5 only states that erased rows persist in older dumps until
+   *our* retention schedule ages them out, and is silent on whether Sync's version history extends
+   a superseded dump's life past that schedule. This revision's "reached by erasure only as
+   destruction" assumes the ADR-0071 leg without the ADR-0069 caveat carried over.
+3. **Operator personal data rides the same path, unnamed.** Until RFC-0017 is accepted, operator
+   PII lives in the control-plane database ADR-0071 dumps nightly, so it already crosses under
+   this revision's four conditions today — the text above speaks only of tenant data. Not a
+   contradiction; an omission worth one sentence.
+
+Not fixed here because none require a decision this RFC's scope owns — 1 is RUN-0004's fact to
+record, 2 is ADR-0071's gap to close, 3 is a wording gap either artifact could close on its next
+revision.
+
 ## Decision 4 — stopping a tenant is a single-region action
 
 **A tenant is suspended in its own region, by that region, and the effect is immediate.**
@@ -261,7 +388,11 @@ recorded without why it was chosen answers neither question a year later.
    to go stale.
 
 3. **Jurisdiction-level loss has no recovery path.** Stated as an accepted risk in decision 3 rather
-   than mitigated, because every mitigation is a cross-border transfer.
+   than mitigated, because every mitigation is a cross-border transfer. **Revised 2026-09-24:** a
+   sealed copy may cross (decision 3 as revised), so the loss is no longer of every copy. What
+   remains accepted is narrower and is stated rather than implied: recovery is a cold restore under
+   a contract amendment, never a failover, and it depends on a copy that is configured, rehearsed
+   and named — which for the database leg is not true today (T-G.7).
 
 4. **Every region multiplies a real operational surface**: a Postgres, a Zitadel with its own
    immutable masterkey whose loss is unrecoverable (ADR-0045), a cluster, a release path, a backup
@@ -374,4 +505,10 @@ recorded without why it was chosen answers neither question a year later.
 - STD-0009 — the isolation matrix that gains a region axis
 - GLO-0005 — absence must never produce breadth, which decision 1's fail-closed rule applies upward
 - GLO-0006 — the worked example decision 5 borrows for why placement is never inferred
+- ADR-0071 — the off-host store the 2026-09-24 revision reconciles with; its copy is the sealed copy this RFC now names
+- ADR-0094 — Garage is in-cluster, so it does not survive the failure the sealed copy covers
+- ADR-0105 — a sealed copy is not a second failure domain, and every attestation states the honest RPO
+- RFC-0046 — at a tenant-held-key rung, a sealed copy is no longer proof of recoverability
+- MKT-0003 — no blanket localisation in India; the boundary this decision defends is a product promise
+- T-G.7 — the task that makes the database leg of the sealed copy real; the copy this RFC permits is not yet configured
 - `archived/paridyum-docs/REGION-MODEL.md` — the country map, and the fallback that made it unsound

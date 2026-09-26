@@ -13,7 +13,13 @@ tags: [tenancy, isolation, security, authorisation, vocabulary]
 breaking: false
 verified_by:
   - TST-0018
-enforced_by: []
+enforced_by:
+  - check: domain.containment_is_granted_never_inferred
+    severity: error
+    rationale: >
+      This entry's whole content, stated as a check: operator scope is a GRANT, never an absence. A
+      containment class derived from a plan name, a price, or the lack of a flag is exactly the
+      inferred breadth this term exists to forbid.
 ---
 
 # GLO-0005 — Operator scope

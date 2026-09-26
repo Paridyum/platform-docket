@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Paridyum/knowledge/tool-registry.schema.json",
+  "title": "Paridyum Tool Registry",
+  "description": "Every tool the estate installs, pins, or depends on the behaviour of, declared under ADR-0066. This registry owns ADOPTION facts — purpose, licence, source, exit path, and the artifact that decided it — and owns NO version number where another file already holds one. An entry pinned in toolchain-registry.yaml carries `pin_home` and no version; RFC-0015 gives a fact one home and a version copied here is that rule broken sideways. Validated by `knowledge.tool_registry_valid`.",
+  "type": "object",
+  "required": ["version", "tools"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Registry format version. Bump only for a breaking shape change, which needs an ADR."
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per tool, sorted by id ascending so diffs stay readable. Uniqueness of `id` is enforced by the gate, not expressible here.",
+      "items": {
+        "type": "object",
+        "required": ["id", "purpose", "licence", "source", "tier", "adopted_by", "exit", "declared"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*([-.][a-z0-9]+)*$",
+            "description": "The invocable name, lowercase. `gh`, `jq`, `archify`, `talosctl`. The name a script actually types, not a product name — a registry keyed on marketing is a registry nobody greps."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "description": "The product name, when it differs from the invocable id. Omit when they match."
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 20,
+            "description": "One sentence: what the estate uses it FOR. The same role `provides` plays in a manifest under STD-0013 — the field a future reader needs before they rebuild a capability that already exists. Not a description of the tool; a description of our use of it."
+          },
+          "licence": {
+            "type": "string",
+            "minLength": 2,
+            "description": "SPDX identifier where one applies, or `proprietary`, or `service` for a hosted dependency with terms rather than a licence. REQ-0012's exitability test starts here and ADR-0052 names skipping it as the characteristic drift."
+          },
+          "source": {
+            "type": "string",
+            "format": "uri",
+            "description": "Where it comes from — the canonical repository or vendor URL. The thing to read when the pin needs advancing or the project is abandoned."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["critical", "supporting", "convenience"],
+            "description": "REQ-0012 §5 criticality. `critical` = the estate cannot operate without it. `supporting` = its loss degrades or blocks a workflow but is survivable within a day. `convenience` = a nicer way to do something that is possible without it. The tier is a judgement made on the day of adoption, which is why `exit` is required at every tier and not only at `critical`."
+          },
+          "adopted_by": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The artifact id(s) that decided or record this adoption. ADR-0066 decision 6: a tool with no artifact behind it is a decision nobody made. Where the tool predates its artifact, this names the artifact that RECORDS it and `notes` says the adoption was retrospective — recorded rather than backdated.",
+            "items": {
+              "type": "string",
+              "pattern": "^(C|ADR|STD|ANTI|RFC|REQ|RUN|GLO|BET|MKT)-[0-9]{4}$"
+            }
+          },
+          "install": {
+            "type": "object",
+            "description": "How a clean workstation gets it, pinned. Omit only for a tool the platform ships with or that another registry's pin already installs — in which case `pin_home` says where.",
+            "required": ["method", "ref"],
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": ["git", "npm", "cargo", "pip", "brew", "release-binary", "os-package", "agent-plugin"],
+                "description": "The install mechanism. `git` means clone at a sha, which is the only method available for a package that is not published anywhere."
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 3,
+                "description": "The immutable reference: a 40-character commit sha, a signed tag, or an exact package version. Never a branch, never `latest`, never absent. `knowledge.declared_tool_install_is_pinned` rejects a mutable ref — an unpinned install recorded in a registry is worse than no registry, because it reports the dependency as governed."
+              },
+              "ref_dated": {
+                "type": "string",
+                "format": "date",
+                "description": "When the ref was set. A pin with no date is a pin nobody dares advance — the lesson toolchain-registry.yaml records about 1.90.0."
+              },
+              "path": {
+                "type": "string",
+                "description": "The entrypoint within the installed tree, when it is not the tool's own name on PATH."
+              }
+            }
+          },
+          "pin_home": {
+            "type": "string",
+            "enum": ["toolchain-registry", "os", "agent-harness"],
+            "description": "Names the file or system that already owns this tool's version, when one does. `toolchain-registry` means the number lives in toolchain-registry.yaml under some stack's `tooling:` key. An entry with `pin_home` MUST NOT carry `install.ref` — that is two homes for one fact, and `knowledge.tool_registry_holds_no_version` rejects it."
+          },
+          "exit": {
+            "type": "string",
+            "minLength": 40,
+            "description": "REQ-0012 §5. What is lost if this tool disappears, what replaces it, and roughly how long that takes. Prose, because none of those three is enumerable. Required at every tier: an exit plan written after the dependency is load-bearing is written under pressure and is usually fiction."
+          },
+          "network": {
+            "type": "string",
+            "enum": ["none", "explicit", "always"],
+            "description": "Whether the tool reaches the network in normal operation. `none` = never. `explicit` = only under a command the operator names. `always` = it is a client for something remote. REQ-0012 §4 wants an egress allowlist and REQ-0007 §4 names egress as the strongest available mitigation for prompt injection; neither can be built without this field."
+          },
+          "declared": {
+            "type": "string",
+            "format": "date",
+            "description": "When the entry was added here. Not when the tool was adopted — `adopted_by` carries that, and the gap between the two dates is the honest record of how late this registry arrived."
+          },
+          "notes": {
+            "type": "string",
+            "description": "What a future reader would otherwise reconstruct expensively: why this one and not the obvious alternative, what is known-bad about it, whether the entry is retrospective. STD-0011 is the rule; this is the field."
+          }
+        }
+      }
+    }
+  }
+}

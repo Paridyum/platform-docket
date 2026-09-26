@@ -12,6 +12,19 @@
 # this repository's GITHUB_TOKEN. Renovate keeps the pins current — the trailing
 # `# vX.Y.Z` comment is what it matches on, so do not remove it.
 #
+# ADDING A STEP THAT CALLS A VENDORED SCRIPT IS A BREAKING CHANGE FOR CALLERS.
+#
+# The scripts come from each caller's own `.paridyum/knowledge/` snapshot, so a new
+# step calling a NEW script fails in every caller whose snapshot predates it —
+# `python3: can't open file ... No such file or directory`. That happened on
+# 2026-08-21 when the envelope step landed: two callers had refreshed their snapshot
+# and one had not, and its next push went red.
+#
+# Failing loudly is correct — a caller silently emitting no evidence would be worse,
+# because absence of evidence is indistinguishable from absence of tests, which is
+# the whole thing RFC-0034 exists to fix. So the rule is operational rather than
+# technical: refresh EVERY caller's snapshot in the same change that adds the step.
+#
 # WHY THE SCRIPTS COME FROM THE CALLER'S VENDORED SNAPSHOT, NOT FROM THIS REPOSITORY.
 # Identical to rust-ci.yml, and for the same reason found on a real run: the default
 # GITHUB_TOKEN carries `Contents: read` for the CALLING repository only, so a job that
@@ -42,6 +55,18 @@ name: nextjs-ci
 
 on:
   workflow_call:
+    secrets:
+      # OPTIONAL, and the fallback is the point: a caller that passes nothing keeps using
+      # the job's GITHUB_TOKEN exactly as before, so adding this changes no existing
+      # pipeline. It exists because GitHub Free gives GITHUB_TOKEN no way to read another
+      # repository's private package, and the org's own /repositories grant endpoint does
+      # not exist to verify against — see ADR-0004 and this file's header on the identical
+      # problem with vendored scripts.
+      #
+      # A caller supplying this is accepting REQ-0001's open risk knowingly: the token is
+      # long-lived, is not scoped by this workflow, and every job in the run can read it.
+      PARIDYUM_PACKAGES_TOKEN:
+        required: false
     inputs:
       node-version-file:
         description: File pinning the Node version. RFC-0003 open question 3 — Node needs an explicit version policy the way Rust pins a toolchain.
@@ -54,6 +79,10 @@ on:
 
 permissions:
   contents: read
+  # Needed to install a first-party package from GitHub Packages. Read-only, and inert for
+  # a caller with no @paridyum dependency — but without it the token cannot read the
+  # registry at all and pnpm reports a bare 401 that reads like a registry outage.
+  packages: read
 
 defaults:
   run:
@@ -87,6 +116,33 @@ jobs:
       # (minimumReleaseAge, trustPolicy, blockExoticSubdeps) are enforced at
       # resolution — which is skipped when the lockfile is honoured, so the pins are
       # what carry them here.
+      # THE CREDENTIAL GOES TO THE USER-LEVEL npmrc, AND IT HAS TO.
+      #
+      # pnpm 11 refuses to expand environment variables in registry credentials read from a
+      # PROJECT .npmrc, on the grounds that the file is committed and could leak the secret
+      # to an attacker-controlled registry. It says so in a warning and then sends the
+      # request with no authorization header, which surfaces as a bare 401 that reads like
+      # a missing grant rather than a policy decision.
+      #
+      # So the project .npmrc maps the scope to the registry and holds no credential, and
+      # this step puts the token somewhere pnpm treats as trusted. Skipped entirely when no
+      # token is configured, so a caller with no private dependency is unaffected.
+      # The emptiness test is in the SHELL, not in `if:`. The `secrets` context is not
+      # available to a step-level `if` expression — a workflow using one is rejected at
+      # parse time and the run fails in 0s with "workflow file issue" and no annotation
+      # pointing at the line. Found that way.
+      - name: Authenticate to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PARIDYUM_PACKAGES_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            printf '//npm.pkg.github.com/:_authToken=%s\n' "$NODE_AUTH_TOKEN" >> "$HOME/.npmrc"
+            chmod 600 "$HOME/.npmrc"
+            echo "packages credential written to the user-level npmrc"
+          else
+            echo "no packages token configured; nothing to authenticate"
+          fi
+
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile
@@ -121,6 +177,33 @@ jobs:
 
       - name: Install pnpm
         run: npm install -g pnpm@11 --ignore-scripts
+
+      # THE CREDENTIAL GOES TO THE USER-LEVEL npmrc, AND IT HAS TO.
+      #
+      # pnpm 11 refuses to expand environment variables in registry credentials read from a
+      # PROJECT .npmrc, on the grounds that the file is committed and could leak the secret
+      # to an attacker-controlled registry. It says so in a warning and then sends the
+      # request with no authorization header, which surfaces as a bare 401 that reads like
+      # a missing grant rather than a policy decision.
+      #
+      # So the project .npmrc maps the scope to the registry and holds no credential, and
+      # this step puts the token somewhere pnpm treats as trusted. Skipped entirely when no
+      # token is configured, so a caller with no private dependency is unaffected.
+      # The emptiness test is in the SHELL, not in `if:`. The `secrets` context is not
+      # available to a step-level `if` expression — a workflow using one is rejected at
+      # parse time and the run fails in 0s with "workflow file issue" and no annotation
+      # pointing at the line. Found that way.
+      - name: Authenticate to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PARIDYUM_PACKAGES_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            printf '//npm.pkg.github.com/:_authToken=%s\n' "$NODE_AUTH_TOKEN" >> "$HOME/.npmrc"
+            chmod 600 "$HOME/.npmrc"
+            echo "packages credential written to the user-level npmrc"
+          else
+            echo "no packages token configured; nothing to authenticate"
+          fi
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
@@ -201,6 +284,33 @@ jobs:
 
       - name: Install pnpm
         run: npm install -g pnpm@11 --ignore-scripts
+
+      # THE CREDENTIAL GOES TO THE USER-LEVEL npmrc, AND IT HAS TO.
+      #
+      # pnpm 11 refuses to expand environment variables in registry credentials read from a
+      # PROJECT .npmrc, on the grounds that the file is committed and could leak the secret
+      # to an attacker-controlled registry. It says so in a warning and then sends the
+      # request with no authorization header, which surfaces as a bare 401 that reads like
+      # a missing grant rather than a policy decision.
+      #
+      # So the project .npmrc maps the scope to the registry and holds no credential, and
+      # this step puts the token somewhere pnpm treats as trusted. Skipped entirely when no
+      # token is configured, so a caller with no private dependency is unaffected.
+      # The emptiness test is in the SHELL, not in `if:`. The `secrets` context is not
+      # available to a step-level `if` expression — a workflow using one is rejected at
+      # parse time and the run fails in 0s with "workflow file issue" and no annotation
+      # pointing at the line. Found that way.
+      - name: Authenticate to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PARIDYUM_PACKAGES_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            printf '//npm.pkg.github.com/:_authToken=%s\n' "$NODE_AUTH_TOKEN" >> "$HOME/.npmrc"
+            chmod 600 "$HOME/.npmrc"
+            echo "packages credential written to the user-level npmrc"
+          else
+            echo "no packages token configured; nothing to authenticate"
+          fi
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}

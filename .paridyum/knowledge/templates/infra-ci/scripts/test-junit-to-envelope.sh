@@ -406,11 +406,18 @@ fi
 
 printf '\n── real JUnit from this estate, not fixtures ───────────────────────\n'
 # Requirement: at least one real file. Two are used, and they exercise opposite paths.
-CD=/Users/rohan/Developer/paridyum/consoles/console-docket
-VITEST="${VITEST_JUNIT:-$WORK/vitest-junit.xml}"
-if [[ ! -f "$VITEST" && -d "$CD" ]]; then
-  ( cd "$CD" && pnpm exec vitest run --reporter=junit --outputFile="$VITEST" >/dev/null 2>&1 )
-fi
+# A REAL Vitest file, COMMITTED — not produced by running a sibling repository.
+#
+# This read `CD=/Users/rohan/Developer/paridyum/consoles/console-docket` until 2026-09-20: an
+# absolute path into one developer's home directory, in a blocking-tier suite inside a template
+# every repository vendors. It passed on that one machine and failed everywhere else — including
+# CI, where it had been red on knowledge#1 with the cause hidden by `expect_ok`'s `head -4`.
+#
+# The requirement above — "at least one real file" — is satisfied better by committing one: the
+# file IS real output from console-docket's Vitest (158 cases, captured 2026-09-20), and now it
+# is the same real file on every machine rather than whatever that machine happens to produce.
+# VITEST_JUNIT still overrides, for anyone regenerating it deliberately.
+VITEST="${VITEST_JUNIT:-$ROOT/tests/fixtures/junit/console-docket-vitest.xml}"
 if [[ -f "$VITEST" ]]; then
   CASES="$(grep -c '<testcase' "$VITEST")"
   expect_ok "console-docket's real Vitest JUnit converts" \
@@ -421,12 +428,24 @@ if [[ -f "$VITEST" ]]; then
   expect_field "  totals.tests equals the <testcase> count in the real file ($CASES)" \
     e-real-vitest.json totals.tests "$CASES"
 else
-  bad "console-docket's Vitest JUnit could not be produced — the real-file case did not run"
+  bad "the committed real Vitest fixture is missing: $VITEST — the real-file case did not run"
 fi
 
 # This repository's own gate suite writes JUnit (STD-0008), and it is the harder input:
 # no timestamp and no time attribute anywhere, and real failures in it.
-GATES="$ROOT/junit.xml"
+# COMMITTED, for the same reason as the Vitest file above. `$ROOT/junit.xml` is in knowledge's
+# .gitignore (line 46), so it exists on a machine that has run the gate suite and NEVER in a
+# fresh checkout — which is exactly where this test needs to pass. It was the second of the two
+# cases failing CI while passing locally.
+#
+# It is still real output from this repository's own gate suite, with the property that makes it
+# the harder input: 190 cases and no timestamp or time attribute anywhere.
+#
+# THIS CAPTURE HAS NO FAILURES IN IT, and the paragraph above the original line claimed it did —
+# "and real failures in it". Checked rather than copied: `grep -c '<failure'` returns 0. A second
+# fixture carrying real failures is worth adding when one is captured; asserting the property
+# here without it would be the documentation-versus-reality gap this whole suite exists to close.
+GATES="${GATES_JUNIT:-$ROOT/tests/fixtures/junit/knowledge-gate-suite.xml}"
 if [[ -f "$GATES" ]]; then
   GCASES="$(grep -c '<testcase' "$GATES")"
   GFAILS="$(grep -c '<failure' "$GATES")"
@@ -437,7 +456,19 @@ if [[ -f "$GATES" ]]; then
     --started-at-from-mtime --duration-ms 0 --out e-real-gates.json "$GATES"
   expect_field "  totals.tests equals its <testcase> count ($GCASES)" e-real-gates.json totals.tests "$GCASES"
   expect_field "  totals.failed equals its <failure> count ($GFAILS)" e-real-gates.json totals.failed "$GFAILS"
-  expect_field "  outcome failed" e-real-gates.json outcome '"failed"'
+  # Derived from the file, not hardcoded.
+  #
+  # This asserted `"failed"` unconditionally, which made the case pass only while
+  # this repository's own gate suite was RED — it failed the moment everything was
+  # healthy, which is exactly backwards. It survived because junit.xml happened to
+  # carry two real failures when the suite was written, and broke as soon as
+  # test-checks.sh regenerated a clean one.
+  #
+  # The lesson generalises past this line: a fixture that is a live build artifact is
+  # not a fixture. The counts above are read from the file for the same reason; the
+  # outcome has to be read the same way.
+  if [[ "$GFAILS" -gt 0 ]]; then GOUTCOME='"failed"'; else GOUTCOME='"passed"'; fi
+  expect_field "  outcome matches its content ($GOUTCOME)" e-real-gates.json outcome "$GOUTCOME"
 else
   bad "$ROOT/junit.xml is absent — the untimed real-file case did not run"
 fi

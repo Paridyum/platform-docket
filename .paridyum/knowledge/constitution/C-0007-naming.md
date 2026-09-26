@@ -144,10 +144,36 @@ The `<name>` is a **noun naming the capability**, never a technology and never a
 Service names are **singular** (`svc-billing`, `svc-user`), because the repository is one
 bounded context. Collections are plural only at the API and database layer, below.
 
+### One exception, narrow and written against the registry (ADR-0107, 2026-09-24)
+
+**Where a repository's class declares more than one `stacks` entry in `class-registry.yaml`, the
+name carries the stack as a trailing segment — and must, as soon as a second stack implements the
+same capability.** `lib-auth-rust` and `lib-auth-typescript`. The segment is the stack name exactly
+as the registry declares it, so it is derived rather than chosen.
+
+This is the one place the rule above yields, and only because the reason behind it inverts. For a
+service the stack is invisible to every consumer — a caller sends HTTP and cannot tell what
+answered — so `svc-rust-billing` encodes nothing. For a **library** the stack is *what may depend on
+it at all*: a Rust service cannot import an npm package. The segment names the set of consumers, not
+the implementation, and there is no capability-noun that separates two repositories doing the same
+job for two toolchains.
+
+**The artifact the repository publishes drops the segment**, because its namespace is already
+per-stack: `lib-auth-rust` publishes the crate `paridyum-auth`, `lib-auth-typescript` publishes
+`@paridyum/auth`. So the derivation in the section below gains one step and stays mechanical —
+**repository name, minus the class prefix, minus the stack segment.** `manifest.yaml`'s `name` keeps
+the segment, because it identifies the repository rather than the artifact.
+
+Written against `stacks` rather than the `lib-` prefix, for the reason given above about prefix
+globs: `mobile` is the estate's other multi-stack class and is governed by this sentence without it
+being rewritten. ADR-0107 has the argument, the rejected alternatives, and the rename it occasioned.
+
 ## Rust crates and binaries
 
 - Crate name = repository name with the class prefix replaced by `paridyum-`:
-  `lib-core` → `paridyum-core`, `svc-billing` → `paridyum-billing`.
+  `lib-core` → `paridyum-core`, `svc-billing` → `paridyum-billing`. Where the repository name
+  carries a stack segment under the exception above, the segment is dropped as well:
+  `lib-auth-rust` → `paridyum-auth`, because cargo cannot install anything but a crate.
   This keeps crate names globally unambiguous without leaking the repo class into code.
 - `lib-*` repositories publish **library targets only**. A `[[bin]]` in a `lib-*` crate is a
   hard CI failure — it means an executable escaped into a place nothing deploys.

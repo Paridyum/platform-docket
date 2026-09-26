@@ -11,7 +11,13 @@ scope: [org]
 applies_to: ["*"]
 tags: [charter, positioning, category, anti-goals, strategy]
 breaking: false
-enforced_by: []
+enforced_by:
+  - check: domain.no_self_serve_path_to_a_dedicated_rung
+    severity: error
+    rationale: >
+      Anti-goal 5 — no enterprise before self-serve works — together with ADR-0024 decision 8's gate
+      on a signed contract. A signup flow that provisions a dedicated rung moves a commercial gate
+      into a form, where nobody reviews it and nothing records who approved it.
 ---
 
 # Constitution C-0006 — Market posture

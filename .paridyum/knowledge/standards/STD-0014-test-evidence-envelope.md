@@ -82,7 +82,7 @@ One JSON object per test job. UTF-8, no trailing newline requirement, written to
 | `outcome` | yes | `passed` · `failed` · `errored` · `skipped` · `timed_out`. `errored` is the job failing to run its tests, which is different from tests failing, and collapsing them hides infrastructure decay. |
 | `totals` | yes | Counts. Must sum to `tests`; a consumer that finds otherwise refuses the envelope rather than guessing which number is wrong. |
 | `artifacts` | yes | Where the raw evidence went, with a digest so a later copy can be checked against what was reported. May be empty. |
-| `skipped_reason` | when `outcome: skipped` | Free text **for a person**, never branched on. A skip with no reason is indistinguishable from a pass to everything downstream, which is how coverage silently disappears. |
+| `skipped_reason` | when `outcome: skipped`; **always written, `null` when not skipped** | Free text **for a person**, never branched on. Written even when unused because a ledger identifies an envelope by its canonical bytes: a producer that omits the key and one that writes `null` would yield different digests for the same evidence. Harmless with one producer and real the moment there are two. A skip with no reason is indistinguishable from a pass to everything downstream, which is how coverage silently disappears. |
 | `submitted_by` | when `provenance: local` | Operator identifier. `tool-docket/registry/operators.yaml` is the only operator registry in the estate; it belongs to another repository, so this value is **recorded and not verified** here. Naming an author who might be wrong still beats an anonymous claim. |
 
 `additionalProperties` is false. An unknown field is a producer and a consumer
@@ -111,7 +111,7 @@ Three rules follow, and they are the whole point of the field:
 Rejecting local runs outright was considered and is worse: the write path would
 stay invisible, which is the condition RFC-0034 exists to end.
 
-## Three rules the schema cannot enforce, and one it now can
+## Four rules the schema does not enforce
 
 `test-envelope.schema.json` is the machine contract, and it does not carry
 everything this standard requires. Stated here rather than discovered, because a
@@ -143,8 +143,19 @@ and a negative duration.
    so this was the omission with the largest consequence.
 
 The consequence is a rule, not a caveat: **a producer validates against the schema
-and then checks all three by hand, and a consumer does the same.** An envelope that
+and then checks all four by hand, and a consumer does the same.** An envelope that
 satisfies the schema is not thereby valid.
+
+**A fourth, and it is not cross-field — which is why the earlier heading missed it.**
+`started_at`'s pattern checks the *shape* and not the calendar, so
+`2026-99-04T09:00:00Z` satisfies it. `pattern` **is** implemented by the vendored
+validator, so this passes every layer this standard lists: schema valid, cross-field
+rules satisfied, and a month that does not exist. Untrapped it files evidence into
+`2026-99.jsonl`.
+
+A producer and a consumer must parse the value, not just match it.
+`append-evidence.py` does and refuses; found by writing the ledger, not by reading
+the schema.
 
 Two related corrections, both from the same reading:
 

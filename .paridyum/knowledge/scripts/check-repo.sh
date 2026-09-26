@@ -143,15 +143,49 @@ fi
 # installs nothing, so the hooks are available and unused — the ADR-0007 layer-1 enforcement
 # silently absent while the configuration looks complete.
 S="$R/.claude/settings.json"
+# PARSED AS JSON, NOT GREPPED FOR SUBSTRINGS, and the difference is the whole check.
+#
+# This validates the file that declares ADR-0007's layer-1 PreToolUse guard — the thing that
+# refuses writes to a locked artifact and to the vendored snapshot. Deciding whether that guard
+# is configured by looking for the text `"paridyum"` anywhere in the file is a parser
+# differential: grep and the tool reading this file disagree about what it says.
+#
+# The ways it disagreed, none of them exotic:
+#   - the string appearing in an unrelated key, a path, or a permissions rule
+#   - `"enabledPlugins": {"paridyum-platform@paridyum": false}` — present, and disabled
+#   - the plugin named in a comment or in a block the reader ignores
+#
+# The last one is the dangerous shape, because it reports enforcement that is switched off.
+# A check for a security control must ask the question the consumer asks.
 if [[ -f "$S" ]]; then
-  grep -q '"paridyum"' "$S" \
-    || err ".claude/settings.json does not declare the Paridyum plugin marketplace (ADR-0007)"
-  if grep -q '"enabledPlugins"' "$S"; then
-    grep -q 'paridyum-platform@paridyum' "$S" \
-      || err ".claude/settings.json declares the marketplace but does not enable paridyum-platform — the hooks are available and unused, so ADR-0007's layer 1 is off while the config looks complete"
-  else
-    err ".claude/settings.json has no enabledPlugins block — the marketplace is declared and nothing is installed (ADR-0007)"
-  fi
+  PLUGIN_STATE="$(python3 - "$S" <<'PYEOF' 2>/dev/null || echo unreadable
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("unreadable"); raise SystemExit
+market = "paridyum" in (d.get("extraKnownMarketplaces") or {}) or "paridyum" in (d.get("marketplaces") or {})
+plugins = d.get("enabledPlugins")
+if not market:
+    print("no-marketplace")
+elif not isinstance(plugins, dict):
+    print("no-plugins-block")
+elif plugins.get("paridyum-platform@paridyum") is True:
+    print("enabled")
+elif "paridyum-platform@paridyum" in plugins:
+    print("disabled")
+else:
+    print("not-enabled")
+PYEOF
+)"
+  case "$PLUGIN_STATE" in
+    enabled)         : ;;
+    unreadable)      err ".claude/settings.json is not valid JSON — nothing can read it, including the tool that installs ADR-0007's guard" ;;
+    no-marketplace)  err ".claude/settings.json does not declare the Paridyum plugin marketplace (ADR-0007)" ;;
+    no-plugins-block) err ".claude/settings.json has no enabledPlugins block — the marketplace is declared and nothing is installed (ADR-0007)" ;;
+    disabled)        err ".claude/settings.json enables paridyum-platform explicitly as FALSE — ADR-0007's layer 1 is switched off while the plugin is named, which is the configuration that looks most complete and enforces least" ;;
+    *)               err ".claude/settings.json declares the marketplace but does not enable paridyum-platform — the hooks are available and unused, so ADR-0007's layer 1 is off while the config looks complete" ;;
+  esac
 else
   err ".claude/settings.json is absent — the plugin marketplace is not declared (ADR-0007)"
 fi
@@ -264,6 +298,43 @@ except Exception:
   fi
 fi
 
+# --- repo.gate_warnings_are_surfaced ----------------------------------------
+# ADR-0059. EVERY GATE IN THIS REPOSITORY EXITS 0 ON A WARNING, deliberately: roughly a dozen
+# checks are `warn` on arguments each artifact makes carefully -- CI cannot satisfy machine state,
+# a fresh clone legitimately lacks a git hook, most fetches are dead ends. A caller that keeps only
+# the exit code therefore keeps only the errors, and every one of those arguments silently becomes
+# "do not run this check".
+#
+# Not hypothetical, and the cost was measured. `run_gate` in checkpoint-session.sh ran each gate as
+# `"$@" >/dev/null 2>&1`, and the generated pre-commit hook ran check-repo.sh the same way.
+# repo.plugin_snapshot_matches_head reported the installed plugin as twelve days stale, by name and
+# with the exact remedy, into both closed pipes -- so RFC-0027 research capture had never run once
+# while every checkpoint commit recorded `repo: pass`.
+#
+# `error`, unlike the machine-state warnings above, and the difference is the point: this reads a
+# TRACKED FILE. CI can run it and whoever it fails can fix it.
+#
+# It reads the SOURCES of the hooks -- plugins/ and scripts/install-hooks.sh -- rather than
+# .git/hooks, which is untracked and legitimately absent in a fresh clone. Checking the generator
+# is what makes this a repository property instead of a second machine-state warning.
+gw_srcs=()
+[[ -d "$R/plugins" ]] && while IFS= read -r f; do gw_srcs+=("$f"); done   < <(find "$R/plugins" -name '*.sh' -type f 2>/dev/null)
+[[ -f "$R/scripts/install-hooks.sh" ]] && gw_srcs+=("$R/scripts/install-hooks.sh")
+if [[ ${#gw_srcs[@]} -gt 0 ]]; then
+  for f in "${gw_srcs[@]}"; do
+    # A gate invocation whose output goes to /dev/null. Matches `check-foo.sh ... >/dev/null`
+    # on one line, which is how every occurrence has actually been written.
+    bad="$(grep -nE 'check-[a-z-]+\.sh"?[^|&;]*>[[:space:]]*/dev/null' "$f" 2>/dev/null            | grep -v '^[[:space:]]*#' | head -3 || true)"
+    if [[ -n "$bad" ]]; then
+      while IFS= read -r hit; do
+        [[ -n "$hit" ]] && err "${f#"$R"/}:${hit%%:*} invokes a gate with its output discarded — every gate exits 0 on a warning, so this keeps the errors and throws away the warnings (ADR-0059)"
+      done <<<"$bad"
+    fi
+  done
+else
+  na "repo.gate_warnings_are_surfaced — no plugins/ and no install-hooks.sh in this repository"
+fi
+
 # --- repo.gitattributes_normalizes_eol --------------------------------------
 # ADR-0006. A CRLF shell script fails inside WSL and in containers with "bad interpreter",
 # an error that never mentions line endings.
@@ -275,6 +346,51 @@ if [[ -f "$GA" ]]; then
     || err ".gitattributes does not pin shell scripts to LF (ADR-0006)"
 else
   err ".gitattributes is absent — line endings are unpinned (ADR-0006)"
+fi
+
+# --- repo.supply_chain_posture_is_declared ----------------------------------
+# RFC-0003, REQ-0014. A TypeScript repository's supply-chain posture lives in
+# pnpm-workspace.yaml, and it fails in two directions that both look like nothing.
+#
+# ABSENT: pnpm has no posture and says so once, quietly, at install time. Every setting
+# RFC-0003 decided — the quarantine window, blockExoticSubdeps, trustPolicy — is simply not
+# applied. This is what happened scaffolding web-dashboard: the file was never copied from
+# the sibling it was cloned from, because "scaffold a web repo" means hand-picking files and
+# hoping, and RFC-0028's template-web does not exist.
+#
+# PRESENT BUT A STUB: worse, and the reason this check reads content rather than existence.
+# pnpm REWRITES allowBuilds on an install that meets an unapproved build script, replacing
+# the mapping with `pkg: set this to true or false` and discarding the comments around it.
+# The file then exists, looks deliberate, and enforces nothing. web-admin's own copy records
+# that this already happened once and the placeholder was committed.
+#
+# The placeholder is a string where a boolean belongs, so it is mechanically detectable —
+# which is the whole reason this is a check and not a note in a runbook.
+if [[ -f "$R/package.json" ]]; then
+  WS="$R/pnpm-workspace.yaml"
+  if [[ ! -f "$WS" ]]; then
+    err "pnpm-workspace.yaml is absent — RFC-0003's supply-chain posture is not applied (RFC-0003, REQ-0014)"
+  else
+    grep -qE '^minimumReleaseAge:' "$WS" \
+      || err "pnpm-workspace.yaml declares no minimumReleaseAge — the quarantine window is a pnpm default, and a defence that depends on a default disappears on an older pnpm (RFC-0003)"
+    grep -qE '^trustPolicy:' "$WS" \
+      || err "pnpm-workspace.yaml declares no trustPolicy — not a pnpm 11 default, so omitting it means not having it (RFC-0003)"
+    grep -qE '^blockExoticSubdeps:' "$WS" \
+      || err "pnpm-workspace.yaml declares no blockExoticSubdeps (RFC-0003)"
+    grep -qE '^allowBuilds:' "$WS" \
+      || err "pnpm-workspace.yaml declares no allowBuilds — empty is the correct starting state, absent is not a decision (RFC-0003)"
+    # The rewritten placeholder. A string where a boolean belongs.
+    if grep -qE '^[[:space:]]+[^:#]+:[[:space:]]*set this to true or false' "$WS"; then
+      grep -nE '^[[:space:]]+[^:#]+:[[:space:]]*set this to true or false' "$WS" | while IFS= read -r line; do
+        err "pnpm-workspace.yaml carries pnpm's rewritten allowBuilds placeholder, which enforces nothing: ${line} — replace it with an explicit true or false (RFC-0003)"
+      done
+    fi
+    # A version-pinned first-party exemption is pnpm's rewrite, not the estate's posture:
+    # it expires on the next release and sends every @paridyum package into the quarantine.
+    if grep -qE "^[[:space:]]+- *'?@paridyum/[a-z-]+@[0-9]" "$WS"; then
+      err "pnpm-workspace.yaml exempts a first-party package BY VERSION — the posture exempts '@paridyum/*' as a class, and a pinned exemption expires on the next release (RFC-0003)"
+    fi
+  fi
 fi
 
 # --- repo.has_codeowners ----------------------------------------------------
@@ -417,6 +533,81 @@ else
   na "docs.required_files_present (ARCHITECTURE.md, manifest.yaml) — this repository is class-less by design (ADR-0015)"
   na "docs.service_files_present (API.md, RUNBOOK.md) — no svc-* or platform-* repository exists"
   na "docs.sop_present — class-less by design (ADR-0015 point 6); operating procedure lives in runbooks/"
+fi
+
+# --- docs.diagram_source_is_present / docs.diagram_ir_is_valid ---------------
+# --- docs.diagram_is_self_contained ------------------------------------------
+# STD-0020 §3: an IR beside every render, and both committed. The three failures are distinct
+# and only one of them is visible to a reader.
+#
+#   NO SOURCE      the HTML opens perfectly and cannot be changed by anyone. C-0004 makes
+#                  generated output regenerable; a render with no IR is neither generated nor
+#                  authored, and the defect surfaces the day someone needs to fix a label.
+#   INVALID IR     renders nothing, and the failure lands on whoever regenerates next rather
+#                  than on whoever introduced it.
+#   EXTERNAL FETCH the vendor's template links JetBrains Mono from fonts.googleapis.com. The
+#                  diagram works offline, so this is not a rendering failure -- it is a
+#                  disclosure: opening a committed governance diagram tells a third party that
+#                  someone read it. scripts/render-diagram.sh strips it; a bare `archify
+#                  deliver` does not, which is exactly the mistake this catches.
+#
+# THE INVERSE IS NOT CHECKED. An IR with no render is legal: it is authored source in progress,
+# and STD-0020 §6 requires both in the same COMMIT, not both at every moment.
+#
+# VALIDATION SKIPS WHEN ARCHIFY IS ABSENT, AND SAYS SO. A hard failure would make every
+# contributor install a Node tool at a pinned sha to commit an unrelated change, which is a gate
+# people bypass -- ADR-0002's argument, applied to the cost of running rather than to the cost
+# of writing. The skip is printed, never silent. The other two need no tool and always run.
+DIAGDIR="$R/docs/diagrams"
+if [[ ! -d "$DIAGDIR" ]]; then
+  na "docs.diagram_* — no docs/diagrams/ in this repository"
+else
+  ARCHIFY=""
+  if [[ -x "$R/scripts/tool-path.sh" ]]; then
+    ARCHIFY="$("$R/scripts/tool-path.sh" archify 2>/dev/null || true)"
+  fi
+  [[ -n "$ARCHIFY" && -x "$ARCHIFY" ]] || ARCHIFY=""
+  [[ -n "$ARCHIFY" ]] || wrn "docs.diagram_ir_is_valid — archify is not installed at its pinned ref, so committed IR was NOT validated. Run scripts/install-tools.sh archify"
+
+  shopt -s nullglob
+  for html in "$DIAGDIR"/*.html; do
+    base="${html%.html}"
+    [[ -f "$base.json" ]] \
+      || err "${html#"$R"/} has no IR beside it — a render nobody can regenerate is not generated output (C-0004, STD-0020 §3)"
+    if grep -qE '(src|href)="https?://' "$html"; then
+      err "${html#"$R"/} reaches an external origin when opened — render through scripts/render-diagram.sh, not a bare \`archify deliver\` (ADR-0065 decision 7)"
+    fi
+  done
+
+  for ir in "$DIAGDIR"/*.json; do
+    stem="${ir%.json}"
+    kind="${stem##*.}"
+    case "$kind" in
+      workflow|sequence|dataflow|lifecycle) ;;
+      architecture)
+        err "${ir#"$R"/} is a hand-authored architecture IR — the model is manifest.yaml and every cross-repository view is generated from it (ADR-0040 decision 2, ADR-0065 decision 2)"
+        continue ;;
+      *)
+        err "${ir#"$R"/} does not name its kind — the filename must end .<kind>.json so a reader knows which command regenerates it (STD-0020 §3)"
+        continue ;;
+    esac
+    [[ -n "$ARCHIFY" ]] || continue
+    if ! out="$("$ARCHIFY" validate "$kind" "$ir" 2>&1)"; then
+      err "${ir#"$R"/} does not validate as $kind: $(printf '%s' "$out" | head -2 | tr '\n' ' ')"
+      continue
+    fi
+    # docs.diagram_is_current. Delegated to render-diagram.sh --check so the font strip has one
+    # home; a second copy of it here would drift, and the day it drifted every diagram would
+    # report stale for a reason nobody could find. Only runs when the renderer script exists in
+    # the repository under test, which is what makes this safe against a repository that carries
+    # diagrams without the script.
+    if [[ -x "$R/scripts/render-diagram.sh" ]]; then
+      if ! cur="$("$R/scripts/render-diagram.sh" --check "$ir" 2>&1)"; then
+        err "${ir#"$R"/}: the committed render does not match its IR — re-run scripts/render-diagram.sh on it (C-0004, STD-0020 §6)"
+      fi
+    fi
+  done
+  shopt -u nullglob
 fi
 
 # --- test.* — STD-0008, the four that need no Rust ---------------------------

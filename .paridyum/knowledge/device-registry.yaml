@@ -97,6 +97,32 @@ families:
       is exactly what an inventory should know about. Listed here rather than silently dropped,
       so the question stays visible.
 
+  - code: tabla
+    name: Operator workstation
+    instrument: Tabla — paired hand drums
+    geography: false
+    platform: optional
+    status: active
+    notes: >
+      The machines operators work FROM, as distinct from the machines Paridyum runs. Admitted
+      because RFC-0021 open question 1 stopped being theoretical: this family's first member
+      holds the signing key C-0003 requires, runs the playbooks that configure the substrate,
+      and reaches production. An inventory that omits it is not minimal, it is wrong.
+
+      NO GEOGRAPHY, for the reason `murli` gives directly above and in its own words — encoding
+      a country in something designed to cross borders produces a field that is false precisely
+      when it is load-bearing. A laptop crosses borders exactly as a phone does. `tabla-01`,
+      flat sequence.
+
+      PLATFORM IS OPTIONAL RATHER THAN FORBIDDEN, which is where this family parts from `murli`.
+      ADR-0006 makes macOS, Linux and WSL2 all first-class workstation platforms, and which one
+      a machine runs changes how every runbook addresses it. The accepted cost is RFC-0021
+      decision 6's: reinstalling a workstation onto another OS is a rename.
+
+      This resolves only the OPERATOR half of RFC-0021 open question 1. Whether a purely personal
+      device — one that never reaches production — belongs in a Paridyum registry is still open,
+      and admitting this family does not answer it.
+
 # ════════════════════════════════════════════════════════════════════════════════════════
 # HOST PLATFORMS — two characters, from this list only.
 #
@@ -157,6 +183,10 @@ platforms:
 
   - code: ar
     name: Arch Linux
+    kind: os
+
+  - code: mc
+    name: macOS
     kind: os
     status: proposed
     notes: >

@@ -200,6 +200,64 @@ products:
       is not `operated` — Paridyum does not yet run a business on its own runtime, which is
       the whole content of phase 3b.
 
+  - product: docket
+    name: Docket
+    kind: capability
+    stage: building
+    declared: 2026-09-20
+    notes: >
+      Personnel records and the documents issued against them — enrol a person, see what an
+      engagement still owes, issue and seal what remains. ADR-0093 made it a served, multi-user
+      platform; ADR-0099 made it multi-tenant; ADR-0104 makes a tenant able to run more than one
+      instance of it, each instance an account.
+
+      `kind: capability` RATHER THAN `catalogue`, and the distinction is the registry's own: a
+      capability is "a runtime capability a tenant can buy… the buyer is already established",
+      while a catalogue product is "a vertical application Paridyum operates and franchises" and
+      is the only kind owing an MKT- before it may be built. docket is something every tenant
+      gets by holding a tenant, not a vertical sold to a market segment — so it owes a
+      tenant-facing interface, not market research. Decided by the operator on 2026-09-20.
+
+      `stage: building` IS THE HONEST READING AND IT COSTS SOMETHING. The engine is deployed and
+      serving (Helm release `platform/docket`, rev 3) with no paying customer, which is exactly
+      what `building` describes — `proposed` would read "nothing is being built" and be false.
+      A capability at `building` owes a REQ- and the `tenant-facing-interface` slot.
+
+      THE SLOT IS FILLED: web-docket (ADR-0098, still on disk as `console-docket`) is the
+      operator-facing console a tenant reaches its own docket through.
+
+      ⛔ THE REQ- IS OWED AND IS NOT YET WRITTEN. `product.stage_dossier_complete` is
+      `owner: tool-forge` and therefore not implemented, so this entry passes the gate today
+      while being incomplete. Recorded here and in DECISION-DEBT.md rather than dodged by
+      registering at a stage that understates reality — CLAUDE.md's rule for an unimplemented
+      check is to behave as though it were running.
+
+  - product: hiring
+    name: Hiring
+    kind: capability
+    stage: building
+    declared: 2026-09-20
+    notes: >
+      The hiring surface: the public job index and listings, the application, the candidate
+      profile, and the operator-gated posting admin. ADR-0086 moved it off the landing onto
+      careers.paridyum.com; ADR-0095 made postings dynamic database records.
+
+      THIS ANSWERS RFC-0048 OPEN QUESTION 2 — "is `careers` its own catalogue product, or the
+      public half of the hiring product?" — AND THE CODE HAD ALREADY ANSWERED IT. One deployable
+      serves both halves: `/[lang]/careers` is public and `/[lang]/admin/postings` is
+      operator-gated, in the same repository, against the same `job_postings` rows. Registering
+      two products would have contradicted what is running.
+
+      `kind: capability` for the same reason as docket: a tenant gets hiring by holding a tenant.
+      It is NOT a second vertical, so C-0006 anti-goal 6 is not engaged — that rule governs
+      `catalogue` products, and registering a capability does not claim a market.
+
+      `stage: building` — deployed as Helm release `paridyum-web/hiring` rev 4, serving
+      careers.paridyum.com, no paying customer.
+
+      THE SLOT IS FILLED by web-hiring itself, which is both the public surface and the
+      operator's. ⛔ THE REQ- IS OWED, as for docket, and recorded in DECISION-DEBT.md.
+
   - product: entitlement
     name: Entitlement
     kind: capability
@@ -234,7 +292,7 @@ products:
   - product: tenancy
     name: Tenancy
     kind: capability
-    stage: proposed
+    stage: building
     declared: 2026-08-17
     notes: >
       The nested isolation model — ADR-0023, ADR-0024, GLO-0004. C-0006 non-commodity item 2
@@ -242,10 +300,34 @@ products:
       selling a runtime, which makes this the capability whose tenant-facing interface matters
       most and the one most likely to be built as an internal mechanism first.
 
+      ⛔→✅ PROMOTED TO `building` ON 2026-09-07 BY ADR-0068. The warning in the paragraph
+      above — that this is the capability most likely to be built as an internal mechanism
+      first — was the risk, and the promotion is written to avoid it rather than to ignore it.
+      THE DECLARED TENANT-FACING CONSUMER IS `hosting`, NOT HIRING. ADR-0049 D3 requires a
+      tenant-facing consumer before a capability is built, and D5 is explicit that "only us,
+      for now" is a decision to build a `tool-` instead. Hosting is vertical one, at
+      `building` since 2026-08-23, and it cannot run a second customer's workload without the
+      provable isolation C-0006 non-commodity item 2 names. Tenancy would be owed to hosting
+      if nobody were ever hired.
+      HIRING IS THE FIRST WORKLOAD ON IT, AS TENANT ZERO, which ADR-0049 D2 permits — "no
+      scope a customer could not also be granted". That is C-0008 and BET-0005 rather than a
+      loophole: the estate runs on the runtime it sells, and the first thing to run on it
+      proves the isolation instead of asserting it.
+      WHAT THIS NOW OWES. `capability` at `building` owes a REQ- artifact and the
+      `tenant-facing-interface` slot — a spec- repository, per ADR-0049's mechanical half.
+      Neither exists. The debt is created visibly here rather than hidden by leaving the
+      entry at `proposed` while the work proceeds anyway.
+      WHAT IT DOES NOT UNBLOCK. ADR-0064 D3 and ADR-0063 §1 both hold personal data behind
+      an off-host backup destination with a rehearsed restore. Schema, RLS and the
+      session-context accessor may be built against synthetic data; a real applicant may not
+      be stored. ADR-0068 §6 records that the destination is now an independent open
+      decision, because the document-store choice that ADR-0064 expected to supply it is a
+      consumer cloud drive and cannot receive WAL archives.
+
   - product: hosting
     name: Managed application hosting
     kind: catalogue
-    stage: proposed
+    stage: building
     declared: 2026-08-18
     notes: >
       THE FIRST CATALOGUE PRODUCT REGISTERED, and it is registered at `proposed` deliberately.
@@ -267,6 +349,39 @@ products:
       whatever vertical one turns out to be — and under anti-goal 6 the second of those is
       forbidden until the first has a renewed paying customer. That is a strategy decision and
       it is deliberately not taken by registering this entry.
+      ⛔→✅ PROMOTED TO `building` ON 2026-08-23, BY OPERATOR DECISION. This is the
+      anti-goal 6 gate being passed deliberately, and it answers T-0.6: **hosting is
+      vertical one.** The warning two paragraphs above — that promoting this probably
+      answers T-0.6 — was correct, and the answer is yes rather than a coincidence.
+      WHAT IT FORECLOSES, STATED HERE RATHER THAN DISCOVERED LATER. C-0006 anti-goal 6
+      permits no second vertical until the first has a renewed paying customer. So
+      `veer-entitlements` is blocked on hosting's first RENEWAL — not its first sale — and
+      that is a constitutional consequence of this line, not a scheduling preference. See
+      that entry's own note, amended the same day.
+      WHAT IT NOW OWES. `catalogue` at `building` owes MKT- and REQ- artifacts plus the
+      `product-contract` slot. MKT-0001, MKT-0002 and MKT-0003 discharge the first; a REQ
+      and a `spec-` contract are outstanding and are the reason this is `building` rather
+      than `operated`.
+      THE OFFER IS ALREADY PUBLIC. `web-paridyum` sells hosting priced per running workload,
+      which is BET-0009's unit of sale. That page went up before this line was written, and
+      the gap between the two is the thing DECISION-DEBT's unrecorded-decisions section
+      exists to catch.
+
+      ⛔ THE OFFER WAS WITHDRAWN ON 2026-09-07 AND THIS ENTRY IS UNCHANGED, WHICH IS THE
+      POINT. `web-paridyum`'s landing page was replaced by a holding page for the duration of
+      the hiring drive; the page that made the offer is archived at
+      `src/archive/2026-09-07-landing.tsx`, intact. The paragraph above is left standing
+      rather than edited because it was true when written, and this file records what changed
+      rather than pretending it always read this way.
+      `stage: building` DOES NOT MOVE. The stage tracks whether the product is under
+      construction, not whether it is currently advertised. Hosting is still vertical one,
+      still owes a REQ- and a spec- contract, and anti-goal 6 still blocks
+      `veer-entitlements` on its first renewal. Taking a page down decides none of that.
+      WHAT IT DOES MEAN: nothing about hosting is reachable by a buyer today, so the first
+      sale is further away than it was on 2026-09-06. That is a deliberate cost of pointing
+      attention at recruitment, and it is recorded here so the delay is not later mistaken
+      for the market failing to respond.
+
       ON WHETHER IT IS EVER FRANCHISED. `catalogue` admits the `franchised` stage and nothing
       requires reaching it. BET-0009 sells hosting directly; BET-0005's operate-then-franchise
       sequencing would still apply if that ever changed.
@@ -300,6 +415,13 @@ products:
       obligation IV states the trigger in those terms and does not grant itself an exception —
       which is the point at which a founder's personal commitment either respects the company's
       own rules or reveals that they were only ever for other people's ideas.
+      ⛔ BLOCKED AS OF 2026-08-23. `hosting` was promoted to `building` on that date and is
+      vertical one, so C-0006 anti-goal 6 now bars this product from `building` until hosting
+      has a paying customer who RENEWED. Recorded as a dated fact rather than left to be
+      rediscovered, because C-0009 obligation IV states the trigger in exactly those terms and
+      grants itself no exception. The covenant is not weakened by the delay; it is bound by the
+      same rule as everything else, which is the point.
+
       ⚠️ THIS ENTRY DOES NOT MAKE IT VERTICAL ONE. The ROADMAP's phase 0 exit gate — "vertical one
       chosen" — is untouched by registering this, in the same way it is untouched by `hosting`.
       Two catalogue products now sit at `proposed` and anti-goal 6 permits at most one to move.

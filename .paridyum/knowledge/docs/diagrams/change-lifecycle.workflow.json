@@ -1,0 +1,289 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "The Paridyum change lifecycle",
+    "subtitle": "ADR-0013 · significance is computed from the diff, and design precedes code by timestamp",
+    "output": "docs/diagrams/change-lifecycle.workflow.html",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "significant",
+        "label": "A significant change",
+        "focus": [
+          "triage",
+          "rfc",
+          "review",
+          "implement",
+          "test",
+          "shipping"
+        ],
+        "note": "Seven triggers make a change significant. It then needs a referenced RFC or ADR before any implementation commit exists."
+      },
+      {
+        "id": "ordinary",
+        "label": "Everything else",
+        "focus": [
+          "triage",
+          "implement",
+          "test",
+          "shipping"
+        ],
+        "note": "Bug fixes, refactors, tests, docs, bumps inside the locked stack. Treating ordinary work as significant is how a process gets abandoned."
+      },
+      {
+        "id": "gates",
+        "label": "What refuses a change",
+        "focus": [
+          "triage",
+          "review",
+          "predates",
+          "slice"
+        ],
+        "note": "The points where a change is refused rather than improved — one human, two mechanical."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "a stage of work"
+        },
+        "security": {
+          "label": "a gate that refuses"
+        },
+        "database": {
+          "label": "verification"
+        },
+        "cloud": {
+          "label": "release"
+        },
+        "frontend": {
+          "label": "the change itself"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "Intake"
+    },
+    {
+      "id": "design",
+      "label": "Design — stages 1-3"
+    },
+    {
+      "id": "build",
+      "label": "Build — stages 4-5"
+    },
+    {
+      "id": "ship",
+      "label": "Ship — stages 6-7"
+    },
+    {
+      "id": "gates",
+      "label": "Mechanical gates",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-decide",
+      "label": "Is it significant?",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-design",
+      "label": "Design before code",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-build",
+      "label": "Build, test, release",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-rfc",
+      "label": "An RFC graduates to an ADR only if it binds future work",
+      "lane": "design",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "triage",
+    "rfc",
+    "review",
+    "implement",
+    "test",
+    "shipping"
+  ],
+  "nodes": [
+    {
+      "id": "triage",
+      "lane": "intake",
+      "col": 0,
+      "width": 128,
+      "type": "security",
+      "label": "Significance",
+      "sublabel": "read off the diff",
+      "tag": "7 triggers"
+    },
+    {
+      "id": "rfc",
+      "lane": "design",
+      "col": 1,
+      "width": 132,
+      "type": "backend",
+      "label": "1-2 Define + design",
+      "sublabel": "RFC with alternatives"
+    },
+    {
+      "id": "review",
+      "lane": "design",
+      "col": 2,
+      "width": 128,
+      "type": "security",
+      "label": "3 Review",
+      "sublabel": "a human accepted it",
+      "tag": "accepted"
+    },
+    {
+      "id": "implement",
+      "lane": "build",
+      "col": 3,
+      "width": 128,
+      "type": "backend",
+      "label": "4 Implement",
+      "sublabel": "small PRs, reviewable"
+    },
+    {
+      "id": "test",
+      "lane": "build",
+      "col": 4,
+      "width": 128,
+      "type": "database",
+      "label": "5 Test",
+      "sublabel": "STD-0001 coverage"
+    },
+    {
+      "id": "shipping",
+      "lane": "ship",
+      "col": 5,
+      "width": 164,
+      "type": "cloud",
+      "label": "6-7 Document + release",
+      "sublabel": "STD-0002, ADR-0010"
+    },
+    {
+      "id": "predates",
+      "lane": "gates",
+      "col": 3,
+      "width": 132,
+      "type": "security",
+      "label": "Design predates code",
+      "sublabel": "commit timestamps compared"
+    },
+    {
+      "id": "slice",
+      "lane": "gates",
+      "col": 4,
+      "width": 128,
+      "type": "security",
+      "label": "Change slice size",
+      "sublabel": "STD-0007 limits the PR"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-significant",
+      "from": "triage",
+      "to": "rfc",
+      "label": "significant",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-rfc-review",
+      "from": "rfc",
+      "to": "review",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-review-impl",
+      "from": "review",
+      "to": "implement",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-skip",
+      "from": "triage",
+      "to": "implement",
+      "label": "everything else",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-impl-test",
+      "from": "implement",
+      "to": "test",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-test-ship",
+      "from": "test",
+      "to": "shipping",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-gate-order",
+      "from": "implement",
+      "to": "predates",
+      "label": "refuses",
+      "variant": "security"
+    },
+    {
+      "id": "e-gate-size",
+      "from": "test",
+      "to": "slice",
+      "label": "refuses",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Significance is mechanical",
+      "items": [
+        "Seven triggers, read off the diff, never self-declared",
+        "Public API, HTTP or event contract, dependency outside the locked stack, migration, new crate, helm/terraform/workflows, new service dependency",
+        "A judgement-based definition is resolved in favour of skipping it, every time"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Design before code, by timestamp",
+      "items": [
+        "The RFC must exist before the implementation commits",
+        "An artifact committed alongside its code carries the authority of a design while having done none of the thinking"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Not every RFC becomes an ADR",
+      "items": [
+        "Stage 2 produces an RFC",
+        "It graduates at stage 3 only if it binds future work",
+        "Most describe how to build one thing and are finished when it is built"
+      ]
+    }
+  ]
+}

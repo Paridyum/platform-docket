@@ -287,6 +287,77 @@ the criticality tier - which on the strength of cost 3 is the highest in the sys
    user and region, which means one budget cannot cover both a local tenant and a remote one — and
    REQ-0016 does not currently have a way to express two.
 
+## Decision 1 is partially reversed, 2026-09-04, by its own condition
+
+*The original decision above is left intact. This section records what changed and why, rather
+than editing the text that argued the other way — the reasoning is still the reasoning, and it
+was right about everything except one fact nobody had checked.*
+
+**The reversal condition below fired.** It reads:
+
+> Decision 1 reverses if renting the edge is found to make a residency guarantee undeliverable —
+> the only condition under which C-0006's commodity classification would be worth contesting.
+
+**Regional Services is an Enterprise-only add-on.** Decision 4 names it as the control for
+*"which datacentres may decrypt and inspect HTTPS traffic"*, which is the mechanism RFC-0015
+decision 3 depends on. It cannot be purchased on any plan this estate can afford. So a rented
+edge cannot deliver the residency guarantee for traffic where residency binds, and the condition
+is met on its own terms.
+
+**The reversal is PARTIAL, and the line is what the traffic carries.**
+
+| Traffic | Edge | Why |
+| --- | --- | --- |
+| Public, no tenant data — the marketing surface | **rented, unchanged** | residency does not bind; C-0006's commodity classification stands and decision 1 holds |
+| Anything where RFC-0015 D3 binds | **ours, in-region** | the rented tier cannot deliver it at a price we can pay |
+
+**AN EDGE NODE OF OURS EXISTS FOR RESIDENCY AND CONTROL. NEVER FOR LATENCY.** One node per
+residency region, never one per population centre. Latency is the rented tier's job and it is
+better at it than this estate will ever be. The moment a node is added *because users are far
+away*, we have begun building the point-of-presence network decision 1 correctly refuses — which
+is what the archive did across eight regions, and what its own retrospective judged too large an
+operational surface.
+
+**What the free tier cannot do, listed against decision 1's five jobs.** Selection of Cloudflare
+under decision 4 stands; what changed is knowing which of the five it performs on a plan we can
+afford:
+
+| | Job | Rented, free tier | Ours |
+| --- | --- | --- | --- |
+| 1 | Terminate TLS | yes | yes |
+| 2 | Serve cached static responses | yes, subject to the vendor's own content-type terms | yes |
+| 3 | Resolve `Host` to a region via the generated routing table | **yes** — see below | yes |
+| 4 | Fail closed when the region is absent or unhealthy | **no** — health checks are Load Balancing, paid | yes |
+| 5 | Originate the `traceparent` ADR-0044 requires | **no** — needs Workers or Enterprise | yes |
+
+**Item 3 needs no paid product, and an earlier reading of this that said otherwise was wrong.**
+One DNS record per hostname, pointing at the edge node of the region that hostname belongs to,
+IS the routing table — which is why decision 3 calls it *generated*. Resolution happens in DNS
+rather than inside the proxy, and the property decision 1 actually wants is preserved: adding a
+region touches no DNS record a human writes, because the records are produced from the table.
+
+What the paid product buys is item 4 — health checks, and failing over when a region stops
+answering. Without it a region that is down is a region visitors still resolve to, and the
+failure is a timeout rather than a redirect.
+
+Item 4 is harmless while there is one region and becomes binding at the second. **Item 5
+remains partly unmet even with our own node**, because the rented tier sits in front of it: the
+trace begins at our edge and the leg before it is invisible. That is an improvement on nothing
+and it is not compliance, and it is recorded here rather than discovered in an incident.
+
+**THE TIER STAYS DUMB ENOUGH TO BE PORTABLE, which is decision 1's own phrase and is now a
+rule.** The rented edge is used for proxying, DDoS absorption and DNS hosting, and for nothing
+else — no Workers, no Page Rules, no Transform Rules, no vendor-issued origin certificates, no
+bot management. Every feature used is a feature that must be rebuilt to leave, and the value of
+this tier being commodity is entirely in being able to change who provides it.
+
+**Our node holds a publicly-trusted certificate, never a vendor origin certificate.** A
+Cloudflare Origin CA certificate is trusted only by Cloudflare, so an origin holding one cannot
+serve traffic the moment the proxy is bypassed — which destroys the fallback that is the
+strongest reason for the node to exist. ACME with the DNS-01 challenge, because DNS-01 issues a
+certificate for a hostname the node is not yet receiving traffic for, and that is the property
+that makes adding or replacing a node cheap.
+
 ## Reversal conditions
 
 - **Decision 1 reverses** if renting the edge is found to make a residency guarantee undeliverable —

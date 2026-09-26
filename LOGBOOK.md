@@ -279,6 +279,8 @@ docket operator (ADR-0092 §2; `operators.yaml` now carries rohan's `subject`). 
 happy path and the full denial matrix (wrong role/issuer/audience, expired, unknown key), signing
 with a keypair generated at test time so nothing is embedded to scan for. Second in-crate RSA
 verifier in the estate; a shared Rust lib-auth waits for a third consumer (ADR-0092 §3).
+**[2026-09-24: the third consumer arrived and this is now a call into `paridyum-auth` —
+see the entry for that date.]**
 
 Then the served backend itself: `src/served.rs` (the router, testable via `app`) and `src/bin/serve.rs`
 (the deployable binary — fetch the control-plane JWKS once at startup, then serve). Every protected
@@ -1410,3 +1412,47 @@ That client does not exist yet — creating it is the deployment gate for this p
 against STD-0003; the compiler and clippy `-D warnings` as the guide; a local `TcpListener` as the mock
 issuer/server so every test runs with no network; `park_timeout` for the poll wait per clippy.toml;
 `scripts/gates.sh` as the single un-piped gate.
+
+## 2026-09-24 — the verifier became a call into `paridyum-auth`, and the policy stayed here
+
+**ADR-0092 §3's trigger fired elsewhere.** This adapter was the estate's second in-crate RSA/JWKS
+verifier, recorded as debt *"until a third consumer"* rather than extracted speculatively.
+`platform-tenancy` copied `platform-identity`'s verifier and became the third, so ADR-0107 extracted
+`lib-auth-rust` and this file now calls it.
+
+**The interesting part of the change is what did not move.** Three things in this file looked like
+they belonged in a shared auth library and do not, by ANTI-0004's test — *if the business changed its
+mind, would the library need editing?*
+
+- **The `operator` role.** ADR-0092 D1 is docket's rule. A role name in the library would mean
+  changing this tool's authorisation by editing a repository two platform services also depend on.
+- **The pins.** One plane (`id.paridyum.com`) and the `paridyum-operations` audience. The library
+  offers `Pins::single_plane`; *which* plane and *which* project are this tool's configuration, and
+  they are the reason a tenant-plane token is refused here rather than accepted with less privilege.
+- **`derive_tenant_id`.** ADR-0082's uuidv5 is the tenancy domain's, and it is computed identically
+  in three languages; a copy in an auth library would be a fourth place for it to drift.
+
+**The lenient `Bearer ` prefix stayed lenient.** The shared `strip_bearer` is strict, which is what
+`platform-identity` always did. This adapter has always accepted a bare token, so it keeps its own
+two-line strip with the reason written next to it. Moving code is not licence to change behaviour.
+
+**`OperatorVerifier::new` kept its signature** — `(keys, issuer, audience)` — so `serve.rs`,
+`router.rs`, `server.rs` and `operator.rs` are untouched. The type is now a newtype over
+`paridyum_auth::JwksVerifier`.
+
+**Tests kept, and why each one is still earning its place.** The role, `resourceowner`, and lenient
+prefix cases test this tool's policy. The wrong-issuer, wrong-audience and expiry cases now overlap
+with the library's own tests and were kept anyway: they assert **this tool's pins are wired
+correctly**, which is a different claim from "the library rejects a bad audience", and a
+misconfigured `Pins` would pass every library test.
+
+**Verified:** `cargo test` — 276 unit + the adapter suites green. Two pre-existing failures in
+`tests/issuance.rs` (`the_checked_in_registry_is_valid`, `the_binary_reports_meaningful_exit_codes`)
+are unrelated to this change and were already red: *"PMD has no active signatory"*, which the
+knowledge CHANGELOG records as deliberately red pending an appointment only Rohan can make.
+`cargo clippy --all-targets --all-features` clean; `cargo fmt --all --check` clean. Compiled against
+the library through a temporary **path** dependency; the committed `Cargo.toml` names the tag, which
+does not exist until `Paridyum/lib-auth-rust` is pushed.
+
+Skills used: none. Governance retrieved: ADR-0107, ADR-0092, ADR-0082, ADR-0099, ADR-0047, ADR-0070,
+ADR-0053, ANTI-0004, STD-0022.

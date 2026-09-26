@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Four enforcement layers, on one attempted edit",
+    "subtitle": "ADR-0007 · strongest first, and each one catches what the layer above cannot",
+    "output": "docs/diagrams/enforcement-layers.sequence.html",
+    "viewBox": [
+      880,
+      700
+    ],
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "denied",
+        "label": "Denied in session",
+        "focus": [
+          "agent",
+          "hook",
+          "repo"
+        ],
+        "note": "Layer 1 denies the edit before it happens. It cannot be reasoned around and survives compaction."
+      },
+      {
+        "id": "outside",
+        "label": "Edited outside the harness",
+        "focus": [
+          "human",
+          "precommit",
+          "ci"
+        ],
+        "note": "Layer 1 covers only sessions in the harness. Layers 2 to 4 exist because that is not all the work."
+      },
+      {
+        "id": "reached-main",
+        "label": "Already on main",
+        "focus": [
+          "ci",
+          "audit"
+        ],
+        "note": "On GitHub Free, CI reports red and cannot block the merge. Layer 4 is the only one that catches what landed anyway."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "the attempt"
+        },
+        "security": {
+          "label": "a refusal"
+        },
+        "return": {
+          "label": "a report back"
+        },
+        "default": {
+          "label": "ordinary traffic"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Agent",
+      "sublabel": "in session"
+    },
+    {
+      "id": "hook",
+      "type": "security",
+      "label": "PreToolUse",
+      "sublabel": "layer 1"
+    },
+    {
+      "id": "human",
+      "type": "external",
+      "label": "Editor",
+      "sublabel": "outside harness"
+    },
+    {
+      "id": "precommit",
+      "type": "security",
+      "label": "Pre-commit",
+      "sublabel": "layer 2"
+    },
+    {
+      "id": "repo",
+      "type": "database",
+      "label": "Repository",
+      "sublabel": "working tree"
+    },
+    {
+      "id": "ci",
+      "type": "cloud",
+      "label": "CI",
+      "sublabel": "layer 3"
+    },
+    {
+      "id": "audit",
+      "type": "backend",
+      "label": "forge audit",
+      "sublabel": "layer 4"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 300,
+      "label": "In session"
+    },
+    {
+      "from": 320,
+      "to": 470,
+      "label": "Outside the harness"
+    },
+    {
+      "from": 490,
+      "to": 640,
+      "label": "After it lands"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-edit",
+      "from": "agent",
+      "to": "hook",
+      "y": 185,
+      "label": "edit a locked artifact",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-deny",
+      "from": "hook",
+      "to": "agent",
+      "y": 225,
+      "label": "denied, before it happens",
+      "variant": "security"
+    },
+    {
+      "id": "m-ok",
+      "from": "hook",
+      "to": "repo",
+      "y": 268,
+      "label": "everything else passes",
+      "variant": "dashed"
+    },
+    {
+      "id": "m-outside",
+      "from": "human",
+      "to": "repo",
+      "y": 350,
+      "label": "edit with no harness",
+      "variant": "default"
+    },
+    {
+      "id": "m-commit",
+      "from": "repo",
+      "to": "precommit",
+      "y": 392,
+      "label": "git commit",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-reject",
+      "from": "precommit",
+      "to": "repo",
+      "y": 432,
+      "label": "rejected, unless --no-verify",
+      "variant": "security"
+    },
+    {
+      "id": "m-push",
+      "from": "repo",
+      "to": "ci",
+      "y": 520,
+      "label": "push or open a PR",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-red",
+      "from": "ci",
+      "to": "repo",
+      "y": 560,
+      "label": "red, and cannot block the merge",
+      "variant": "security"
+    },
+    {
+      "id": "m-sweep",
+      "from": "audit",
+      "to": "ci",
+      "y": 605,
+      "label": "org-wide sweep of what landed",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Strongest first",
+      "items": [
+        "Layer 1 denies before the act; every layer below reports after it",
+        "It is harness-specific, which is why the others are not redundant",
+        "A contributor who declines the plugin gets no layer 1 at all"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Each layer's escape",
+      "items": [
+        "Layer 1: work done outside the harness",
+        "Layer 2: --no-verify",
+        "Layer 3: GitHub Free cannot block a merge",
+        "Layer 4: nothing, and it runs least often"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Why four",
+      "items": [
+        "No layer covers the others' gap by being stricter, only by being elsewhere",
+        "CI covers commits from any source; layer 1 covers only sessions",
+        "The audit is the only one that sees a violation already on main"
+      ]
+    }
+  ]
+}

@@ -45,11 +45,20 @@ class-registry.yaml      which repository classes exist, and which stacks bind t
 framework-registry.yaml  which external frameworks a control may map outward to
 product-registry.yaml    which products exist, their lifecycle, and what each owes
 test-registry.yaml       which test types exist, on which axis, in which tier
+tool-registry.yaml       which tools the estate uses, why, under what licence, and the way out
 ```
 
 Each has a JSON Schema beside it and a section of `scripts/check-knowledge.sh` that verifies
-every "generates" claim in both directions. ADR-0014, C-0005, ADR-0022, ADR-0028 and ADR-0029
-are the five decisions that put them there, and they are the same decision five times.
+every "generates" claim in both directions. ADR-0014, C-0005, ADR-0022, ADR-0028, ADR-0029 and
+ADR-0066 are the decisions that put them there, and they are the same decision each time: a list
+that must be extended, hardcoded in a place extending it is expensive. `tool-registry.yaml` is the
+instance where the list was hardcoded in **no place at all**, which is the version that leaves
+nothing to audit.
+
+`toolchain-registry.yaml` sits beside them and is deliberately not in that list: it pins one
+compiler or runtime per stack, has no schema and no check, and its own header records that as
+TASKS T-2.7. It owns version numbers; `tool-registry.yaml` owns adoption facts and owns no version
+where that file already holds one.
 
 That list is **prose, and nothing checks it.** The authoritative one is
 [`artifact-registry.yaml`](artifact-registry.yaml), which generates the type enum and the

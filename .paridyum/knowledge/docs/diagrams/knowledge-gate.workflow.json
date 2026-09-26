@@ -1,0 +1,271 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "The knowledge gate, in the order it runs",
+    "subtitle": "check-knowledge.sh · ADR-0002, ADR-0014, ADR-0022 · the registries decide what is scanned before anything is scanned",
+    "output": "docs/diagrams/knowledge-gate.workflow.html",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "order",
+        "label": "Why the order matters",
+        "focus": [
+          "registries",
+          "identity",
+          "immutable",
+          "crossrefs"
+        ],
+        "note": "Section 0 reads the artifact registry first. A directory missing from that list is not scanned at all, silently."
+      },
+      {
+        "id": "registries",
+        "label": "The registry checks",
+        "focus": [
+          "registries",
+          "regvalid",
+          "tools"
+        ],
+        "note": "Six registries decide what the gate looks at. Each one needs its own check, or it is less protected than the hardcoded list it replaced."
+      },
+      {
+        "id": "honesty",
+        "label": "What it reports rather than blocks",
+        "focus": [
+          "counts",
+          "inventory"
+        ],
+        "note": "The declared-versus-implemented split is printed on every run. A backlog is worth nothing if seeing it requires choosing to look."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "database": {
+          "label": "a registry read"
+        },
+        "backend": {
+          "label": "a per-artifact scan"
+        },
+        "security": {
+          "label": "a rejection"
+        },
+        "cloud": {
+          "label": "reported, not blocked"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "setup",
+      "label": "Before any file is read"
+    },
+    {
+      "id": "artifacts",
+      "label": "Per artifact — identity and references"
+    },
+    {
+      "id": "integrity",
+      "label": "Per artifact — immutability"
+    },
+    {
+      "id": "registry",
+      "label": "Per registry"
+    },
+    {
+      "id": "report",
+      "label": "Reported, not blocked"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-load",
+      "label": "Read the registries",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-scan",
+      "label": "Scan the artifacts",
+      "fromCol": 1,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-reg",
+      "label": "Check the registries",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-first",
+      "label": "A directory absent here is never scanned, and nothing says so",
+      "lane": "setup",
+      "fromCol": 0,
+      "toCol": 1,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "registries",
+    "identity",
+    "immutable",
+    "crossrefs",
+    "regvalid",
+    "tools"
+  ],
+  "nodes": [
+    {
+      "id": "registries",
+      "lane": "setup",
+      "col": 0,
+      "width": 136,
+      "type": "database",
+      "label": "0 Artifact registry",
+      "sublabel": "dirs, prefixes, statuses",
+      "tag": "read first"
+    },
+    {
+      "id": "identity",
+      "lane": "artifacts",
+      "col": 1,
+      "width": 124,
+      "type": "backend",
+      "label": "1-2 Identity",
+      "sublabel": "ids unique, frontmatter"
+    },
+    {
+      "id": "immutable",
+      "lane": "integrity",
+      "col": 2,
+      "width": 124,
+      "type": "security",
+      "label": "3 Immutability",
+      "sublabel": "locked files unchanged"
+    },
+    {
+      "id": "crossrefs",
+      "lane": "artifacts",
+      "col": 3,
+      "width": 124,
+      "type": "backend",
+      "label": "4-7 References",
+      "sublabel": "every cited id resolves"
+    },
+    {
+      "id": "regvalid",
+      "lane": "registry",
+      "col": 4,
+      "width": 136,
+      "type": "security",
+      "label": "8-8f Registries",
+      "sublabel": "class, type, test, product"
+    },
+    {
+      "id": "tools",
+      "lane": "registry",
+      "col": 5,
+      "width": 136,
+      "type": "database",
+      "label": "8g Tool registry",
+      "sublabel": "one home for every pin",
+      "tag": "ADR-0066"
+    },
+    {
+      "id": "counts",
+      "lane": "report",
+      "col": 3,
+      "width": 124,
+      "type": "cloud",
+      "label": "Hardcoded counts",
+      "sublabel": "the registry wins"
+    },
+    {
+      "id": "inventory",
+      "lane": "report",
+      "col": 5,
+      "width": 136,
+      "type": "cloud",
+      "label": "9 Inventory",
+      "sublabel": "declared vs implemented"
+    }
+  ],
+  "edges": [
+    {
+      "id": "g-derive",
+      "from": "registries",
+      "to": "identity",
+      "label": "derives what is scanned",
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-id-imm",
+      "from": "identity",
+      "to": "immutable",
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-imm-xref",
+      "from": "immutable",
+      "to": "crossrefs",
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-xref-reg",
+      "from": "crossrefs",
+      "to": "regvalid",
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-reg-tools",
+      "from": "regvalid",
+      "to": "tools",
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-counts",
+      "from": "crossrefs",
+      "to": "counts",
+      "label": "baseline may not rise",
+      "variant": "security"
+    },
+    {
+      "id": "g-inv",
+      "from": "tools",
+      "to": "inventory",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Section 0 is the load-bearing one",
+      "items": [
+        "Five hardcoded lists became one registry read",
+        "A directory absent from it is not scanned: no error, no warning, an entire artifact class unenforced while the gate prints green",
+        "That is the defect the registry exists to convert into a loud one"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Moving a list into data is not free",
+      "items": [
+        "Registry data needs a check, or it is less protected than the hardcoded list it replaced",
+        "Every registry here has a schema and a check — except the one that pins compilers, which is recorded debt"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Counts are printed, never asserted",
+      "items": [
+        "A hand-maintained number in a comment has been wrong three times",
+        "The gate prints every count live, so the authoritative figure is one command away and never in prose"
+      ]
+    }
+  ]
+}

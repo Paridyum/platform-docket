@@ -174,10 +174,19 @@ checks:
   - check: cargo.package_name_matches_repo
     spec: >
       Fails when a crate's `package.name` is not the repository name with its
-      class prefix replaced by `paridyum-`.
+      class prefix replaced by `paridyum-` and any trailing stack segment removed:
+      `lib-core` -> `paridyum-core`, `lib-auth-rust` -> `paridyum-auth`.
     owner: tool-forge
-    blocks: [C-0002, C-0005, C-0007]
+    blocks: [C-0002, C-0005, C-0007, ADR-0107]
     declared: 2026-08-06
+    notes: >
+      The stack segment was added to the spec by ADR-0107 on 2026-09-24, before any
+      implementation existed. A repository whose class declares more than one `stacks` entry
+      in class-registry.yaml carries the stack in its NAME and not in the artifact it
+      publishes, because cargo's namespace is already per-stack. An implementation reading
+      the old spec literally would have required `paridyum-auth-rust`, which is the failure
+      mode repo.name_matches_scheme already demonstrated once by pointing at a superseded
+      prefix table.
 
   - check: cargo.toolchain_file_pinned
     spec: >
@@ -636,6 +645,42 @@ checks:
       Same argument shape as ADR-0023's ENABLE-versus-FORCE and as the guard-locked-decisions.sh
       hole ADR-0022 found: a default that grants is a guard narrower than it looks.
 
+  - check: db.region_is_chosen_at_provisioning_and_immutable
+    spec: >
+      Fails when the `tenants` table has no `region` column, when that column is nullable
+      or carries a DEFAULT, when its value is not constrained to a region declared `status:
+      live` in region-registry.yaml, or when no trigger refuses UPDATE on it.
+    owner: check-migrations.sh
+    blocks: [ADR-0103, ADR-0041, ADR-0039]
+    declared: 2026-09-15
+    frameworks:
+      cis: ["3.1"]
+      csf: ["GV.OC", "PR.DS"]
+    notes: >
+      ADR-0041 decision 3 calls region contractual and immutable, and ADR-0039 step 1 already
+      inserts the tenant row "(with `region`)" — so this check enforces a field two accepted
+      ADRs assume and no migration has yet written.
+      A DEFAULT is failed as hard as a NULL, deliberately. A defaulted region places a tenant
+      in a jurisdiction nobody chose while every row looks populated, which is ADR-0024
+      decision 4's hazard — breadth granted by a lost value — moved from access to residency.
+      Keyed on the live registry rather than a hardcoded list: a jurisdiction that is declared
+      but not built is not a placement, and region-registry.yaml is the one authority on which
+      is which.
+      IMPLEMENTED 2026-09-20, five days after being declared, and it was read as enforcing for
+      all five — `owner` is the only signal the registry has for implemented-versus-owed, and
+      every value other than `tool-forge` counts as built (T-2.7). Nothing printed, so nothing
+      looked wrong. Six planted defects are now watched failing in tests/fixtures/migrations
+      (missing, nullable, defaulted, unconstrained, disagreeing-with-registry, mutable) plus a
+      positive `pass-region` fixture, because the existing `pass` fixture has no `tenants` table
+      and therefore only ever exercised the skip path — a check whose only green run is a skip
+      has not been shown to pass anything.
+      SCANS THE WHOLE CORPUS, not one file: the column arrives by ALTER in a later migration
+      than the CREATE TABLE, so a per-file check would demand it in 0001 and fail forever.
+      The first implementation matched line-by-line and reported a missing trigger that was
+      twelve lines above it, because `CREATE TRIGGER x` and its `BEFORE UPDATE ON tenants` sit
+      on separate lines. Found only because the check was run against the migration that
+      satisfies it.
+
   - check: db.row_level_security_enabled_on_tenant_tables
     spec: >
       Fails when a table declaring a `tenant_id` column does not have ROW LEVEL SECURITY
@@ -861,8 +906,13 @@ checks:
       MAXIMUM of those already used rather than a count, so removing a ledger
       row cannot cause a reissue, and a slug stays reserved forever because
       erasure appends rather than edits.
+
+      IMPLEMENTED 2026-09-07, having been declared and unimplemented since
+      2026-08-19. Reuse is one identifier across two SLUGS, not one identifier
+      on two rows: the ledger is append-only and a standing change appends, so
+      an erasure legitimately adds a second row for the same person.
     owner: tool-docket
-    blocks: [ADR-0051]
+    blocks: [ADR-0051, ADR-0072, ADR-0077]
     declared: 2026-08-19
     notes: >
       Reuse is the defect that makes an archive unreadable: a certificate
@@ -884,6 +934,139 @@ checks:
       Enforced by construction rather than by scanning: there is no code path
       that builds a person identifier from anything but a sequence number.
 
+  - check: docket.store_has_one_writer
+    spec: >
+      Fails when a writing command proceeds while another process holds the
+      store. Taken as an exclusive lock file created with O_EXCL semantics,
+      naming the holder's hostname, process id, operator and time. Every
+      writing command takes it -- CLI and the loopback server alike -- because
+      the hazard is a CLI write landing while the server holds the chains, not
+      two servers.
+    owner: tool-docket
+    blocks: [ADR-0072]
+    declared: 2026-09-07
+    notes: >
+      Ten concurrent `docket new` runs against one store duplicated the person
+      identifier in five of five pairs and forked the chain in four. The window
+      is the common case, not a narrow race: `append_chain` is read, seal onto
+      the last entry, append, with nothing between the read and the write.
+
+  - check: docs.architecture_ir_is_hand_authored
+    spec: >
+      Fails when an archify architecture IR -- a JSON document whose `diagram_type` is
+      "architecture" -- is committed outside a directory marked as generated output.
+    owner: check-repo.sh
+    blocks: [ADR-0065]
+    declared: 2026-09-05
+    notes: >
+      docs.no_hand_authored_architecture_model is keyed on FILE SHAPE and names three
+      extensions -- .dsl, .puml, .d2 -- that predate this format. An archify architecture IR
+      declares components, boundaries and connections, which is manifest.yaml's model in a
+      second file, and the existing check cannot see it. That is the sixth instance of the
+      defect ADR-0040 says this repository has been caught by five times, and it would have
+      arrived through a tool nobody would think to check.
+      Keyed on `diagram_type` rather than on filename, because the filename convention is
+      STD-0020 section 3's and a convention is not a control. Generated output is exempt by
+      directory, not by marker, for the same reason the neighbouring check gives: the marker is
+      C-0004's concern and this must not become a second opinion on it.
+      THIS CHECK FORBIDS SOMETHING NOTHING CAN YET PRODUCE. The generator is `forge`. Until it
+      ships the estate has four usable diagram kinds and one that is legal only in a directory
+      nothing writes to -- ADR-0065 accepted cost 1, recorded rather than softened.
+      IMPLEMENTED 2026-09-05 in check-repo.sh and defect-tested. PARTIAL, and the limit is worth
+      naming: it reads `diagram_type` in files under docs/diagrams/ only, so an architecture IR
+      hidden elsewhere in a repository is not seen. Widening it to every JSON file in a checkout
+      is what tool-forge is for; a `find` over an arbitrary tree on every commit is the shape of
+      gate people disable.
+
+  - check: docs.attestation_rpo_matches_failure_domain
+    spec: >
+      Fails when an isolation attestation (RFC-0045 §Proposal E) states an RPO/RTO field without
+      also naming, or in a way inconsistent with, the failure domain that field is measured
+      against -- concretely, when a region has one declared failure domain (ADR-0105) but the
+      attestation's RPO/RTO reads as though a warm or hot second site exists.
+    owner: tool-forge
+    blocks: [ADR-0105]
+    declared: 2026-09-24
+    notes: >
+      Registered to close the gap `./scripts/check-knowledge.sh` has reported since ADR-0105 was
+      accepted: `enforced_by` named this id before it existed here, which is exactly the unresolved-id
+      case this file's header calls "the typo case" -- except here the id was real, just not yet
+      declared. NOT YET IMPLEMENTED; the attestation generator (T-G.18) does not exist yet either,
+      so there is nothing for tool-forge to check against until that lands. Declaring it now removes
+      the false-error noise from every gate run in the meantime and gives T-G.18 a target to build
+      against rather than a judgement call made silently inside the implementation.
+
+  - check: docs.diagram_ir_is_valid
+    spec: >
+      Fails when a committed archify IR under docs/diagrams/ does not validate against its
+      renderer schema, as reported by `archify validate <kind> <file> --json`.
+    owner: check-repo.sh
+    blocks: [ADR-0065, STD-0020]
+    declared: 2026-09-05
+    notes: >
+      The cheapest of this set and the only one needing no judgement. archify already emits
+      path-prefixed diagnostics with rule codes and sets additionalProperties:false at every
+      level, so a typo in an IR is a rejection rather than a silently missing node -- the
+      property that makes a diagram checkable at all, which no Mermaid block has ever been
+      beyond parsing.
+      IMPLEMENTED 2026-09-05 in check-repo.sh and defect-tested in scripts/test-checks.sh.
+      SKIPS RATHER THAN FAILS WHEN ARCHIFY IS ABSENT, and that is a real hole: a workstation
+      without the pinned tool reports success. The alternative -- a hard failure -- makes every
+      contributor install a Node tool to commit an unrelated change, which is a gate people
+      bypass. Recorded rather than hidden; the skip is printed, not silent.
+
+  - check: docs.diagram_is_current
+    spec: >
+      Fails when regenerating a committed diagram HTML from its IR produces different output.
+    owner: check-repo.sh
+    blocks: [ADR-0065, STD-0020]
+    declared: 2026-09-05
+    notes: >
+      The same claim docs.system_view_is_current makes for ADR-0040, and for the same reason:
+      the failure mode of generated output committed to a repository is staleness rather than
+      incorrectness, and regenerating and comparing is the only claim worth making about it.
+      A stale diagram is worse than an absent one because it looks authoritative.
+      IMPLEMENTED 2026-09-05 in check-repo.sh and defect-tested. It was first DECLARED against
+      tool-forge on the premise that byte-reproducibility was only the vendor's claim; the claim
+      was then measured -- six diagrams re-rendered byte-identically, and the same IR delivered
+      to two different filenames produced identical bytes -- and the check was written. Recorded
+      because the honest declaration and the measurement are two different acts and only the
+      second one earns the owner column.
+      DELEGATED to scripts/render-diagram.sh --check rather than reimplemented in the gate, so
+      the font-strip that render step performs has ONE home. Two copies would drift, and the day
+      they drifted every diagram would report stale for a reason nobody could find.
+      TWO LIMITS. It runs only where that script exists in the repository under test, and it
+      skips silently where archify is absent -- the same hole docs.diagram_ir_is_valid records,
+      for the same reason, and the warning that check emits is the shared surface for both.
+      IF THE RENDERER'S OUTPUT MOVES BETWEEN SHAS this fails on every diagram the day the pin
+      advances. That is arguably the correct signal and is certainly a surprising one; the fix is
+      to re-render in the same change that advances the pin.
+
+  - check: docs.diagram_is_self_contained
+    spec: >
+      Fails when a committed diagram HTML references an external origin -- a script, stylesheet,
+      font, or image resolved over the network at open time.
+    owner: check-repo.sh
+    blocks: [ADR-0065]
+    declared: 2026-09-05
+    notes: >
+      The output's whole value here is that it is a file rather than a hosted page. An HTML
+      that reaches the network when opened is a page pretending to be a file: it breaks the
+      offline-readable posture ADR-0001 vendors knowledge for, it leaks the fact that a
+      document was read, and it stops working the day the host does.
+      FOUND FAILING ON ITS OWN FIRST RUN, on all six diagrams this check was written alongside.
+      archify's template links JetBrains Mono from fonts.googleapis.com with a preconnect to
+      fonts.gstatic.com. The load is async behind media="print" and falls back to system
+      monospace, so the vendor's OFFLINE story is sound -- what it is not is silent. ADR-0065
+      decision 7 was drafted claiming the output was self-contained, and it was corrected against
+      the file rather than the README.
+      scripts/render-diagram.sh strips those three references and refuses to write a file that
+      still reaches an external origin; this check is the same assertion made about what was
+      actually committed, which is where a bare `archify deliver` gets caught.
+      IMPLEMENTED 2026-09-05 in check-repo.sh and defect-tested. Keyed on src=/href= with an
+      http scheme, so the SVG namespace URI in every rendered file is correctly ignored -- it is
+      an identifier, not a fetch.
+
   - check: docs.diagram_parses
     spec: >
       Fails when a fenced mermaid block in any committed markdown file does not
@@ -903,6 +1086,23 @@ checks:
       obligation in its own item 6 so the attachment is honest rather than a technicality.
       The second clause is not redundant with docs.required_files_present: that check
       proves the FILE exists, and a file with the diagram deleted passes it.
+
+  - check: docs.diagram_source_is_present
+    spec: >
+      Fails when a diagram HTML under docs/diagrams/ has no IR JSON of the same subject and
+      kind beside it.
+    owner: check-repo.sh
+    blocks: [ADR-0065, STD-0020]
+    declared: 2026-09-05
+    notes: >
+      An un-regenerable file, which C-0004 forbids by making generated output regenerable, and
+      which nothing would otherwise detect: the HTML opens perfectly and it is the SOURCE that
+      is missing. The failure is invisible until someone needs to change a label and discovers
+      the only way is to hand-edit generated output -- at which point they usually do.
+      Deliberately not the inverse. An IR with no render is legal: it is authored source in
+      progress, and STD-0020 section 6 requires both in the same COMMIT, not both at every
+      moment.
+      IMPLEMENTED 2026-09-05 in check-repo.sh and defect-tested in scripts/test-checks.sh.
 
   - check: docs.doc_tests_pass
     spec: >
@@ -1035,13 +1235,50 @@ checks:
       Says nothing about whether the view is TRUE. It compares the view to the manifests,
       and the manifests to reality is what nothing checks — see ADR-0040 cost 2.
 
+  - check: domain.a_named_rung_is_an_operable_rung
+    spec: >
+      Fails when a public artifact — pricing page, README, capability matrix, docs — names a
+      containment class above C0, or names BYOK, for which no recorded end-to-end provisioning
+      and restore rehearsal exists.
+    owner: tool-forge
+    blocks: [ADR-0103, ADR-0041]
+    declared: 2026-09-15
+    frameworks:
+      csf: ["GV.OC", "ID.AM"]
+    notes: >
+      ADR-0024 decision 8's underlying argument was that publishing an isolation tier is a
+      commitment to operate it. ADR-0103 permits naming a rung and keeps that argument by
+      requiring the rung to work first; this is where "works first" stops being an intention.
+      The rehearsal record is the evidence, not the existence of code. ADR-0041 decision 4
+      already forbids claiming a framework before an audit says so, and a capability is the
+      same shape of claim — RFC-0046 §F is the case this was written for, because BYOK is the
+      capability most likely to be listed before its destruction path has ever been run.
+
+  - check: domain.containment_is_granted_never_inferred
+    spec: >
+      Fails when a containment class or placement is derived from a plan name, a product tier
+      string, a price, or the absence of a flag, rather than read from the placements row.
+    owner: tool-forge
+    blocks: [ADR-0103, ADR-0024, GLO-0005]
+    declared: 2026-09-15
+    frameworks:
+      cis: ["3.3", "6.8"]
+      csf: ["PR.AA", "PR.DS"]
+    notes: >
+      GLO-0005's "a grant, never an absence" applied one layer above the session. A plan is
+      renamed for commercial reasons on a cadence tenancy does not control, and a string
+      comparison that silently stops matching places a tenant a rung below what it pays for —
+      or a rung above what it should reach — with no error anywhere.
+      ADR-0103 decision 1 keeps the containment vocabulary as platform data precisely so that
+      this check has something stable to assert against.
+
   - check: domain.entity_has_single_owner
     spec: >
       Fails when two repositories' manifest.yaml `owns:` blocks both declare the same
       table, or when a repository's declared `owns.tables` and its db/grants.sql write
       grants disagree in either direction.
     owner: check-knowledge.sh
-    blocks: [ADR-0042, ANTI-0001]
+    blocks: [ADR-0042, ADR-0101, ANTI-0001]
     declared: 2026-08-07
     frameworks:
       cis: ["16.10"]
@@ -1116,12 +1353,32 @@ checks:
       `infra-*`: they run at build time, no tenant traffic reaches them, and forcing a buyer
       declaration onto a pipeline is ceremony with no customer at the end of it.
 
+  - check: domain.no_self_serve_path_to_a_dedicated_rung
+    spec: >
+      Fails when any route, form, API handler or upgrade action can move a tenant to a
+      containment class above C0 without a recorded contract reference and a recorded human
+      approval.
+    owner: tool-forge
+    blocks: [ADR-0103, ADR-0024, C-0004, C-0006]
+    declared: 2026-09-15
+    frameworks:
+      cis: ["6.1", "6.8"]
+      csf: ["GV.RR", "PR.AA"]
+    notes: >
+      ADR-0024 decision 8 gates escalation on a signed contract. ADR-0103 permits the rung to
+      be named publicly and depends entirely on that gate staying where it is — so this check
+      is what separates the two readings, and if it cannot be implemented then ADR-0103's
+      §Status condition has fired and the ADR is void.
+      Authenticated-as-the-tenant is not approval. The failure this prevents is the ordinary
+      one: an upgrade button added to a settings page by someone who read the pricing copy and
+      reasonably assumed the tier was self-serve.
+
   - check: domain.no_service_dependency_cycles
     spec: >
       Fails when the graph formed by every manifest.yaml `depends.services` contains a
       cycle.
     owner: tool-forge
-    blocks: [ADR-0042, ANTI-0002]
+    blocks: [ADR-0042, ADR-0101, ANTI-0002]
     declared: 2026-08-07
     frameworks:
       cis: ["16.10"]
@@ -1449,6 +1706,30 @@ checks:
       Duplicate-key detection cannot be expressed in JSON Schema and must be a
       separate pass. Without it, a second entry for an id silently shadows the
       first and the `blocks` list stops being trustworthy.
+
+  - check: knowledge.declared_tool_install_is_pinned
+    spec: >
+      Fails when a tool-registry.yaml entry declares an `install.ref` that is not a
+      40-character commit sha, an exact package version, or a tag.
+    owner: tool-forge
+    blocks: [ADR-0066]
+    declared: 2026-09-05
+    notes: >
+      An install source with a mutable ref -- a branch, `latest`, a bare clone -- is an
+      unpinned dependency wearing a declaration. A registry recording one is WORSE than no
+      registry, because it reports the dependency as governed and an auditor reading the file
+      would believe it.
+      THIS CHECK FAILS ON FIVE ENTRIES THE DAY IT IS BUILT, deliberately. cargo-audit,
+      cargo-chef, cargo-deny and sqlx-cli carry `ref: latest-unpinned` because RUN-0001
+      installs them with a bare `cargo install` and no version, and writing a number there
+      would invent a decision nobody made.
+      LEFT `owner: tool-forge` FOR THAT REASON, and the reason is worth stating because the
+      opposite choice was available and is wrong. Implementing it today turns the gate red on
+      four pre-existing defects that this change did not create and has no mandate to decide —
+      picking versions for four cargo binaries is four decisions, not a cleanup. Declaring it
+      keeps the rule citable while the defect stays visible in the registry rather than being
+      hidden by a check nobody dared switch on. ADR-0014's bargain, and DECISION-DEBT.md
+      carries the four entries.
 
   - check: knowledge.deferred_requirements_have_triggers
     spec: >
@@ -1966,6 +2247,45 @@ checks:
       says — and splitting them would produce six entries that are never independently
       cited. The stack cross-check is the one most likely to rot: class-registry.yaml gains
       stacks over time and a test type naming a retired one would silently bind nothing.
+
+  - check: knowledge.tool_registry_holds_no_version
+    spec: >
+      Fails when a tool-registry.yaml entry carries both `pin_home` and `install.ref`, or when
+      an entry carries neither.
+    owner: check-knowledge.sh
+    blocks: [ADR-0066]
+    declared: 2026-09-05
+    notes: >
+      The single invariant that keeps this registry from becoming a second copy of
+      toolchain-registry.yaml. `pin_home` names the file that already owns the version; an
+      entry carrying both is two homes for one fact, and RFC-0015's whole argument is that the
+      second one drifts silently and is discovered by a dependency's minimum version rather
+      than by anyone reading it.
+      The second clause -- neither -- is not redundant. An entry with no pin and no pin_home
+      records a tool nobody can install reproducibly and does not admit it, which is the same
+      dishonesty as an unpinned ref with the evidence removed.
+      IMPLEMENTED 2026-09-05 in check-knowledge.sh and defect-tested.
+
+  - check: knowledge.tool_registry_valid
+    spec: >
+      Fails when tool-registry.yaml is absent, does not validate against
+      tool-registry.schema.json, contains a duplicate `id`, is not sorted by `id`, or names an
+      `adopted_by` artifact id that does not resolve.
+    owner: check-knowledge.sh
+    blocks: [ADR-0066]
+    declared: 2026-09-05
+    notes: >
+      Every other registry here has a schema and a check. toolchain-registry.yaml has neither
+      and its own header records that as TASKS T-2.7 -- declaring a new registry without one
+      would reproduce, in the file created to answer the gap, the 2026-08-06 audit finding this
+      registry's own header describes: checks reporting success while enforcing nothing.
+      The `adopted_by` clause is the load-bearing half. ADR-0066 decision 6 says a tool with no
+      artifact behind it is a decision nobody made; without resolution that field is a string
+      anyone can type, and the estate has already been caught once by a cited id that did not
+      resolve (RFC-0030).
+      IMPLEMENTED 2026-09-05 in check-knowledge.sh via scripts/lib/validate-schema.py, and
+      defect-tested in scripts/test-checks.sh -- the rule that stops `owner` drifting back into
+      a wish.
 
   - check: knowledge.verification_mapping_is_symmetric
     spec: >
@@ -2518,6 +2838,38 @@ checks:
       N=10 is loose on purpose: the entrypoint was clean at N=8 when this was written, so
       tightening it is a one-line change with evidence behind it rather than a guess.
 
+  - check: repo.gate_warnings_are_surfaced
+    spec: >
+      Fails when a harness hook or git hook invokes a `check-*.sh` gate with its output
+      redirected to /dev/null, or otherwise records only the exit code. Applies to
+      plugins/paridyum-platform/hooks/ and .git/hooks/.
+    owner: check-repo.sh
+    blocks: [ADR-0059]
+    declared: 2026-08-31
+    frameworks:
+      ssdf: ["PO.3.2"]
+      csf: ["DE.AE"]
+    notes: >
+      EVERY GATE EXITS 0 ON A WARNING, DELIBERATELY. check-repo.sh, check-knowledge.sh and
+      check-migrations.sh all reserve a non-zero exit for errors, because roughly a dozen checks
+      are `warn` on arguments each artifact makes carefully — CI cannot satisfy machine state
+      (repo.paridyum_plugin_is_installed), a fresh clone legitimately lacks a git hook
+      (repo.precommit_hook_installed), most fetches are dead ends
+      (knowledge.fetched_sources_are_reconciled). A caller that keeps only the exit code
+      therefore keeps only the errors, and every one of those arguments silently becomes
+      "do not run this check at all".
+      NOT HYPOTHETICAL, AND THE COST WAS MEASURED. `run_gate` in checkpoint-session.sh ran each
+      gate as `"$@" >/dev/null 2>&1`, and .git/hooks/pre-commit ran check-repo.sh the same way.
+      repo.plugin_snapshot_matches_head reported the installed plugin as twelve days stale, by
+      name and with the exact remedy, into both closed pipes — so RFC-0027 research capture had
+      never run once, while every checkpoint commit recorded `repo: pass`.
+      `error` where ADR-0007's installed-check is `warn`, and the difference is the point: this
+      reads a TRACKED FILE rather than machine state. CI can run it, and whoever it fails can fix
+      it.
+      What it does NOT check, stated because the gap is the interesting part: whether a surfaced
+      warning is read. Nothing mechanical can answer that. ADR-0035's baseline treatment — measure
+      whether the count moves — is the precedent when it matters.
+
   - check: repo.git_remote_configured
     spec: >
       Fails when a git checkout has no configured remote.
@@ -2618,15 +2970,21 @@ checks:
     spec: >
       Fails when a repository name is not `<class-prefix>-<name>` in lowercase
       kebab-case with a prefix from `class-registry.yaml`, which C-0007 makes the set of valid prefixes, excepting the sui generis
-      `knowledge`.
+      `knowledge`. `<name>` may end in a stack segment — a value from that class's
+      `stacks` — and only when the class declares more than one (ADR-0107).
     owner: forge
-    blocks: [ADR-0001, ADR-0009, ADR-0046, C-0002, C-0005, C-0007]
+    blocks: [ADR-0001, ADR-0009, ADR-0046, C-0002, C-0005, C-0007, ADR-0107]
     declared: 2026-08-06
     notes: >
       Cited by three artifacts, the most in the id-space. `pd-coming-soon` in the
       live org violates this and is excepted only by org.no_legacy_prefixed_repos,
       not here — so this check will fail on it unless it carries the same
       exception or is scoped to non-archived Rust repositories.
+      The stack segment is CONDITIONAL on the class, which is what makes it checkable rather
+      than a free-text suffix: `lib-auth-rust` passes because `library` declares two stacks,
+      `svc-billing-rust` fails because `service` declares one. Added by ADR-0107 on
+      2026-09-24, unimplemented, and written down for the same reason the crate-name spec was:
+      this check has already been implemented-from-a-stale-spec once.
 
   - check: repo.no_credential_files_committed
     spec: >
@@ -2815,6 +3173,36 @@ checks:
       a hook that was registered and not executable: configured, silent, and doing nothing. The
       check caught it immediately, which is the argument for writing the check before trusting
       the hook.
+
+  - check: repo.supply_chain_posture_is_declared
+    spec: >
+      Fails when a repository with a package.json has no pnpm-workspace.yaml, when that file
+      omits minimumReleaseAge, trustPolicy, blockExoticSubdeps or allowBuilds, when allowBuilds
+      carries pnpm's rewritten `set this to true or false` placeholder, or when a first-party
+      package is exempted from the quarantine by exact version rather than by the '@paridyum/*'
+      class.
+    owner: check-repo.sh
+    blocks: [RFC-0003]
+    declared: 2026-09-16
+    frameworks:
+      csf: ["ID.SC", "PR.IP"]
+    notes: >
+      RFC-0003's posture fails in two directions and both look like nothing happened.
+      ABSENT: pnpm applies no posture and mentions it once, quietly, at install. This is how
+      web-dashboard was scaffolded — the file was never copied from the sibling it was cloned
+      from, because with no template-web (RFC-0028, still proposed) "scaffold a web repo" means
+      hand-picking files and hoping. Nothing checked, and the omission reached main.
+      PRESENT BUT A STUB: worse, which is why this reads content rather than existence. pnpm
+      REWRITES allowBuilds on an install that meets an unapproved build script, replacing the
+      mapping with `pkg: set this to true or false` and discarding the surrounding comments.
+      The file then exists, looks deliberate, and enforces nothing. web-admin's own copy
+      records that this already happened once and the placeholder was committed.
+      The same rewrite pins minimumReleaseAgeExclude to an exact version, which expires on the
+      next release and sends every first-party package into a 24-hour quarantine — and the
+      predictable response is somebody disabling the policy wholesale, the ADR-0008 failure of
+      a rule that obstructs good work.
+      Defect-tested on four planted faults: absent file, rewritten placeholder, version-pinned
+      exemption, and a dropped trustPolicy.
 
   - check: rfc.has_alternatives_section
     spec: >
@@ -3246,7 +3634,152 @@ checks:
       it. A `TST-` id can only be one thing; a backticked word is anything at all, and
       distinguishing them needs a table format STD-0008 never required.
 
+  # --- ui.* — STD-0015, the visual identity ---------------------------------
+
+  - check: ui.brand_accent_is_not_a_text_colour
+    spec: >
+      Fails when the brand signal is set as a foreground colour: assigned to a token whose
+      name contains `ink` in the light theme, or reached through `color: var(--color-signal)`
+      or a `text-signal` utility anywhere in a consumer.
+    owner: tool-forge
+    blocks: [STD-0015]
+    declared: 2026-08-22
+    notes: >
+      #35ecde on #f9f5ec is 1.36:1 — below every WCAG threshold at every size. The rule is
+      that the signal is a ground and a graphic; `--color-signal-ink` is the darkened form
+      you may set type in. Scoped to the LIGHT theme deliberately: on the obsidian ground the
+      signal is 14.2:1 and setting type in it is correct, so a check that fired in both modes
+      would be wrong half the time and would be disabled rather than fixed.
+      This is the chrome-band defect's shape — console-docket shipped white on pale
+      periwinkle with lint, types and the palette test all green, and it was found in a
+      screenshot. Implemented and defect-tested today in libs/lib-ui/brand/tools/check.py.
+
+  - check: ui.brand_assets_carry_no_ground
+    spec: >
+      Fails when a derived brand asset contains a `<rect>`, or still carries the source
+      board's 1920x1080 viewBox. Assets declared as colour applications — the favicon — are
+      exempt from the rect clause and not from the viewBox clause.
+    owner: tool-forge
+    blocks: [STD-0015]
+    declared: 2026-08-22
+    notes: >
+      The source boards are Illustrator artboards with a full-bleed background rect. An asset
+      that keeps one paints a cream or teal box behind itself on every surface it is placed
+      on, and does it silently — the asset looks right in isolation and wrong only in situ.
+
+  - check: ui.components_declare_no_values
+    spec: >
+      Fails when `lib-ui/styles/components.css` contains a colour literal, a font family that
+      is not a token, a pixel value other than 1px, or a physical box property
+      (`padding-left`, `top`, and the rest) rather than its logical equivalent.
+    owner: infra-ci
+    blocks: [STD-0019]
+    declared: 2026-09-05
+    notes: >
+      §4 and §3 of the standard. Both are broken by ADDITION rather than by edit — a value
+      hardcoded into a new rule, a `padding-left` in a component whose author is confident
+      direction does not matter — and neither reads as anything but more code in review.
+      1px is the one exception and it is deliberate: a hairline is a device pixel rather than
+      a step on a spacing scale, and there is no token for it because there should not be.
+
+  - check: ui.every_component_has_a_story
+    spec: >
+      Fails when a component under `lib-ui/src/{primitives,blocks,brand}` has no sibling
+      `*.stories.tsx`, or is not re-exported by name from `src/index.ts`.
+    owner: infra-ci
+    blocks: [STD-0019]
+    declared: 2026-09-05
+    notes: >
+      Found a real violation on the run that introduced it: `Input` had been exported, styled
+      and published in 0.2.0 with no story at all. The rule had been written for three days and
+      was broken by the second component anybody added, which is the argument for the check
+      rather than against the rule.
+
+  - check: ui.mark_is_not_redrawn
+    spec: >
+      Fails when a `d` attribute in a derived brand asset is not byte-identical to a `d` in
+      the source board it is declared to derive from.
+    owner: tool-forge
+    blocks: [STD-0015]
+    declared: 2026-08-22
+    notes: >
+      A logo diverges by re-export and by optimisation, not by decision, and both are
+      invisible in a diff of rendered output. Byte-identity is checkable in four lines and
+      needs no judgement about whether a curve moved far enough to matter.
+      The consequence is that derived assets MUST NOT be run through SVGO or an equivalent:
+      rewriting path data is indistinguishable from editing the mark, which is the point.
+
+  - check: ui.status_palette_clears_contrast
+    spec: >
+      Fails when a functional colour in `lib-ui`'s `styles/status.css` does not clear its
+      floor against the ground it is rendered on, in either mode: 4.5:1 where the token sets
+      text, 3.0:1 where it sets a border or a graphic.
+    owner: infra-ci
+    blocks: [ADR-0062]
+    declared: 2026-09-05
+    notes: >
+      Runs in lib-ui, where the values live, so a value edited here fails here rather than in
+      whichever console notices first. The same obligation STD-0015 §2 places on the identity,
+      for the same reason: a refusal that cannot be read is a refusal that was not delivered,
+      and it is unreadable only to the person who has to read it.
+
+  - check: ui.theme_blocks_agree
+    spec: >
+      Fails when a stylesheet's dark palette under `@media (prefers-color-scheme: dark)` and
+      under `:root[data-theme="dark"]` define different token sets or different values, or
+      when the media query is not guarded with `:not([data-theme="light"])`.
+    owner: lib-ui
+    blocks: [STD-0015]
+    declared: 2026-09-15
+    frameworks:
+      csf: ["PR.DS"]
+    notes: >
+      STD-0015 §5a needs three theme states — forced light, forced dark, and follow-the-system —
+      and plain CSS cannot apply one block of declarations under two selectors. So the dark
+      palette is written twice, and two copies of one fact drift.
+      The drift is the invisible kind: each theme looks correct in the state its author tested
+      and wrong in the other, which is the same shape as the console-docket defect STD-0015's
+      context describes — found in a screenshot rather than by any gate.
+      Implemented and defect-tested in libs/lib-ui/brand/tools/check.py, which plants a drifted
+      value, a missing guard and a missing block, and watches each fail. Compares DECLARATIONS
+      rather than text, so reindenting is allowed and changing a value is not.
+
+  - check: ui.tokens_are_not_locally_defined
+    spec: >
+      Fails when a frontend declares a `--color-*` custom property that `@paridyum/ui` already
+      exports, rather than importing it.
+    owner: tool-forge
+    blocks: [STD-0015, ADR-0062]
+    declared: 2026-09-05
+    notes: >
+      Cited in STD-0015 §4 prose since 2026-08-22 and never registered, which is ADR-0014's
+      failure exactly — a name in enforced_by that resolved to nothing. Registered here
+      because ADR-0062 depends on it: the consoles delete 692 lines of redeclared tokens, and
+      this is what keeps them deleted. Not yet implemented; it is the backlog, honestly named.
+
   # --- web.* — ADR-0046, the RSC trust boundary ------------------------------
+  - check: web.cache_key_carries_tenancy
+    spec: >
+      Fails when a cached value — an ISR route, a `use cache` function, a cacheTag, or a
+      memoised fetch — is keyed without every column of the isolation boundary its data sits
+      behind, or when the key is built from a caller-supplied value rather than a
+      server-resolved one.
+    owner: tool-forge
+    blocks: [ANTI-0009, ADR-0024, RFC-0048]
+    declared: 2026-09-15
+    frameworks:
+      cis: ["3.3"]
+      csf: ["PR.DS", "PR.AA"]
+    notes: >
+      ANTI-0009 has existed as prose with no owner since it was written. This is the owner.
+      The defect it catches is invisible to every tenancy control the estate has: RLS is
+      forced, the policy is correct, the session context is right, and the query never runs
+      because the framework served a cached page belonging to another tenant.
+      Under ADR-0024 a row sits behind TWO columns, so a key carrying one is a partial key and
+      fails. ISR is the sharp case — its key is the PATH, so a tenant resolved from the Host
+      header does not enter the key at all unless the route is rewritten to carry it, which is
+      why RFC-0048 §Proposal C puts the tenant in the route rather than adding a tag.
+
   - check: web.data_layer_modules_are_server_only
     spec: >
       Fails when a module that imports a database client, a Zitadel client or a credential does

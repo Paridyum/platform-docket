@@ -10,9 +10,16 @@ superseded_by: null
 scope: [org, library, web, mobile]
 applies_to: ["*"]
 tags: [typescript, stack, supply-chain, npm, pnpm]
+enforced_by: [repo.supply_chain_posture_is_declared]
 breaking: true
 resolved_by: ADR-0046
-enforced_by: []
+enforced_by:
+  - check: repo.supply_chain_posture_is_declared
+    severity: error
+    rationale: >
+      This RFC's "The npm supply chain got worse" section is what the check enforces: a TypeScript
+      repository declares its posture — a minimum release age and the exclusions it accepts — rather
+      than inheriting whatever the registry served that day.
 ---
 
 # RFC-0003 — TypeScript as a second first-class stack

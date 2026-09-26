@@ -91,6 +91,7 @@ jurisdictions:
       movement of personal data within the Union may be neither restricted nor prohibited.
       The countries listed are those currently contemplated, not the limit of the boundary —
       the whole EEA is in scope once this region exists.
+    availability: on_request
 
   - code: in
     name: India
@@ -113,6 +114,7 @@ jurisdictions:
       No general localization mandate. Banking requires both primary and disaster-recovery
       centres inside Indonesia, and healthcare requires health data held domestically. The
       strictest constraint on this list, and invisible if you read only the privacy law.
+    availability: on_request
 
   - code: ae
     name: United Arab Emirates
@@ -124,6 +126,7 @@ jurisdictions:
       Three regimes in one country — federal PDPL, plus DIFC and ADGM free zones with their
       own. The reason a region code may carry an optional suffix (`ae-difc`); nothing needs it
       yet and inventing it before a customer does would be the archive's mistake in miniature.
+    availability: on_request
 
   - code: sg
     name: Singapore
@@ -131,6 +134,7 @@ jurisdictions:
     countries: [SG]
     regime: PDPA
     localization: none
+    availability: on_request
 
   - code: jp
     name: Japan
@@ -139,6 +143,7 @@ jurisdictions:
     regime: APPI
     localization: none
     notes: Holds EU adequacy, so EEA-to-Japan flows need no additional safeguard.
+    availability: on_request
 
   - code: kr
     name: South Korea
@@ -150,6 +155,7 @@ jurisdictions:
       Holds EU adequacy. A PIPA amendment takes effect September 2026 raising the penalty
       ceiling and adding board-level accountability — an obligations change, not a
       localization one, so it does not move this row.
+    availability: on_request
 
   - code: tw
     name: Taiwan
@@ -157,6 +163,7 @@ jurisdictions:
     countries: [TW]
     regime: PDPA
     localization: none
+    availability: on_request
 
   - code: za
     name: South Africa
@@ -165,6 +172,7 @@ jurisdictions:
     regime: POPIA
     localization: none
     notes: Carries criminal penalties, which raises the cost of getting a transfer wrong.
+    availability: on_request
 
   - code: us
     name: United States
@@ -176,6 +184,7 @@ jurisdictions:
       No federal regime. The obligation set varies by state, which makes `us` the jurisdiction
       whose boundary is least crisply defined on this list — worth revisiting before it becomes
       a region rather than after.
+    availability: on_request
 
   - code: ca
     name: Canada
@@ -184,6 +193,7 @@ jurisdictions:
     regime: PIPEDA
     localization: none
     notes: Quebec's Law 25 adds obligations above PIPEDA within one jurisdiction.
+    availability: on_request
 
   - code: br
     name: Brazil
@@ -191,6 +201,7 @@ jurisdictions:
     countries: [BR]
     regime: LGPD
     localization: none
+    availability: on_request
 
   - code: cl
     name: Chile
@@ -198,6 +209,7 @@ jurisdictions:
     countries: [CL]
     regime: Law 21.719
     localization: none
+    availability: on_request
 
   - code: au
     name: Australia
@@ -218,6 +230,33 @@ jurisdictions:
 # Every `code` here MUST name a jurisdiction declared above. A region is a jurisdiction that
 # has been built; a jurisdiction is a region that has not.
 # ════════════════════════════════════════════════════════════════════════════════════════
+    availability: on_request
+
+
+# ── AVAILABILITY — what a surface says about a jurisdiction with no live region ──────────
+#
+# ADDED 2026-09-15 (RFC-0051 §A2), on operator direction that every non-operational
+# jurisdiction reads as "coming soon" on the tenant-creation screen.
+#
+# THE FIELD EXISTS BECAUSE "COMING SOON" IS A CLAIM, NOT AN OBSERVATION. Whether a
+# jurisdiction has a live region is a fact this file already carries — the regions list
+# below. Whether we INTEND to build one is not, and a screen that implies thirteen builds
+# are queued when nothing has committed to any of them is STD-0021's manufactured
+# credibility arriving through a form control.
+#
+# So the claim lives here, where it can be wrong in an artifact rather than only in a UI:
+#
+#   (absent)      a live region exists below — operational, and this field means nothing
+#   coming_soon   a build is intended
+#   on_request    none is planned; a contract could start one
+#
+# EVERY JURISDICTION BELOW IS `on_request` AND THAT IS THE HONEST DEFAULT, not a placeholder
+# to be bulk-edited. Promoting one to `coming_soon` is a commitment, and it should be made
+# one jurisdiction at a time by whoever intends to honour it. RFC-0051 open question 5.
+#
+# NOT A SECOND STATUS AUTHORITY (RFC-0014 decision 1). A region's `status` remains the one
+# switch; this is a property of a JURISDICTION, which has no status and never had one. The
+# archive's failure was two switches for one thing, not one field per thing.
 
 regions:
   - code: in

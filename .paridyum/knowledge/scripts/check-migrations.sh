@@ -171,7 +171,55 @@ for f in "${MIGRATIONS[@]}"; do
   done < <(normalise "$f")
 done
 
+# --- Re-declaration, for a retrofit the original CREATE TABLE cannot express -------------
+#
+# ADR-0024 decision 9 anticipates retrofitting an inner discriminator onto tables that already
+# exist. The parser above reads `-- paridyum:scope` from the comment directly above a CREATE
+# TABLE, and that comment lives in a migration which has already been applied — `migrate.py`
+# records the sha256 of every applied `up` and refuses an edited one, because a migration is
+# immutable once applied. So a retrofit could add the column and could NOT restate the category,
+# and the table would fail `db.tenant_scoped_tables_declare_tenancy` for carrying an account_id
+# its own declaration forbids.
+#
+# The directive below is the way out, and it is deliberately verbose — it names the table, so it
+# reads as a correction to a specific earlier declaration rather than as a second opinion:
+#
+#   -- paridyum:rescope docket_persons account
+#
+# LAST DECLARATION WINS, in migration order, which is the same rule the schema itself follows.
+# A rescope for a table that was never created is an error rather than a no-op: it is either a
+# typo or a reference to a table someone removed, and both are worth reporting.
+declare -A RESCOPE=()
+for f in "${MIGRATIONS[@]}"; do
+  rel="${f#"$SCAN"/}"
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*--[[:space:]]*paridyum:rescope[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]+([a-z]+) ]]; then
+      rt="${BASH_REMATCH[1]}"; rs="${BASH_REMATCH[2]}"
+      case "$rs" in
+        platform|tenant|account) ;;
+        *) err "$rel: rescope of '$rt' names '$rs', which is not one of platform|tenant|account (ADR-0024)"; continue ;;
+      esac
+      [[ -n "${TBL_FILE[$rt]:-}" ]] \
+        || { err "$rel: rescopes '$rt', which no migration creates (ADR-0024)"; continue; }
+      RESCOPE[$rt]="$rs"
+    fi
+  done < <(normalise "$f")
+done
+for t in "${!RESCOPE[@]}"; do TBL_SCOPE[$t]="${RESCOPE[$t]}"; done
+
 has_col() { [[ " ${TBL_COLS[$1]} " == *" $2 "* ]]; }
+
+# A column added by a later ALTER is a column the table has. The parser above only sees columns
+# inside a CREATE TABLE body, which was sufficient while every column arrived with its table —
+# and is not, the moment a discriminator is retrofitted (ADR-0024 D9).
+for f in "${MIGRATIONS[@]}"; do
+  while IFS= read -r line; do
+    if [[ "$line" =~ ALTER[[:space:]]+TABLE[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]+ADD[[:space:]]+COLUMN[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
+      at="${BASH_REMATCH[1]}"; ac="${BASH_REMATCH[3]}"
+      [[ -n "${TBL_FILE[$at]:-}" ]] && TBL_COLS[$at]="${TBL_COLS[$at]:-} $ac"
+    fi
+  done < <(normalise "$f")
+done
 
 # --- db.tenant_scoped_tables_declare_tenancy --------------------------------
 # ADR-0024 decision 1. Exactly one of three categories, declared and never inferred:
@@ -280,6 +328,70 @@ for t in "${!TBL_FILE[@]}"; do
     wrn "${TBL_FILE[$t]}: table '$t' does not look plural. Add it to this check's allowlist if it is a noun with no distinct plural (C-0005)"
   fi
 done
+
+# --- db.region_is_chosen_at_provisioning_and_immutable ----------------------
+# ADR-0041 decision 3: region is contractual and immutable. ADR-0039 step 1 has said "insert
+# tenant row (with `region`)" since 2026-08-08 against a column that did not exist, which is
+# the gap this closes.
+#
+# DECLARED 2026-09-15 AND IMPLEMENTED 2026-09-20. In between it was owned by this script and
+# enforced by nothing — the T-2.7 defect, where `owner` is the only signal the registry has for
+# implemented-versus-owed and every value other than `tool-forge` counts as built. It was read
+# as passing for five days because nothing printed anything.
+#
+# SCANS THE WHOLE CORPUS, not one file, because the column arrives by ALTER in a later migration
+# than the CREATE TABLE. A per-file check would demand the column in 0001 and fail forever.
+#
+# SKIPS ENTIRELY WHERE THERE IS NO `tenants` TABLE. The fixture schemas have none, and a check
+# that fired on their absence would be asserting that every migration set in the estate must
+# define the platform's tenant table.
+if [[ -n "${TBL_FILE[tenants]:-}" ]]; then
+  CORPUS="$(cat "${MIGRATIONS[@]}" 2>/dev/null)"
+  # Strip line comments before matching. Without this, the prose above a constraint — which in
+  # 0011 discusses DEFAULT at length precisely to say there isn't one — matches the patterns
+  # below and the check reports a defect it invented from documentation.
+  CORPUS_SQL="$(sed 's/--.*$//' <<<"$CORPUS")"
+  # Flattened to one line for the patterns that span several. `CREATE TRIGGER x` and its
+  # `BEFORE UPDATE ON tenants` are conventionally on separate lines, and grep is line-oriented —
+  # so the trigger clause matched nothing and this check reported a missing trigger that was
+  # twelve lines above it. Found by the check failing against the migration that satisfies it,
+  # which is the only reason it was found at all.
+  CORPUS_FLAT="$(tr '\n' ' ' <<<"$CORPUS_SQL" | tr -s ' ')"
+
+  if ! grep -qiE 'ALTER[[:space:]]+TABLE[[:space:]]+tenants[[:space:]]+ADD[[:space:]]+COLUMN[[:space:]]+region\b' <<<"$CORPUS_FLAT" \
+     && ! grep -qiE '^[[:space:]]*region[[:space:]]+text' <<<"$CORPUS_SQL"; then
+    err "no migration gives 'tenants' a region column — ADR-0039 step 1 provisions a tenant WITH a region and ADR-0041 D3 calls it contractual, so a tenant currently acquires a jurisdiction by having none recorded (RFC-0045 slice 2)"
+  else
+    grep -qiE 'ALTER[[:space:]]+TABLE[[:space:]]+tenants[[:space:]]+ALTER[[:space:]]+COLUMN[[:space:]]+region[[:space:]]+SET[[:space:]]+NOT[[:space:]]+NULL' <<<"$CORPUS_FLAT" \
+      || grep -qiE '^[[:space:]]*region[[:space:]]+text[[:space:]]+NOT[[:space:]]+NULL' <<<"$CORPUS_SQL" \
+      || err "'tenants.region' is nullable — a tenant with no region has no jurisdiction, and nothing downstream can tell that from a tenant whose region is merely unread (ADR-0041 D3)"
+
+    if grep -qiE 'ALTER[[:space:]]+TABLE[[:space:]]+tenants[[:space:]]+ALTER[[:space:]]+COLUMN[[:space:]]+region[[:space:]]+SET[[:space:]]+DEFAULT' <<<"$CORPUS_FLAT" \
+       || grep -qiE '^[[:space:]]*region[[:space:]]+text[^,]*DEFAULT' <<<"$CORPUS_SQL"; then
+      err "'tenants.region' carries a DEFAULT — provisioning that forgets to choose a region then succeeds, and the tenant acquires a jurisdiction by accident. Refused rather than defaulted (ADR-0041 D3)"
+    fi
+
+    # The constraint is a PROJECTION of region-registry.yaml, and this is what keeps the two
+    # honest. C-0007's rule is that the list is data; a CHECK listing region codes is a second
+    # copy of that data, legitimate only while something compares them.
+    constraint="$(grep -oiE 'CHECK[[:space:]]*\([[:space:]]*region[[:space:]]+IN[[:space:]]*\([^)]*\)' <<<"$CORPUS_FLAT" | head -1)"
+    if [[ -z "$constraint" ]]; then
+      err "'tenants.region' is not constrained to a live region — any string is accepted, so a typo is a jurisdiction (ADR-0041 D3, region-registry.yaml)"
+    elif [[ -f "$ROOT/region-registry.yaml" ]]; then
+      live="$(python3 -c "
+import yaml,sys
+d=yaml.safe_load(open('$ROOT/region-registry.yaml')) or {}
+print(' '.join(sorted(r['code'] for r in d.get('regions',[]) if r.get('status')=='live')))" 2>/dev/null)"
+      declared="$(grep -oE "'[^']+'" <<<"$constraint" | tr -d "'" | sort | tr '\n' ' ')"
+      if [[ -n "$live" ]] && [[ "$(tr -s ' ' <<<"$live ")" != "$(tr -s ' ' <<<"$declared")" ]]; then
+        err "'tenants.region' permits [${declared% }] but region-registry.yaml declares live regions [$live] — the constraint and the registry disagree, and the registry is the source (ADR-0035, C-0007)"
+      fi
+    fi
+
+    grep -qiE 'CREATE[[:space:]]+TRIGGER[[:space:]]+[a-z_]+[[:space:]]+BEFORE[[:space:]]+UPDATE[[:space:]]+ON[[:space:]]+tenants' <<<"$CORPUS_FLAT" \
+      || err "no trigger refuses an UPDATE to 'tenants.region' — moving a tenant by UPDATE changes the contract while every row stays where it was, so the record names one jurisdiction and the bytes are in another (ADR-0041 D3)"
+  fi
+fi
 
 # === STD-0010 — locale-neutral storage ======================================
 # Four checks, added 2026-08-08. They share the tenancy gate rather than getting a script of

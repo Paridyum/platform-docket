@@ -25,7 +25,7 @@ tenants are themselves multi-tenant applications. Two silos, one inside the othe
 Paridyum
   └── operator            GLO-0001  pays us; owns 1..N tenants
         └── tenant        GLO-0002  a business. OUTER silo.  tenant_id
-              └── account GLO-0003  its customer. INNER silo. account_id
+              └── account GLO-0003  a unit it serves. INNER silo. account_id
 ```
 
 Two independent isolation boundaries, not one boundary with extra columns:
@@ -33,7 +33,11 @@ Two independent isolation boundaries, not one boundary with extra columns:
 | Boundary | Crossing it means | Severity |
 | -------- | ----------------- | -------- |
 | tenant ↔ tenant | one business reads another business's data, including a competitor's | catastrophic, reportable |
-| account ↔ account, same tenant | one of a business's customers reads another's | catastrophic for that business, and it is their reputation, not ours |
+| account ↔ account, same tenant | one of a business's units reads another's — a customer, a division, or a second instance of one product | catastrophic for that business, and it is their reputation, not ours |
+
+> **The inner unit was narrowed to "customer" until 2026-09-20 and is now "a unit it serves"**
+> (ADR-0104, correcting GLO-0003). A second instance of one product — two dockets under one tenant
+> — is an account. The mechanism is unchanged; the assumed kind of unit widened.
 
 ## Why this is not "just another column"
 

@@ -18,14 +18,26 @@ enforced_by: []
 
 ## Definition
 
-**An account is one customer of a tenant's product: the INNER silo. It is isolated from other
-accounts of the same tenant, and it has no relationship with Paridyum.**
+**An account is the unit one instance of a tenant's product serves: the INNER silo. It is
+isolated from other accounts of the same tenant, and it has no relationship with Paridyum.**
+
+> **Widened by ADR-0104 on 2026-09-20.** This read *"one customer of a tenant's product"* until
+> then, and the narrowness was load-bearing in the wrong direction: ADR-0102 reasoned correctly
+> from it that docket — whose model has no customers — needed no inner silo, and was superseded
+> hours later when a tenant running **two dockets** turned out to need exactly one. A unit may be a
+> customer, a division, a jurisdiction or a subsidiary. What makes it an account is that its data
+> must not mix with its siblings' under the same tenant, and that it has no relationship with
+> Paridyum. **Both original properties are unchanged; only the assumed kind of unit widened.**
 
 Column: `account_id`, always alongside `tenant_id` and never instead of it. Belongs to exactly
 one tenant (GLO-0002).
 
 If a tenant is a CRM product, its accounts are the companies using that CRM. Their data must
 not mix, and the tenant's operator can see all of it.
+
+If a tenant runs **two instances of one product** — two dockets, for two divisions — each instance
+is an account, for the same reason and with the same mechanism. ADR-0024 decision 7 already made
+this affordable before anything needed it: *"accounts are free to create."*
 
 ## Why this term is load-bearing
 

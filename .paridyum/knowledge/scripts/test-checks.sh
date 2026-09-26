@@ -46,11 +46,19 @@ ok()   { printf '%s✔%s %s\n' "$GRN" "$RST" "$1"; PASS=$((PASS+1)); record pass
 bad()  { printf '%s✘%s %s\n' "$RED" "$RST" "$1"; FAIL=$((FAIL+1)); record fail "$1" "${2:-}"; }
 
 # expect_ok <label> <cmd...>   — the command must exit 0
+#
+# ON FAILURE IT SHOWS THE LAST LINES, NOT THE FIRST, AND THAT WAS A REAL DEFECT. It used
+# `head -4`, and every suite invoked through here prints its PASSING cases before its failing
+# one — so a failure report was four green ticks and no cause. It also piped into `head`, which
+# closes the pipe and makes `sed` print "couldn't flush stdout: Broken pipe" underneath, so the
+# one line of output that WAS about the failure was a message about plumbing.
+#
+# Found while diagnosing a CI failure this harness had already reported and rendered unreadable.
 expect_ok() {
   local label="$1"; shift
   local out; out="$("$@" 2>&1)"; local rc=$?
   [[ "$VERBOSE" == true ]] && printf '%s\n' "$out"
-  if [[ $rc -eq 0 ]]; then ok "$label"; else bad "$label — expected exit 0, got $rc" "$out"; printf '%s\n' "$out" | sed 's/^/      /' | head -4; fi
+  if [[ $rc -eq 0 ]]; then ok "$label"; else bad "$label — expected exit 0, got $rc" "$out"; printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fi
 }
 # expect_warns <label> <pattern> <cmd...>  — output must contain the pattern
 # Needed because a `warn`-level check never changes the exit code, so expect_caught can never
@@ -74,6 +82,10 @@ expect_caught() {
 printf '\n── migration gate (ADR-0024) ──────────────────────────────────────\n'
 F=tests/fixtures/migrations
 expect_ok "clean schema passes" bash scripts/check-migrations.sh --root "$F/pass"
+# The positive case for the region check specifically. `pass` has no `tenants` table, so it
+# exercises the skip path rather than the check — and a check whose only green run is a skip has
+# not been shown to pass anything.
+expect_ok "a correctly regioned tenants table passes" bash scripts/check-migrations.sh --root "$F/pass-region"
 for c in \
   "fail-undeclared|a table declaring no tenancy category" \
   "fail-account-without-tenant|account_id with no tenant_id" \
@@ -88,7 +100,13 @@ for c in \
   "fail-naive-timestamp|an _at column without a time zone (C-0005, STD-0010)" \
   "fail-non-unicode-encoding|a non-Unicode database encoding (STD-0010)" \
   "fail-no-plane|a table declaring no plane (RFC-0014)" \
-  "fail-tenant-in-control-plane|tenant rows declared into the control plane (RFC-0014)"
+  "fail-tenant-in-control-plane|tenant rows declared into the control plane (RFC-0014)" \
+  "fail-region-missing|a tenants table with no region column (ADR-0041 D3)" \
+  "fail-region-nullable|a nullable region — a tenant with no jurisdiction (ADR-0041 D3)" \
+  "fail-region-default|a DEFAULTed region — a jurisdiction acquired by accident (ADR-0041 D3)" \
+  "fail-region-unconstrained|a region constrained to nothing, so a typo is a jurisdiction (ADR-0041 D3)" \
+  "fail-region-not-in-registry|a region constraint disagreeing with region-registry.yaml (ADR-0035)" \
+  "fail-region-not-immutable|a region with no trigger refusing an UPDATE (ADR-0041 D3)"
 do
   d="${c%%|*}"; label="${c#*|}"
   expect_caught "$label" bash scripts/check-migrations.sh --root "$F/$d"
@@ -238,6 +256,15 @@ m_no_ci()          { rm -f "$1/.github/workflows/ci.yml"; }
 m_ci_no_pr()       { printf 'on:\n  push:\njobs:\n  a:\n    steps:\n      - run: ./scripts/check-knowledge.sh\n' > "$1/.github/workflows/ci.yml"; }
 m_hook_wrong()     { printf '#!/bin/sh\ntrue\n' > "$1/.git/hooks/pre-commit"; }
 m_no_readme()      { rm -f "$1/README.md"; }
+# ADR-0059. Two mutators, because the defect had two sites with different shapes: a harness hook
+# under plugins/, and the pre-commit GENERATOR at scripts/install-hooks.sh. Testing only one would
+# have left the other passing, which is how the original went twelve days unnoticed.
+m_gate_muted_hook() { mkdir -p "$1/plugins/p/hooks"
+                      printf '#!/usr/bin/env bash\n"$R/scripts/check-repo.sh" >/dev/null || exit 1\n' \
+                        > "$1/plugins/p/hooks/checkpoint.sh"; }
+m_gate_muted_gen()  { mkdir -p "$1/scripts"
+                      printf '#!/usr/bin/env bash\ncat <<EOF\n"\\$K/scripts/check-knowledge.sh" >/dev/null || exit 1\nEOF\n' \
+                        > "$1/scripts/install-hooks.sh"; }
 m_class_no_arch()  { printf 'name: svc-x\nclass: service\nowner: y\nlifecycle: beta\n' > "$1/manifest.yaml"; }
 # STD-0013. ARCHITECTURE.md, API.md and RUNBOOK.md present and SOP.md missing, so the case can
 # only be caught by docs.sop_present -- a repository missing everything would be caught by
@@ -275,6 +302,8 @@ plant "CI does not run on pull_request"        m_ci_no_pr
 plant "pre-commit hook skips the gate"         m_hook_wrong
 plant "README.md absent (STD-0002)"            m_no_readme
 plant "classed repo without ARCHITECTURE.md"   m_class_no_arch
+plant "a harness hook mutes a gate (ADR-0059)" m_gate_muted_hook
+plant "install-hooks.sh mutes a gate (ADR-0059)" m_gate_muted_gen
 
 # --- the four test.* checks moved off tool-forge (STD-0008) ------------------
 # The scaffold has no tests, so every one of these reports n/a there — which is correct and is
@@ -1259,6 +1288,117 @@ kplant "a dossier entry for a kind the registry does not declare" "$PRG" \
     stage: proposed" "  - kind: franchise
     stage: proposed"
 
+
+printf '\n── diagrams (ADR-0065, STD-0020) ──────────────────────────────────\n'
+# docs.diagram_source_is_present, docs.diagram_is_self_contained,
+# docs.architecture_ir_is_hand_authored, and the filename-kind rule.
+#
+# THE IR-VALIDITY CASE IS NOT HERE, deliberately. It needs archify installed at its pinned sha,
+# and a suite case that silently passes on a machine without the tool is the green check that
+# proves nothing -- the exact failure this file exists to prevent. The gate warns rather than
+# skipping silently; that warning is the honest surface, and this is the record of the gap.
+#
+# `withdiag` writes a MINIMAL render rather than a real one: these three checks read the
+# filename and grep for an external origin, and none of them parses the HTML. A 700KB fixture
+# per case would make the suite slower and prove nothing extra.
+withdiag() { # a scaffold carrying one valid IR and its render
+  local d="$1"; withtests "$d"; mkdir -p "$d/docs/diagrams"
+  printf '{"schema_version":1,"diagram_type":"lifecycle","meta":{"title":"t"},"lanes":[],"states":[],"transitions":[]}\n' \
+    > "$d/docs/diagrams/sample.lifecycle.json"
+  printf '<!doctype html><html><body><svg xmlns="http://www.w3.org/2000/svg"></svg></body></html>\n' \
+    > "$d/docs/diagrams/sample.lifecycle.html"
+}
+WD="$TMP/withdiag"; withdiag "$WD"
+expect_ok "a diagram with its IR beside it and no external origin passes" \
+  bash scripts/check-repo.sh --root "$WD"
+
+plantd() { local label="$1" fn="$2" d="$TMP/cd"; rm -rf "$d"; withdiag "$d"; "$fn" "$d"
+  expect_caught "$label" bash scripts/check-repo.sh --root "$d"; }
+
+m_diag_no_ir()    { rm -f "$1/docs/diagrams/sample.lifecycle.json"; }
+m_diag_fetches()  { printf '<!doctype html><html><head><link href="https://fonts.googleapis.com/css2?family=X" rel="stylesheet"></head><body></body></html>\n' \
+                      > "$1/docs/diagrams/sample.lifecycle.html"; }
+m_diag_arch()     { printf '{"schema_version":1,"diagram_type":"architecture","meta":{"title":"t"}}\n' \
+                      > "$1/docs/diagrams/estate.architecture.json"; }
+m_diag_no_kind()  { mv "$1/docs/diagrams/sample.lifecycle.json" "$1/docs/diagrams/sample.json"; }
+
+plantd "a rendered diagram with no IR beside it"        m_diag_no_ir
+plantd "a diagram that fetches a font when opened"      m_diag_fetches
+plantd "a hand-authored architecture IR (ADR-0040)"     m_diag_arch
+plantd "an IR whose filename does not name its kind"    m_diag_no_kind
+
+# docs.diagram_is_current, planted against THIS repository rather than a fixture. It needs a
+# real render to compare against, and `withdiag`'s minimal HTML is not one -- a fixture would
+# report stale for the trivial reason that it was never rendered, which proves nothing about
+# the comparison. Skipped rather than faked where archify is absent, for the reason the section
+# comment in check-repo.sh gives.
+if A_BIN="$(bash "$ROOT/scripts/tool-path.sh" archify 2>/dev/null)" && [[ -x "$A_BIN" ]]; then
+  CURIR="$ROOT/docs/diagrams/tenancy-chain.dataflow.json"
+  CURHTML="${CURIR%.json}.html"
+  cp "$CURHTML" "$CURHTML.orig"
+  python3 -c "
+import pathlib,sys
+p=pathlib.Path(sys.argv[1]); p.write_text(p.read_text().replace('append-only','append-onlyy',1))" "$CURHTML"
+  expect_caught "a committed render that no longer matches its IR" \
+    bash "$ROOT/scripts/check-repo.sh" --root "$ROOT"
+  mv "$CURHTML.orig" "$CURHTML"
+  expect_ok "the repository is clean again once the render is restored" \
+    bash "$ROOT/scripts/check-repo.sh" --root "$ROOT"
+else
+  printf '  skipped: docs.diagram_is_current — archify is not installed at its pinned ref\n'
+fi
+
+
+printf '\n── tool registry (ADR-0066) ───────────────────────────────────────\n'
+# knowledge.tool_registry_valid and knowledge.tool_registry_holds_no_version. Five cases,
+# because the registry makes five distinct claims and a schema call proves only one of them.
+#
+# The pin-home pair is the interesting half. A registry whose entries merely VALIDATE is a
+# registry that can still carry a version in two places, which is the exact defect it was
+# created to close — RFC-0015, and the mechanism that put an end-of-life Node runtime into
+# three repositories. Both directions are planted: two homes, and none.
+TRG=tool-registry.yaml
+
+kplant "a tool carrying both install.ref and pin_home" "$TRG" \
+  "    pin_home: os
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Loss costs nothing but a slower feedback loop" "    pin_home: os
+    install:
+      method: os-package
+      ref: 0.2.82
+    network: always
+    declared: 2026-09-05
+    exit: >
+      Loss costs nothing but a slower feedback loop"
+
+kplant "a tool with neither a pin nor a pin_home" "$TRG" \
+  "    adopted_by: [ADR-0004, RUN-0001]
+    pin_home: os" "    adopted_by: [ADR-0004, RUN-0001]"
+
+# Two checks fire on this one — the cross-reference scanner in section 5 also walks this file
+# — and that is deliberate rather than sloppy: adopted_by resolution must hold even if the
+# generic scanner is ever narrowed to artifact directories, which is what section 8g asserts
+# separately.
+# The unresolvable id is ASSEMBLED rather than written, because section 5's cross-reference
+# scanner walks this file too, and a literal four-digit id in the 9000 range here is itself a
+# dangling reference — the
+# gate caught exactly that on this case's first run.
+NOSUCH="ADR-99$(printf '99')"
+kplant "a tool whose adopted_by does not resolve" "$TRG" \
+  "    adopted_by: [ADR-0065, RFC-0040, STD-0020]" "    adopted_by: [$NOSUCH]"
+
+kplant "tool entries out of sorted order" "$TRG" \
+  "  - id: act
+" "  - id: zzz-act
+"
+
+kplant "a tool entry with no exit plan (REQ-0012 §5)" "$TRG" \
+  "    exit: >
+      No exit. ADR-0031's errata model" "    x_exit: >
+      No exit. ADR-0031's errata model"
+
 if [[ -n "$JUNIT_OUT" ]]; then
   {
     printf '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -1282,6 +1422,13 @@ fi
 # ---------------------------------------------------------------------------
 expect_ok "junit-to-envelope converter (STD-0014)" \
   bash "$KB/templates/infra-ci/scripts/test-junit-to-envelope.sh"
+
+# The ledger's own suite, in the blocking tier for the same reason. Its most
+# valuable cases are the tamper ones: a mutated line, a deleted middle line, and an
+# entry re-sealed correctly by the documented rule that STILL breaks the next entry —
+# which is what makes the chain rather than the digest the load-bearing part.
+expect_ok "evidence ledger append and verify (RFC-0034 §4)" \
+  bash "$KB/templates/infra-ci/scripts/test-evidence-ledger.sh"
 
 printf '\n'
 if [[ $FAIL -gt 0 ]]; then

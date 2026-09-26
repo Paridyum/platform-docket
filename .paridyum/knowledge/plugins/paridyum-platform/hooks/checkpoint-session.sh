@@ -92,10 +92,44 @@ run_gate() {
   # audit found four separate times" -- and this hook violated it: a missing gate script
   # incremented nothing, so a checkpoint that ran zero gates still recorded `green`.
   if [[ ! -x "$1" ]]; then gate_lines+="  ${name}: ABSENT (not run)"$'\n'; absent=$((absent+1)); return; fi
-  if "$@" >/dev/null 2>&1; then
-    gate_lines+="  ${name}: pass"$'\n'
+  # OUTPUT IS CAPTURED, NOT DISCARDED (ADR-0059). This was `>/dev/null 2>&1` with only the exit
+  # code kept, and every gate here exits 0 on a warning by design -- so roughly a dozen `warn`
+  # checks were reachable from nowhere. repo.plugin_snapshot_matches_head reported the installed
+  # plugin as twelve days stale, by name and with the remedy, into this redirect: RFC-0027
+  # research capture had never run once while every checkpoint recorded `repo: pass`.
+  local out rc
+  out="$("$@" 2>&1)"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    # The gate's own `!` prefix is the warning marker; counting it here avoids each gate needing
+    # to agree on a machine-readable summary line it does not currently emit.
+    # Output is captured, so it is not a tty and the gates emit no colour: a warning line is
+    # literally `! text` and an error line `\u2718 text`. Matching the plain form rather than an
+    # escape sequence is deliberate -- the colour branch is unreachable here by construction.
+    local w
+    w="$(grep -c '^! ' <<<"$out" 2>/dev/null || true)"; w="${w:-0}"
+    if [[ "$w" -gt 0 ]]; then
+      gate_lines+="  ${name}: pass (${w} warning(s))"$'\n'
+      # Into the commit message, where `git log --grep` can find it later, AND onto stderr, where
+      # the operator is looking now. A channel that only reaches the log is half a channel.
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && gate_lines+="    ! ${line}"$'\n'
+      # FIRST LINE ONLY. Some `wrn` calls span several lines (the plugin-not-installed one
+      # carries its two-command remedy on continuation lines), and those do not carry the `!`
+      # prefix so they are dropped here. The check id and the condition survive, which is what
+      # makes the warning findable; the full text is one `scripts/check-repo.sh` away. Recorded
+      # rather than solved with a fragile continuation parser.
+      done < <(grep '^! ' <<<"$out" | sed 's/^! *//')
+      say "${name} gate passed with ${w} warning(s) -- see the checkpoint commit message"
+    else
+      gate_lines+="  ${name}: pass"$'\n'
+    fi
   else
     gate_lines+="  ${name}: FAIL"$'\n'; failed=$((failed+1))
+    # A failing gate's output was discarded too, which made `git log --grep 'FAIL'` a list of
+    # checkpoints with no way to tell what failed without re-running the gate at that commit.
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && gate_lines+="    x ${line}"$'\n'
+    done < <(grep '^✘ ' <<<"$out" | sed 's/^. *//' | head -20)
   fi
 }
 

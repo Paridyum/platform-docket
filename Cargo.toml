@@ -24,6 +24,11 @@ name = "tool_docket"
 path = "src/lib.rs"
 
 [dependencies]
+# The estate's shared token verifier (ADR-0107). This adapter was the second in-crate Rust JWKS
+# verifier and ADR-0092 §3 recorded it as debt until a third consumer existed; it now holds only
+# docket's own policy — the pins, the `operator` role, and the org→tenant derivation.
+# Pinned to a tag, not a branch: exact and current (ADR-0053).
+paridyum-auth = { git = "ssh://git@github.com/Paridyum/lib-auth-rust.git", tag = "v0.1.0" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

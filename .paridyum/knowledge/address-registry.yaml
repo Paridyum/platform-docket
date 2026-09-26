@@ -1,0 +1,308 @@
+# Paridyum addresses — the allocations RFC-0037 declares the namespace for.
+#
+# RFC-0037 decides what the octets MEAN. This file records what is ALLOCATED. The separation is
+# device-registry.yaml's, in its own words: "a governance file declares intent, and observed
+# state is measured elsewhere and never written back." It is why RFC-0037 names no region and
+# why this file argues for nothing.
+#
+# THE RULES THAT GOVERN EDITS TO THIS FILE, restated because getting them wrong is silent:
+#
+#   Zero is never allocated.        X = 0 and Y = 0 are unusable (RFC-0037 D3). X = 0 is
+#                                   10.0.0.0/16, the default of most cloud VPCs and consumer
+#                                   appliances — a collision there is with a provider's network,
+#                                   which we cannot renumber.
+#   Retired is not deleted.         A retired allocation keeps its entry and its numbers are
+#                                   never reused. Logs, firewall rules and backups from that
+#                                   period refer to the machine by that address; reusing it
+#                                   makes the archive lie (RFC-0021's rule for hostnames).
+#   Routed means unique.            Everything in 10.0.0.0/8 is globally unique across Paridyum.
+#                                   172.16/12 and 192.168/16 are local and reusable, are never
+#                                   advertised, and DO NOT APPEAR IN THIS FILE — recording a
+#                                   reusable range here would imply it was reserved.
+#   Static, not leased.             A routed address is configured statically from this file.
+#                                   No machine obtains a routed address by DHCP (RFC-0037 D9).
+#
+# GENERATES, rather than duplicates:
+#   host_vars in infra-*        the address a machine is configured with
+#   Talos machine config        pod, service and load-balancer CIDRs (RFC-0037 D5)
+#   the mesh's advertised routes  which subnets a routing peer announces
+#
+# Continent is NOT recorded here. region-registry.yaml maps country to continent and is the
+# authority; a copy would be a second truth (ADR-0035 — the registry wins).
+
+version: 1
+governed_by: RFC-0037
+
+# ── Country blocks ───────────────────────────────────────────────────────────────────────────
+#
+# A country's FIRST allocated /16 is its backbone, structured Y=region /24, Z=host. Every
+# further /16 is allocated whole to one large consumer. India's namespace is X = 1–29
+# (RFC-0037 D3); two blocks are allocated and twenty-seven remain.
+countries:
+  - country: IN
+    name: India
+    x_range: [1, 29]
+    blocks:
+      - cidr: 10.1.0.0/16
+        x: 1
+        name: IN-BACKBONE-01
+        role: backbone
+        owner: infra
+        purpose: >-
+          Hypervisors, routers, storage and the machines that carry them. Regions are /24s
+          within this block.
+        status: active
+        created: 2026-08-31
+        updated: 2026-08-31
+
+      - cidr: 10.2.0.0/16
+        x: 2
+        name: IN-CLUSTER-STAGING
+        role: kubernetes
+        owner: infra
+        purpose: >-
+          The `staging` cluster of RFC-0023 — the first and, at stage B0, only cluster. Allocated
+          whole per RFC-0037 D4 because a cluster's internal space dies with the cluster and a
+          backbone address outlives its machine.
+        status: active
+        created: 2026-08-31
+        updated: 2026-08-31
+
+# ── Regions ──────────────────────────────────────────────────────────────────────────────────
+#
+# A region is a /24 inside a backbone block. Y = 0 is unusable, so numbering starts at 1.
+# The name is inventory and lives HERE, never in RFC-0037.
+regions:
+  - cidr: 10.1.1.0/24
+    country: IN
+    x: 1
+    y: 1
+    name: IN-BIDHOLI-01
+    gateway: 10.1.1.1
+    owner: infra
+    purpose: >-
+      The first substrate site. One machine at stage B0 (RFC-0025), which is why this region has
+      a gateway that is also its only hypervisor.
+    advertised: true
+    advertised_by: sitar-as-in-01-ar
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+# ── Hosts ────────────────────────────────────────────────────────────────────────────────────
+#
+# Z within a region. .0 and .255 are unusable as ever; .1 is the region's gateway.
+#
+# `vmid` IS RECORDED FOR A VIRTUAL MACHINE, and it is allocated here rather than by the
+# hypervisor. Left to Proxmox's `cluster/nextid`, a machine's identity depends on what else
+# happened to exist when it was created: destroy the cluster, recreate it, and the same node
+# returns under a different number while every backup and runbook naming a vmid points at
+# something else. The numbers mirror the last octet of the address — 10.1.1.11 is 1011 — so one
+# can be read off the other without a lookup.
+#
+# EVERY ENTRY HERE IS ROUTED, and therefore reachable from elsewhere in the estate as itself.
+# A machine that needs no such reachability does not belong in this file — it takes a local
+# address from a reusable range and is not recorded (RFC-0037 D6).
+hosts:
+  - address: 10.1.1.1
+    region: 10.1.1.0/24
+    hostname: sitar-as-in-01-ar
+    role: hypervisor-router
+    owner: infra
+    purpose: >-
+      Region gateway and the routing peer that advertises 10.1.1.0/24 into the mesh. Holds .1
+      because the router that fronts a region is that region's gateway; the two are the same
+      machine at B0 and will not always be.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.2
+    region: 10.1.1.0/24
+    hostname: pve-staging
+    role: hypervisor
+    owner: infra
+    purpose: >-
+      The Proxmox guest of RFC-0023's substrate chain. Configured statically at install time:
+      it cannot use DHCP, because the DHCP server would be on the host and RFC-0035 D1 denies
+      guest→host (RFC-0037 D9).
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.5
+    region: 10.1.1.0/24
+    hostname: null
+    role: kubernetes-api-vip
+    owner: infra
+    purpose: >-
+      The control-plane endpoint the cluster is reached at. Reserved before the cluster exists
+      because it is the one address that must not change: it is baked into every node's
+      machine configuration and into every kubeconfig, and moving it later means reissuing both.
+    status: reserved
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  # A RANGE RATHER THAN AN ADDRESS, and the only one in this file.
+  #
+  # Kubernetes Services of type LoadBalancer take a VIP from here, assigned by Cilium's LB-IPAM
+  # rather than by a person — so what is allocated is the POOL, and which Service holds which
+  # address is runtime state that belongs in the cluster, not here. Recording each one would be
+  # the registry restating something it cannot keep current.
+  #
+  # In the REGION's /24 and not the cluster's /18, which RFC-0037 D5 reserved before a cluster
+  # existed. Cilium announces these over L2 — the node answers ARP for the VIP — and ARP does
+  # not cross a router, so a VIP outside the nodes' own subnet is announced where nothing is
+  # listening. The /18 stays reserved for the same cluster under BGP.
+  #
+  # Bounded at .100–.199 so it cannot grow into the host addresses above it by accident.
+  - range: 10.1.1.100-10.1.1.199
+    region: 10.1.1.0/24
+    role: kubernetes-loadbalancer
+    owner: infra
+    purpose: >-
+      LoadBalancer VIPs for the `staging` cluster, announced over L2 by Cilium. Individual
+      assignments are cluster state and are not recorded here.
+    status: active
+    created: 2026-09-02
+    updated: 2026-09-02
+
+  - address: 10.1.1.11
+    region: 10.1.1.0/24
+    hostname: staging-cp-1
+    vmid: 1011
+    role: kubernetes-control-plane
+    owner: infra
+    purpose: RFC-0023's first control-plane node. 4 GiB.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.12
+    region: 10.1.1.0/24
+    hostname: staging-cp-2
+    vmid: 1012
+    role: kubernetes-control-plane
+    owner: infra
+    purpose: RFC-0023's second control-plane node. 4 GiB.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.13
+    region: 10.1.1.0/24
+    hostname: staging-cp-3
+    vmid: 1013
+    role: kubernetes-control-plane
+    owner: infra
+    purpose: RFC-0023's third control-plane node. 4 GiB.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.21
+    region: 10.1.1.0/24
+    hostname: staging-worker-1
+    vmid: 1021
+    role: kubernetes-worker
+    owner: infra
+    purpose: RFC-0023's first worker. 8 GiB.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  - address: 10.1.1.22
+    region: 10.1.1.0/24
+    hostname: staging-worker-2
+    vmid: 1022
+    role: kubernetes-worker
+    owner: infra
+    purpose: RFC-0023's second worker. 8 GiB.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+  # A guest that is not a cluster node — the estate's mail gateway. Its own role group at .3x/103x,
+  # kept clear of the control-plane (.1x) and worker (.2x) blocks. A stable address because every
+  # service that sends mail relays to it (ADR-0083); it is reachable, so it is recorded (RFC-0037 D6).
+  - address: 10.1.1.31
+    region: 10.1.1.0/24
+    hostname: pmg-staging
+    vmid: 1031
+    role: mail-gateway
+    owner: infra
+    purpose: >-
+      Proxmox Mail Gateway (ADR-0083). Every system that sends email relays through it; it forwards
+      outbound through an authenticated smarthost. 4 GiB (PMG+ClamAV recommend 4+), within RFC-0023's
+      guest budget. PMG 9.1 on Debian 13, installed per RUN-0008.
+    status: active
+    created: 2026-09-12
+    updated: 2026-09-12
+
+# ── Cluster internals ────────────────────────────────────────────────────────────────────────
+#
+# THESE VALUES MUST BE WRITTEN INTO TALOS MACHINE CONFIGURATION. Talos defaults to
+# 10.244.0.0/16 for pods and 10.96.0.0/12 for services; both fall inside the routed estate, and
+# 10.96.0.0/12 spans 10.96.0.0–10.111.255.255, which is Finland's range and part of Sweden's.
+#
+# The failure is not a startup error. A pod addressing a host inside the default service CIDR
+# matches that CIDR first and is routed to a Service VIP that does not exist — traffic goes
+# somewhere else, quietly. Changing a live cluster's service CIDR means rebuilding the cluster.
+clusters:
+  - name: staging
+    block: 10.2.0.0/16
+    country: IN
+    pod_cidr: 10.2.0.0/17
+    service_cidr: 10.2.128.0/18
+    loadbalancer_cidr: 10.2.192.0/18
+    api_endpoint: 10.1.1.5
+    owner: infra
+    purpose: >-
+      RFC-0023's staging cluster. Nodes take backbone addresses in 10.1.1.0/24 because a cluster
+      may span hypervisors (RFC-0037 D2) and members must reach each other as themselves.
+    status: active
+    created: 2026-08-31
+    updated: 2026-08-31
+
+# ── Special-purpose ranges ───────────────────────────────────────────────────────────────────
+#
+# Declared by RFC-0037 D3 and not yet allocated. Recorded here so the reservation is visible to
+# anyone reading for free space.
+special:
+  - x_range: [208, 209]
+    purpose: Overlay (mesh)
+    status: reserved
+    note: >-
+      NetBird currently runs on 100.64.0.0/16, which is outside the routed estate that
+      RFC-0037 D1 says everything routed comes from. Whether the mesh renumbers into this range
+      is RFC-0037 open question 2, and nothing here presumes the answer.
+
+  - x_range: [210, 214]
+    purpose: Edge routing
+    status: active
+    note: >-
+      IN USE FROM 2026-09-04 (ADR-0061). Edge nodes are not in a region's backbone block, and the
+      distinction is the point: a region under RFC-0014 is a RESIDENCY boundary, and an edge node
+      terminates connections for traffic that has not yet been resolved to one. Addressing it
+      inside a region would assert a residency it has not established.
+
+      They reach the estate over the mesh like any other routed machine, so RFC-0037 D1 holds:
+      the address is unique, and it is announced by the same routing peer arrangement as
+      everything else.
+    blocks:
+      - cidr: 10.210.1.0/24
+        name: EDGE-IN-01
+        role: edge
+        country: IN
+        owner: infra
+        purpose: >-
+          Public ingress for India. One node per residency region and never one per population
+          centre (ADR-0061 D2) — latency is the rented tier's job, and a node added because users
+          are far away is the first node of a point-of-presence network C-0006 calls commodity.
+        status: reserved
+        created: 2026-09-04
+        updated: 2026-09-04
+
+  - x_range: [215, 255]
+    purpose: Future use
+    status: reserved

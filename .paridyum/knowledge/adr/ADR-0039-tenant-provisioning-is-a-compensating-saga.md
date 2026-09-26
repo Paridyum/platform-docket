@@ -25,6 +25,14 @@ enforced_by:
       Provisioning fails in ways a caller must branch on — retryable, terminal, and
       residual-resources-may-exist are three different outcomes. Under ADR-0032 that branch is
       on a code, never on a message.
+  - check: db.region_is_chosen_at_provisioning_and_immutable
+    severity: error
+    rationale: >
+      Step 1 of this saga inserts the tenant row "(with `region`)" and has said so since
+      2026-08-08. The check is what makes that clause true rather than aspirational: NOT NULL, no
+      DEFAULT, constrained to a live region, and an UPDATE trigger refusing a move. Named here
+      because the check already declared it blocks this ADR and nothing cited it back — a one-sided
+      `blocks` list is a claim no reader can follow.
 ---
 
 # ADR-0039 — Tenant provisioning is a compensating saga

@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "The life of a knowledge artifact",
+    "subtitle": "ADR-0013, ADR-0022, ADR-0031 · locked is one-way, and the only exit is supersession",
+    "output": "docs/diagrams/artifact-status.lifecycle.html",
+    "viewBox": [
+      1080,
+      700
+    ],
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main",
+        "label": "The ordinary path",
+        "focus": [
+          "draft",
+          "proposed",
+          "accepted",
+          "locked"
+        ],
+        "note": "Created accepted, facts checked, locked in a separate commit. ADR-0029 has two errata because that ordering was not followed."
+      },
+      {
+        "id": "locked-exits",
+        "label": "Leaving locked",
+        "focus": [
+          "locked",
+          "erratum",
+          "superseded"
+        ],
+        "note": "Two legal changes and only two. An erratum fixes a wrong fact; supersession replaces a wrong decision."
+      },
+      {
+        "id": "never-locked",
+        "label": "What may never lock",
+        "focus": [
+          "deferred",
+          "bet_live"
+        ],
+        "note": "A bet exists to be contradicted by evidence, which is the opposite of what locked means. An RFC may never lock either."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "start": {
+          "label": "created"
+        },
+        "active": {
+          "label": "in force"
+        },
+        "decision": {
+          "label": "binding"
+        },
+        "waiting": {
+          "label": "cannot lock"
+        },
+        "success": {
+          "label": "replaced"
+        },
+        "failure": {
+          "label": "abandoned"
+        },
+        "external": {
+          "label": "unused"
+        },
+        "neutral": {
+          "label": "unused"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Status"
+    },
+    {
+      "id": "side",
+      "label": "Corrections, and the types that may never lock"
+    },
+    {
+      "id": "terminal",
+      "label": "Terminal"
+    }
+  ],
+  "states": [
+    {
+      "id": "draft",
+      "type": "start",
+      "label": "draft",
+      "sublabel": "not yet argued",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "width": 118
+    },
+    {
+      "id": "proposed",
+      "type": "active",
+      "label": "proposed",
+      "sublabel": "awaiting a human",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "RFC",
+      "width": 118
+    },
+    {
+      "id": "accepted",
+      "type": "active",
+      "label": "accepted",
+      "sublabel": "binding as direction",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "width": 118
+    },
+    {
+      "id": "locked",
+      "type": "decision",
+      "label": "locked",
+      "sublabel": "must not be contradicted",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "one-way",
+      "width": 118
+    },
+    {
+      "id": "deferred",
+      "type": "waiting",
+      "label": "deferred",
+      "sublabel": "has a trigger",
+      "lane": "side",
+      "col": 0,
+      "tag": "REQ",
+      "width": 118
+    },
+    {
+      "id": "bet_live",
+      "type": "waiting",
+      "label": "a live bet",
+      "sublabel": "lockable: false",
+      "lane": "side",
+      "col": 1,
+      "tag": "BET",
+      "width": 118
+    },
+    {
+      "id": "erratum",
+      "type": "waiting",
+      "label": "erratum appended",
+      "sublabel": "a wrong fact, dated",
+      "lane": "side",
+      "col": 2,
+      "tag": "additive",
+      "width": 118
+    },
+    {
+      "id": "superseded",
+      "type": "success",
+      "label": "superseded",
+      "sublabel": "successor names it back",
+      "lane": "terminal",
+      "col": 2,
+      "tag": "symmetric",
+      "width": 118
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-draft-proposed",
+      "from": "draft",
+      "to": "proposed",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "t-proposed-accepted",
+      "from": "proposed",
+      "to": "accepted",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "t-accepted-locked",
+      "from": "accepted",
+      "to": "locked",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "t-proposed-deferred",
+      "from": "proposed",
+      "to": "deferred",
+      "variant": "default"
+    },
+    {
+      "id": "t-accepted-bet",
+      "from": "accepted",
+      "to": "bet_live",
+      "variant": "default"
+    },
+    {
+      "id": "t-locked-erratum",
+      "from": "locked",
+      "to": "erratum",
+      "variant": "security",
+      "label": "a wrong fact",
+      "labelDx": -58
+    },
+    {
+      "id": "t-locked-superseded",
+      "from": "locked",
+      "to": "superseded",
+      "label": "a wrong decision",
+      "variant": "security",
+      "labelDy": 60,
+      "labelDx": 64
+    },
+    {
+      "id": "t-erratum-locked",
+      "from": "erratum",
+      "to": "locked",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Locked is one-way",
+      "items": [
+        "Two legal changes and only two: supersession, and a dated erratum",
+        "Everything above an Errata heading stays byte-identical",
+        "Editing a locked file in place is a CI failure, because it destroys the record of what was true when the code was written"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Erratum or supersession",
+      "items": [
+        "A wrong FACT — a miscount, a stale figure — gets an erratum, and the decision is unaffected",
+        "A wrong DECISION gets superseded",
+        "Reaching for the cheaper instrument on the wrong one is how a record stops being one"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Two types may never lock",
+      "items": [
+        "A bet exists to be contradicted by evidence on a date already written down",
+        "Locking one would make the word mean two incompatible things",
+        "An RFC is a design under discussion, not a rule"
+      ]
+    }
+  ]
+}

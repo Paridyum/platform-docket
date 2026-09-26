@@ -7,7 +7,7 @@ created: 2026-08-07
 locked_at: null
 supersedes: null
 superseded_by: null
-resolved_by: ADR-0042
+resolved_by: ADR-0101
 scope: [org, platform, service, spec, web]
 applies_to: ["*"]
 tags: [decomposition, bounded-contexts, runtime, architecture, ownership]
@@ -16,6 +16,14 @@ enforced_by: []
 ---
 
 # RFC-0009 — Decomposing the business runtime into bounded contexts
+
+
+> **Resolved by ADR-0042 (2026-08-08), then by ADR-0101 (2026-09-20).** ADR-0042 fixed the first
+> wave at five contexts and omitted `platform-deployment` — the context §7 of this RFC named and
+> whose entity `Release` was left with no owner for six weeks. ADR-0101 supersedes it, restores the
+> sixth context under this RFC's own one-liner, and authorises `platform-entitlement`. Both numbers
+> appear here on purpose: `resolved_by` points at the live decision, and a reader who arrives
+> holding the old one should not have to guess what replaced it.
 
 ## Status
 

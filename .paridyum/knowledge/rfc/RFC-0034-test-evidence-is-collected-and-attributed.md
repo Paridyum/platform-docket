@@ -378,12 +378,39 @@ An honest list is worth more than a confident guess.
    access model. A second class would have duplicated all of it to describe the
    same shape.
 4. **Retention of the ledger.** STD-0008 puts retention in each repository's
-   `TESTING.md`. A central ledger has no such home, and "keep everything forever"
-   is a decision rather than a default — test names can contain personal data.
+   `TESTING.md`; a central ledger has no such home, and "keep everything forever" is
+   a decision rather than a default.
+
+   **Narrower than first written.** This said "test names can contain personal
+   data" — but the envelope carries only counts, never names or messages, by
+   STD-0014's own design. The personal data actually in the ledger is
+   `submitted_by`, plus repository and commit. That is a materially smaller decision
+   than the one originally posed.
 5. **Does a flake rate need a definition before it can be measured?** REQ-0006 asks
    for one. FLAKY-002 and FLAKY-003 exist in the test registry; whether their
    definition is what the dashboard should compute is unresolved.
-6. **What happens when a declared type is legitimately not applicable?** A
+6. **The ledger chains per month file, and a deleted month leaves no trace inside
+   the ledger.** An envelope is filed by its `started_at`, so a late arrival belongs
+   in an earlier month — which makes a single cross-month chain impossible without
+   inserting mid-file, and inserting mid-file is a rewrite. So each month starts at
+   genesis.
+
+   The cost: deleting a whole month file is undetectable from within the ledger. A
+   gap is *reported as a note and never as a fault*, deliberately — a quiet month is
+   indistinguishable from a deleted one, and calling that tampering teaches people to
+   ignore the message.
+
+   It is closed from outside: the collector commits the ledger to git, so the object
+   graph carries what the chain cannot. Recorded here rather than left inferred.
+
+7. **The ledger entry has no machine contract.** The chain wrapper —
+   `schema`, `prev_sha256`, `entry_sha256`, `appended_at`, `envelope_sha256`,
+   `envelope` — is defined by two script headers and nothing validates it. STD-0014
+   is storage-agnostic on purpose, so the wrapper is out of its scope, and no
+   `ledger-entry.schema.json` exists. The shape is stable and the digest rule is
+   written down; what is missing is the artifact that makes them checkable.
+
+8. **What happens when a declared type is legitimately not applicable?** A
    `deferred` type for a service that does not exist is not a gap. Distinguishing
    "not run and should be" from "not run and correctly so" may need another
    registry field, and may be the same shape as ADR-0014's `declared` state.

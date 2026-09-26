@@ -628,11 +628,24 @@ discards the musical identity in the one place the name is actually read.
 
 ## Open questions
 
-1. **Does this bind personal devices?** The `murli` family is phones and tablets, which are
-   plausibly personal rather than Paridyum estate. The scope declared here is Paridyum
-   infrastructure. Either `murli` is out of scope, or the estate boundary needs stating —
-   the second is more useful, since an operator's device that reaches production is exactly the
-   thing an inventory should know about.
+1. **Does this bind personal devices?** *Partly resolved 2026-08-31 — the operator half.*
+
+   The question bundled two things, and only one of them was hard. **A device an operator works
+   FROM is in scope**, and the estate boundary is stated as this RFC suggested rather than by
+   declaring `murli` out of it: **a device that reaches production is inventory, whoever bought
+   it.** `device-registry.yaml` admits the `tabla` family accordingly — operator workstations,
+   `geography: false` for `murli`'s reason, `platform: optional` because ADR-0006 makes macOS,
+   Linux and WSL2 all first-class and the runbooks differ by each.
+
+   It stopped being theoretical rather than being resolved on principle. The workstation
+   administering the substrate holds the signing key C-0003 requires and runs every playbook that
+   configures it, and had **no conforming name available** — the machine that administers the
+   estate was the one machine the estate could not name. `macOS` also had no platform code, which
+   ADR-0006 makes an odd omission; `mc` is added.
+
+   **Still open: the purely personal device** — one that never reaches production. Admitting
+   `tabla` does not answer it, and the answer is not obviously the same. Nothing forces it today,
+   so it is left open rather than decided by extension.
 
 2. **Which check enforces this, and who owns it?** Proposed: `infra.hostname_matches_scheme`
    (error) and `infra.hostname_continent_matches_registry` (error). Both would be owned by

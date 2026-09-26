@@ -73,14 +73,170 @@ toolchains:
       1.94.1 exists and is the patched release of the floor's line. Irrelevant while the pin is
       above it; relevant if the pin is ever moved back down to the floor.
 
+  - stack: typescript
+    runtime: "24.19.0"
+    package_manager: "pnpm@11.22.0"
+    compiler: "6.0.3"
+    pinned_at: 2026-08-23
+    floor: "24.0.0"
+    floor_reason: >
+      `vitest` 4.1.11 declares `^20.0.0 || ^22.0.0 || >=24.0.0`, which excludes the odd-numbered
+      lines between them. `next` 16.3.1 asks only for >=20.9.0. So the dependency graph does not
+      force 24 by itself — the LTS schedule does, and the floor is set at the lowest line that is
+      both permitted by the graph and still supported.
+    notes: >
+      CORRECTS AN END-OF-LIFE PIN, which is the failure this file was created to prevent, arriving
+      in a second stack. On 2026-08-23 `console-docket`, `console-testing` and `lib-ui` all pinned
+      Node 25.9.0 in `.nvmrc` and `engines`. **Node 25 reached end-of-life on 2026-06-01** and its
+      last release was 25.9.0 on 2026-03-31, so the estate was running a runtime that had received
+      no security patch for nearly three months.
+
+      Nothing chose 25. It was the version installed on the workstation when the first repository
+      was scaffolded, and the second and third copied the first — the drift RUN-0001's 2026-08-23
+      section records, and precisely the "no entry, so copy the neighbour" mechanism ADR-0048
+      predicted.
+
+      24.19.0, released 2026-08-03, is the current release of the Active LTS line: LTS since
+      2025-10-28, maintenance from 2026-10-20, end-of-life 2028-04-30. Verified against
+      nodejs/Release `schedule.json` and `nodejs.org/dist/index.json` on 2026-08-23.
+
+      CHOSEN OVER 26, which becomes LTS on 2026-10-28 and is Current until then. Same reasoning
+      RFC-0028 finding 1 applies to Next.js — the July advisory directs production users to an LTS
+      branch rather than the newest minor — and it is the reasoning that was missing when 25 was
+      picked. Revisit after 2026-10-28, when 26 is LTS and 24 enters maintenance.
+
+      THE ODD-NUMBERED LINE IS THE TRAP AND IT IS WORTH NAMING. Node's odd majors never become
+      LTS; 25 was end-of-life eight months after release. A pin taken from "whatever `node
+      --version` said" has an even chance of landing on one.
+
+      `pnpm@11.22.0` matches `packageManager` in all three repositories and is what enforces
+      RFC-0003's supply-chain posture; `typescript` 6.0.3 matches their `devDependencies`. Both
+      are recorded rather than decided here — no evidence was gathered for either, and a pin
+      nobody has argued for should say so.
+
+  - stack: opentofu
+    runtime: "1.12.6"
+    pinned_at: 2026-08-31
+    floor: "1.7.0"
+    floor_reason: >
+      1.7 shipped native encryption of state and plan files through a key provider, which is
+      what ADR-0052 decision 3 relies on to keep secrets out of a state file. Below that floor
+      the decision is unimplementable rather than merely unfashionable, so the floor is read off
+      the feature the estate depends on rather than chosen for freshness.
+    tooling:
+      talosctl: "1.13.7"
+    notes: >
+      ADDED 2026-08-31, LATE. ADR-0052 chose OpenTofu on 2026-08-23 and this registry carried no
+      entry for it for eight days while `infra-substrate` provisioned a hypervisor guest with it.
+      That is exactly the mechanism the `ansible` entry below describes: with no entry to derive
+      from, the first repository pins whatever the workstation happened to have, and the next
+      copies it. Recorded rather than backdated.
+
+      `talosctl` PINS 1.13.7, WHICH IS WHAT HOMEBREW SHIPS, not 1.13.9 which is upstream's
+      latest. The entry was first written from the upstream release and corrected within the
+      hour against the installed binary — a registry that records what a vendor publishes rather
+      than what the estate runs is a second source of truth that is wrong on the day it is
+      written. The node image is pinned to the same version so client and node do not skew.
+
+      `talosctl` is listed as TOOLING rather than given its own stack. Talos is a node operating
+      system, not something Paridyum builds in; `talosctl` is the client that generates machine
+      configuration and talks to nodes, and it is used from the same repositories that run
+      OpenTofu. A stack is a thing you write code in, and nobody writes Talos.
+
+      KNOWN DISAGREEMENT, not resolved here: `class-registry.yaml` offers `stacks: [terraform,
+      none]` for class `infra`, naming a tool ADR-0052 decided against. `infra-substrate`'s
+      manifest already records this as owed an erratum. Adding `opentofu` here does not fix it —
+      a repository still cannot declare `stack: opentofu` until the class registry allows it,
+      which is why `infra-substrate` declares `none`.
+
+  - stack: kubernetes
+    runtime: "1.36.2"
+    pinned_at: 2026-09-02
+    floor: "1.32.0"
+    floor_reason: >
+      Cilium 1.20 supports Kubernetes 1.32 and above, and the CNI is the component with the
+      narrowest window here. Read off the dependency rather than chosen, so it moves when Cilium
+      moves and not before.
+    tooling:
+      cilium: "1.20.1"
+      helm: "4.2.4"
+      kubectl: "1.37.0"
+    notes: >
+      The RUNTIME is not installed on a workstation — it is what Talos runs, and Talos decides
+      it: v1.13.7 ships Kubernetes 1.36.2. Recording it here anyway, because the alternative is
+      that the version a cluster runs lives only inside a machine and cannot be compared against
+      anything.
+
+      `cilium` IS THE CHART VERSION, not a CLI. The cilium CLI is deliberately not adopted: it
+      wraps Helm and hides which values were applied, and this estate installs from values in
+      git so that what is running can be diffed against what was intended. A tool that makes
+      the intended state harder to see is not worth the convenience.
+
+      helm 4.2.4 AND kubectl 1.37.0 ARE WHAT IS INSTALLED, not what was expected. Both were
+      first written from memory — 3.x and 1.36.2 — and corrected against the binaries within the
+      minute, for the reason the `talosctl` pin was corrected the same way: a registry recording
+      what a vendor publishes, or what an author assumed, is a second source of truth that is
+      wrong on the day it is written.
+
+      kubectl at 1.37 is one minor AHEAD of the cluster's 1.36.2, which is inside Kubernetes'
+      supported skew of one minor either way. Recorded because a skew that is fine today becomes
+      a support question the moment it is two.
+
+      The floor is the CNI's, not Kubernetes'. That is the right way round for this estate:
+      RFC-0019 chose Cilium, so a Kubernetes version Cilium does not support is not a version
+      Paridyum can run, whatever upstream says about it.
+
+  - stack: ansible
+    runtime: "2.21.1"
+    pinned_at: 2026-08-23
+    floor: "2.16.0"
+    floor_reason: >
+      The highest floor among the collections `infra-substrate` declares:
+      `community.general` and `ansible.posix` both require ansible-core >=2.16.0,
+      `community.sops` >=2.15.0 and `community.libvirt` >=2.9.10. Read off the collections
+      rather than chosen, so it moves when they move and not before.
+    tooling:
+      ansible-lint: "26.6.0"
+      sops: "3.13.3"
+      age: "1.3.1"
+    notes: >
+      ADDED BECAUSE ADR-0056 MADE ANSIBLE A STACK, and RUN-0001's 2026-08-23 section recorded
+      the absence as debt on the same day the typescript entry was written. Leaving it out is
+      the mechanism that let an end-of-life Node runtime spread across three repositories:
+      with no entry to derive from, the first repository pins whatever the workstation had and
+      the next copies it.
+
+      `stack: ansible` is a TOOLCHAIN axis, not a repository class. `class-registry.yaml` gives
+      `infra` the stacks [terraform, none] and `infra-substrate` correctly declares `none` — it
+      is not built, it is run. This entry pins what runs it. The two lists answer different
+      questions and are deliberately not reconciled.
+
+      NO ADVANCE POLICY, and that is this file's standing gap rather than a new one — ADR-0048
+      open question 3 and TASKS T-2.12 are unanswered for rust and typescript too. ansible-core
+      ships roughly two releases a year and its collections declare floors explicitly, so the
+      signal to advance is a collection raising `requires_ansible` above the floor above.
+
+      `sops` and `age` are recorded under `tooling` rather than as their own stacks. They are
+      not a language runtime; they are binaries that must exist wherever a secret is read
+      (ADR-0057 accepted cost 1), and the version that matters is "recent enough to read the
+      files we wrote", which no floor usefully expresses today.
+
 # ────────────────────────────────────────────────────────────────────────────────────────
 # NOT YET PRESENT
 #
-# NO TYPESCRIPT OR NODE ENTRY. RFC-0003 and RFC-0008 are both `proposed`; no repository of
-# either stack exists. Allocating an entry for a stack nobody has adopted would repeat the
-# archive's eight-regions-one-deployment mistake that region-registry.yaml already catalogues.
-# When those RFCs resolve, this file is where their pins go, and that inheritance is the
-# reason ADR-0048 chose a registry over a template.
+# THE TYPESCRIPT ENTRY EXISTS AS OF 2026-08-23. The paragraph that stood here said there was
+# none because "no repository of either stack exists" — three now do (console-docket,
+# console-testing, lib-ui), so the condition it named has been met. RFC-0003 and RFC-0008 are
+# still `proposed`, and the entry above does not resolve them: it records what the adopted
+# repositories actually run, which is a different and smaller claim.
+#
+# The delay had a cost, and it is the one ADR-0048 predicted. With no entry to derive from, the
+# first repository pinned whatever the workstation had, and the next two copied it. That version
+# was end-of-life. See the entry's notes.
+#
+# AN `ansible` ENTRY EXISTS AS OF 2026-08-23, added the same day for the same reason — ADR-0056
+# made it a stack and RUN-0001 recorded the absence as debt. Three stacks are now pinned and
+# none has an advance policy; that gap is ADR-0048 open question 3 and it is unchanged.
 #
 # NO SCHEMA FILE YET, and no check. Every other registry here has both. The gap is TASKS
 # T-2.7: `check-registry.yaml` uses `owner` as its only implemented-versus-owed signal, so a

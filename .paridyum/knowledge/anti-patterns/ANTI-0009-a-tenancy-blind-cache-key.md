@@ -11,7 +11,14 @@ scope: [org, platform, service, web, mobile]
 applies_to: ["*"]
 tags: [tenancy, cache, isolation, rsc, cache-components, nextjs, anti-pattern, adr-0024, std-0009]
 breaking: false
-enforced_by: []
+enforced_by:
+  - check: web.cache_key_carries_tenancy
+    severity: error
+    rationale: >
+      This anti-pattern's own subject, and it existed as prose with no owner from the day it was
+      written. The check is what makes it refusable: a build whose cached route keys on less than
+      its isolation boundary fails, rather than shipping and serving one tenant's content to
+      another with RLS forced, the policy correct, and the query never running.
 sources:
   - url: https://nextjs.org/docs/app/guides/authentication-with-cache-components
     title: How to implement authentication with Cache Components — Next.js documentation (v16.3.1)

@@ -118,10 +118,30 @@ done
 # in every unrelated project on the machine, which is how a warning becomes noise and then
 # becomes ignored. The hole is real and it is not closable here: the signal has to come from
 # somewhere that knows the intent, and the only such thing is the variable itself.
+#
+# ARMED IS A FACT ABOUT THE MACHINE, NOT ABOUT A VARIABLE (ADR-0059 decision 3). This block used
+# to report "armed" whenever PARIDYUM_KNOWLEDGE_ROOT pointed at the knowledge base — which is a
+# statement of intent, and on 2026-08-31 it would have been false: the variable was set correctly,
+# and the INSTALLED plugin cache had no log-web-sources.sh in it at all, so nothing was capturing.
+# An assurance derived from configuration is the intent-versus-installation conflation ADR-0007's
+# own note names. The hook script either exists in the cache or it does not.
+capture_hook=""
+if [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -f "${CLAUDE_PLUGIN_ROOT}/hooks/log-web-sources.sh" ]]; then
+  capture_hook="${CLAUDE_PLUGIN_ROOT}/hooks/log-web-sources.sh"
+fi
 if [[ "$kb" == "${PARIDYUM_KNOWLEDGE_ROOT:-}" && -n "${PARIDYUM_KNOWLEDGE_ROOT:-}" ]]; then
   printf '### Research capture\n\n'
-  printf 'Armed via `PARIDYUM_KNOWLEDGE_ROOT`: web fetches log to `%s/research/` and are\n' "$kb"
-  printf 'reconciled against `sources` blocks at Stop (RFC-0027). Cite what a decision rests on.\n\n'
+  if [[ -n "$capture_hook" ]]; then
+    printf 'Armed: `log-web-sources.sh` is present in the INSTALLED plugin and the knowledge root\n'
+    printf 'resolves, so web fetches log to `%s/research/` and are reconciled against\n' "$kb"
+    printf '`sources` blocks at Stop (RFC-0027). Cite what a decision rests on.\n\n'
+  else
+    printf '**NOT armed.** `PARIDYUM_KNOWLEDGE_ROOT` resolves, but `log-web-sources.sh` is absent\n'
+    printf 'from the installed plugin — so no web fetch this session will be logged, and an empty\n'
+    printf '`research/` will mean nothing (RFC-0027, ADR-0059). The installed plugin is a pinned\n'
+    printf 'snapshot; run `scripts/check-repo.sh` for the staleness reading, then:\n\n'
+    printf '    /plugin update paridyum-platform@paridyum\n\n'
+  fi
 fi
 
 cat <<'EOF'

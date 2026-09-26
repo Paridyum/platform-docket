@@ -56,6 +56,23 @@ fi
 # is "decide whether to trust this code". Left unhandled, a check run before
 # install accuses a package that does not exist.
 if [[ "$auto" == *"no node_modules found"* ]]; then
+  # ...UNLESS node_modules is right there, in which case pnpm is describing an EMPTY
+  # SET rather than a missing install.
+  #
+  # Observed 2026-08-23 on pnpm 11.22.0 in lib-ui, whose dependency graph contains no
+  # package with a build script at all. pnpm prints the same "Cannot identify as no
+  # node_modules found" line for "I could not look" and for "there was nothing to
+  # find", and the two need opposite responses. console-docket never hit it because it
+  # has a reviewed refusal on record, so pnpm had something to report and said "None".
+  #
+  # Deciding on the directory rather than on the message is what separates them: if
+  # node_modules exists, the install ran and the honest answer is that nothing is
+  # unreviewed. A caller with no build scripts anywhere must not fail a check that
+  # exists to catch build scripts.
+  if [[ -d node_modules ]]; then
+    echo "✓ no unreviewed build scripts (none in the dependency graph)"
+    exit 0
+  fi
   echo "✘ cannot check build scripts: dependencies are not installed" >&2
   echo "    run \`pnpm install --frozen-lockfile\` first; pnpm cannot report" >&2
   echo "    ignored builds without a node_modules to inspect." >&2

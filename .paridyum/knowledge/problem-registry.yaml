@@ -1,0 +1,222 @@
+# Paridyum problem registry — every non-trivially-diagnosed problem, and how it was solved.
+# Governed by ADR-0076. The point is that the SAME problem is diagnosed once: the next person
+# greps `surface`, reads `diagnosis`, applies `fix`, and is done in minutes.
+#
+# Each entry: surface (what you see) · misleading_signal (what it looks like but isn't) ·
+# root_cause · diagnosis (the proven method) · fix · verification · prevention · related.
+#
+# This is NOT logbook/incidents.md. That is the per-repository narrative; this is the reusable,
+# cross-repo method (ADR-0076 D3, RFC-0015). Add an entry the moment a problem is solved.
+version: 1
+governed_by: ADR-0076
+
+problems:
+  - id: PROB-0001
+    title: Cloudflare bans the default Python-urllib User-Agent with a 403 that reads as auth failure
+    first_seen: 2026-09-07
+    repos: [infra-kubernetes]
+    surface: >
+      A script that calls an API behind Cloudflare gets HTTP 403 with body "error code: 1010"
+      / "Access denied", on a token that works perfectly in curl. urllib, requests-without-UA,
+      and other default clients fail; curl succeeds.
+    misleading_signal: >
+      Looks exactly like a bad or expired credential — a token/permission failure. The estate
+      lost time treating it as a Zitadel auth problem when the token was fine.
+    root_cause: >
+      Cloudflare (the rented edge) blocks requests by User-Agent signature. The default
+      `Python-urllib/x.y` UA is on its block list; error 1010 is a Cloudflare code, not the
+      origin's.
+    diagnosis: >
+      The same token works in curl but not the script → suspect the edge, not the credential.
+      Confirm by adding any named User-Agent header and retrying; a 200 confirms it.
+    fix: >
+      Send a named User-Agent on every request from a non-browser client, e.g.
+      `User-Agent: paridyum-zitadel-provisioner/1.0`.
+    verification: The identical request that 403'd returns 200 with only the UA header added.
+    prevention: >
+      Both Zitadel scripts set a named UA and SOP.md warns the next caller. A shared HTTP helper
+      that defaults the UA would prevent it estate-wide (not yet built).
+    related: [ADR-0061, ADR-0057]
+
+  - id: PROB-0002
+    title: Zitadel login "unknown error occurred" is hasProjectCheck locking out self-service users
+    first_seen: 2026-09-10
+    repos: [infra-kubernetes, web-paridyum]
+    surface: >
+      A user authenticates successfully at Zitadel (login pod logs "Session is valid: true") but
+      the OIDC flow fails to complete; the browser shows "unknown error occurred". The login
+      pod logs `Errors.User.ProjectRequired (OIDC-...)` with httpStatus 403, isUserError: true.
+    misleading_signal: >
+      Reads as a broken login UI or a bad client/redirect config. Two red herrings were chased
+      first — an "empty env" in the login pod (a debug-shell artifact) and core "issuer does not
+      match" warnings every 5s (a separate background poll, not the login path).
+    root_cause: >
+      The project has `hasProjectCheck=true`, which requires a user to be GRANTED the project
+      before they may authenticate to it. A self-registered candidate has no grant and cannot
+      give themselves one, so every one is refused at flow completion.
+    diagnosis: >
+      Read the zitadel-login pod's own error log (kubectl -n zitadel logs deploy/zitadel-login);
+      it names Errors.User.ProjectRequired directly. Do not trust the core token warnings.
+    fix: >
+      Set the project's hasProjectCheck to false for a self-service project (keep it true for an
+      operator project where every member should be explicitly granted). Live via UpdateProject
+      (PUT /management/v1/projects/{id}); in the registry via applications.yaml project_check.
+    verification: A freshly-registered user completes the OIDC flow and reaches the callback.
+    prevention: >
+      applications.yaml documents project_check with the reasoning inline, and provision.py now
+      RECONCILES project settings on existing projects (it previously only created).
+    related: [ADR-0070, ADR-0047]
+
+  - id: PROB-0003
+    title: OIDC token_rejected — the tenant claim needs the resourceowner scope, which nobody requested
+    first_seen: 2026-09-10
+    repos: [web-paridyum, lib-auth-typescript]   # renamed from lib-auth 2026-09-24, ADR-0107
+    surface: >
+      Login completes, the code exchanges fine, then the callback rejects the access token and
+      redirects with ?auth_error=token_rejected. `@paridyum/auth` throws "token carries no tenant claim".
+    misleading_signal: >
+      Looks like a bad token, a signature/audience problem, or a library bug. The audience was
+      in fact correct and the signature valid.
+    root_cause: >
+      The tenant is `urn:zitadel:iam:user:resourceowner:id` (ADR-0047 D5), and Zitadel only
+      asserts the resourceowner claims when the client requests the scope
+      `urn:zitadel:iam:user:resourceowner`. The login route never asked for it, so every token
+      arrived with no tenant claim.
+    diagnosis: >
+      Mint a real JWT for the project (a temporary machine user + JSON key, jwt-bearer grant) and
+      decode the access token. aud/sub/iss were present; the resourceowner claim was undefined.
+      Re-requesting WITH the resourceowner scope produced it (= the org id).
+    fix: Add `urn:zitadel:iam:user:resourceowner` to the scopes the login route requests.
+    verification: >
+      The decoded token gains urn:zitadel:iam:user:resourceowner:id; a test asserts the scope is
+      in the authorize URL so it cannot be dropped.
+    prevention: >
+      The login route test asserts the resourceowner scope is present; a comment at the scope
+      list explains why. Machine user + key were deleted after inspection.
+    related: [ADR-0047, ADR-0070, ADR-0038]
+
+  - id: PROB-0004
+    title: ERR_TOO_MANY_REDIRECTS on login — the edge cached an authentication redirect
+    first_seen: 2026-09-11
+    repos: [infra-edge, web-paridyum]
+    surface: >
+      After a successful login the browser loops between /account and the login route until it
+      gives up with ERR_TOO_MANY_REDIRECTS; sometimes ending on ?auth_error=missing_parameters.
+      The edge sends `x-edge-cache: STALE` on /account.
+    misleading_signal: >
+      Looks like a cookie/SameSite bug or a broken callback. The callback and cookies were fine —
+      a crafted valid session cookie rendered /account correctly, but only because the test used
+      a `?t=` cache-buster that dodged the cache by key, which HID the bug.
+    root_cause: >
+      /account 307s to login when unauthenticated. That redirect carries no Set-Cookie, so nginx
+      cached it (proxy_cache_valid included 307) and served it to SIGNED-IN visitors too. The
+      cache had a cookie-bypass, but it checked `$cookie_session` while the real cookie is
+      `pd_session` — a name written before auth existed.
+    diagnosis: >
+      Inspect the edge response headers for /account (x-edge-cache: STALE on a per-user page is
+      the tell). Request /account WITHOUT a cache-busting query but WITH a valid session cookie;
+      if it still returns the cached redirect, a cookie-keyed bypass is misconfigured.
+    fix: >
+      In nginx: proxy_cache_bypass/proxy_no_cache must name the real session cookie
+      ($cookie_pd_session). A per-user page's redirect must not be served from cache to a
+      request that carries a session.
+    verification: >
+      /en/account with a valid pd_session and no query returns 200 with x-edge-cache: BYPASS;
+      anonymous /account still 307s to login.
+    prevention: >
+      The bypass now matches pd_session, with a comment naming this exact loop. A cache that
+      never stores/serves a response for a request carrying a session cookie is the general rule.
+    related: [ADR-0061]
+
+  - id: PROB-0005
+    title: A vendor default admin survives bootstrap, and the provisioning credential already exists
+    first_seen: 2026-09-07
+    repos: [infra-kubernetes]
+    surface: >
+      An identity provider (or similar) is publicly reachable and its vendor default admin
+      (e.g. zitadel-admin@... on the documented default password) is still active days later.
+      Provisioning is documented as "log in and create a service account by hand".
+    misleading_signal: >
+      "Change required on first login" is treated as sufficient. It is not — the default password
+      is public, and the change flow is reached only AFTER authentication succeeds.
+    root_cause: >
+      No FirstInstance admin was configured, so the vendor default stands until someone logs in.
+      Separately, the Helm chart had ALREADY minted an IAM_OWNER credential into a k8s secret
+      (iam-admin-pat), so the manual-login provisioning step was never necessary.
+    diagnosis: >
+      Read the live user table for the default admin and its password_changed timestamp. Check
+      `kubectl -n <ns> get secret` for a machine credential the chart minted (iam-admin,
+      iam-admin-pat) before writing any "create a service user" SOP.
+    fix: >
+      Deactivate the default admin as part of bootstrap (make zitadel-disable-default-admin);
+      capture the chart-minted PAT into SOPS (make zitadel-capture-pat) instead of creating one.
+    verification: The default admin's user_state is inactive; the PAT authenticates against the API.
+    prevention: ANTI-0010, and the bootstrap SOP + Make targets that do both steps.
+    related: [ANTI-0010, ADR-0047, ADR-0057]
+
+  - id: PROB-0006
+    title: A SECURITY DEFINER function does not bypass FORCE'd RLS, and cannot SET a custom GUC
+    first_seen: 2026-09-07
+    repos: [platform-tenancy]
+    surface: >
+      A resolver function that must read a table before an account context exists fails with
+      "paridyum.account_id is not set" — the table's own RLS policy raises inside the function.
+      Adding `SET "paridyum.operator_scope" = 'true'` to the function fails at CREATE with
+      "permission denied to set parameter".
+    misleading_signal: >
+      SECURITY DEFINER is assumed to bypass RLS. It does not when the table FORCEs row-level
+      security, which binds even the owner the definer runs as.
+    root_cause: >
+      FORCE ROW LEVEL SECURITY applies to the table owner too; a SECURITY DEFINER owned by that
+      owner is still subject to the policy. The function SET clause cannot set a custom
+      (period-namespaced) parameter as a non-superuser.
+    diagnosis: >
+      Observe the policy's accessor raising inside the definer function. Confirm FORCE is on
+      (relforcerowsecurity). Try the SET clause and read the permission-denied at CREATE time.
+    fix: >
+      Elevate inside the function BODY with set_config(name, value, is_local=>true) and RESTORE
+      on a single exit path. Because Postgres does not short-circuit an RLS predicate's OR, also
+      set a throwaway account so current_account() returns instead of raising.
+    verification: >
+      The resolver find-or-creates idempotently; both settings are restored after it returns; a
+      direct read still respects the account boundary.
+    prevention: The pattern is documented in the migration's comments; see 0002 in platform-tenancy.
+    related: [ADR-0024, ADR-0038]
+
+  - id: PROB-0007
+    title: kubectl exec 'echo $VAR' shows empty because the entrypoint sets env on pid 1, not a new shell
+    first_seen: 2026-09-10
+    repos: [infra-kubernetes]
+    surface: >
+      `kubectl exec deploy/x -- sh -c 'echo $SOME_VAR'` prints empty, suggesting the container is
+      misconfigured, even though the app works.
+    misleading_signal: Looks like the env var is unset / the config file was not loaded.
+    root_cause: >
+      An entrypoint.sh that sources a .env (set -a; . /file; exec "$@") sets those vars in the
+      SERVER process's environment (pid 1). A fresh `kubectl exec` spawns a NEW shell that does
+      not inherit them.
+    diagnosis: Read the real process env with `cat /proc/1/environ | tr '\0' '\n'`, not a new shell.
+    fix: Inspect /proc/1/environ; the vars are there. No change needed if the app has them.
+    verification: /proc/1/environ shows the expected values.
+    prevention: none yet — a debugging habit, recorded so it is not chased again.
+    related: [ADR-0047]
+
+  - id: PROB-0008
+    title: CloudNativePG in-tree barmanObjectStore is removed in 1.31, one minor from the running 1.30
+    first_seen: 2026-09-07
+    repos: [infra-kubernetes]
+    surface: >
+      A server-side dry-run of a Cluster with spec.backup.barmanObjectStore succeeds but warns:
+      "Native support for Barman Cloud backups ... is deprecated and will be completely removed in
+      CloudNativePG 1.31.0."
+    misleading_signal: >
+      A passing dry-run reads as "this config is fine" — it is, until the next operator upgrade
+      silently breaks WAL archiving.
+    root_cause: The in-tree barman config is deprecated (1.26) and removed (1.31); the operator is 1.30.0.
+    diagnosis: Read the dry-run warning; check the operator image version.
+    fix: >
+      Pin the operator at 1.30.x until the config migrates to the Barman Cloud Plugin (install the
+      plugin, move fields into an ObjectStore CR, reference via spec.plugins).
+    verification: The dry-run applies on 1.30; the pin is recorded.
+    prevention: The version cliff is headlined in postgres/backup.yaml; ADR-0053 makes pins exact.
+    related: [ADR-0064, ADR-0053]

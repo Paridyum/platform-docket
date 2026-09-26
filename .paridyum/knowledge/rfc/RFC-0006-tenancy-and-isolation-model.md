@@ -13,6 +13,17 @@ applies_to: ["*"]
 tags: [tenancy, isolation, postgres, rls, kubernetes, density, compliance]
 breaking: true
 enforced_by: []
+sources:
+  - url: https://www.vcluster.com/
+    title: "vCluster — Kubernetes tenant isolation platform"
+    retrieved: 2026-09-07
+    supports: >
+      The 2026-09-07 note appended to option D. The product is now positioned as a tenant
+      isolation platform for AI infrastructure — its own headline cluster types are Kubernetes,
+      Slurm, Run:AI, Ray and inference clusters, and its named audiences are AI cloud providers,
+      enterprise AI factories, internal platforms and sovereign clouds. It still describes the
+      same architecture this option describes: a virtual control plane per tenant, on shared or
+      dedicated nodes.
 ---
 
 # RFC-0006 — How a tenant is isolated, and when that isolation escalates
@@ -162,3 +173,38 @@ Resolved by ADR-0023.
 - REQ-0003 — the unrecoverability argument, in its original form
 - REQ-0013 — export, which shares machinery with per-tenant restore
 - ANTI-0007 — why regulated data does not get a shared-database exception
+
+
+## 2026-09-07 — option D, revisited on request and unchanged
+
+Asked directly whether vCluster is the thing to use. The answer is the one written above and it
+is worth restating rather than re-deciding, because **the option was evaluated by name** —
+"Virtual clusters per tenant (vCluster or equivalent)" — and the verdict was *"relevant, but not
+now… the correct answer to a question nobody has asked yet."*
+
+**What binds today is ADR-0024, not this RFC.** ADR-0024 supersedes ADR-0023 and is locked. Its
+decision 5 forbids per-tenant infrastructure in as many words — "no database, schema, namespace,
+cluster or deployment per tenant" — and a virtual cluster is a cluster per tenant. Its decision 6
+is the door: dedicated database and virtual cluster are the escalation path, **re-entered when a
+signed contract pays for them and not before.** Publishing an isolation tier is a commitment to
+operate it, and operating one for nobody is the twelve months this RFC's option E warns about.
+
+**The elimination was arithmetic, and the arithmetic has not moved.** At a flat low monthly price
+with most tenants idle, a control plane per tenant is negative gross margin from the first
+tenant, and no volume fixes it. Nothing about the product changes that; it is a fact about the
+price, and BET-0009 still prices hosting per running workload.
+
+**One thing about the product HAS changed, and it argues the same way.** vCluster now presents
+itself as tenant isolation for AI infrastructure — GPU fleets, Slurm, Run:AI, Ray, inference and
+sovereign AI clouds. Vertical one is managed application hosting: WordPress and similar
+containerised software (BET-0009). The overlap is the mechanism, not the market, and adopting a
+tool at the centre of somebody else's problem is how a platform inherits a roadmap it did not
+choose.
+
+**It is irrelevant to the question that prompted it.** The in-app applications store is row
+isolation inside one PostgreSQL database. A virtual Kubernetes control plane does not isolate a
+row from another row, so nothing about vCluster would make ADR-0068 §2 easier, safer or sooner.
+
+**What would re-open this, stated so it is recognisable:** a signed contract whose terms require
+control-plane isolation, or a customer asking for it by name and paying the difference. That is
+ADR-0024 decision 6 and C-0006 anti-goal 5, and neither has fired.

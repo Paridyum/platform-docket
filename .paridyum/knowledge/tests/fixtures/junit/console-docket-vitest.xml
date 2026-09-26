@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="158" failures="0" errors="0" time="1.495899794">
+    <testsuite name="src/proxy.test.ts" timestamp="2026-09-20T17:43:00.151Z" hostname="tabla-01-mc" tests="5" failures="0" errors="0" skipped="0" time="0.009699667">
+        <testcase classname="src/proxy.test.ts" name="proxy auth gate &gt; redirects an unauthenticated request to the login" time="0.008057583">
+        </testcase>
+        <testcase classname="src/proxy.test.ts" name="proxy auth gate &gt; redirects a protected page with no session cookie" time="0.000320334">
+        </testcase>
+        <testcase classname="src/proxy.test.ts" name="proxy auth gate &gt; lets a request through when the session cookie is present" time="0.000362208">
+        </testcase>
+        <testcase classname="src/proxy.test.ts" name="proxy auth gate &gt; lets the login and callback through while logged out, or there is no way in" time="0.000271042">
+        </testcase>
+        <testcase classname="src/proxy.test.ts" name="proxy auth gate &gt; keeps the cookie name in step with the session module" time="0.000056083">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/copy.test.tsx" timestamp="2026-09-20T17:43:00.152Z" hostname="tabla-01-mc" tests="5" failures="0" errors="0" skipped="0" time="0.162740542">
+        <testcase classname="src/components/copy.test.tsx" name="Copy &gt; puts the identifier on the clipboard exactly" time="0.119869833">
+        </testcase>
+        <testcase classname="src/components/copy.test.tsx" name="Copy &gt; says so when the browser refuses" time="0.006486708">
+        </testcase>
+        <testcase classname="src/components/copy.test.tsx" name="Copy &gt; says so when there is no clipboard API at all" time="0.018396">
+        </testcase>
+        <testcase classname="src/components/copy.test.tsx" name="Copy &gt; names what it copies, for a screen reader that cannot see the row" time="0.011101542">
+        </testcase>
+        <testcase classname="src/components/copy.test.tsx" name="an identifier carrying a copy control &gt; still reads as nothing but the identifier" time="0.005188958">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/enrol-wizard.test.tsx" timestamp="2026-09-20T17:43:00.152Z" hostname="tabla-01-mc" tests="20" failures="0" errors="0" skipped="0" time="0.654793834">
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; starts on the slug, which is not a registry field" time="0.159222791">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; puts a group that the API mentions twice on one step" time="0.043856666">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; will not leave a step with a required answer missing" time="0.048737125">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; marks nothing as wrong before the operator has tried to move on" time="0.002116166">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; refuses a slug that is not a usable filename, and says what one is" time="0.011729208">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; keeps answers when stepping back and forth" time="0.055433791">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; counts required answers across the whole form, not the step" time="0.00685475">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; lets the operator jump to any step from the rail" time="0.011053167">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; shows every permitted question on review, answered or not" time="0.055795">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; names the steps still owed instead of opening an incomplete record" time="0.052428459">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; sends every answer given, and no key for one left blank" time="0.046742917">
+            <system-err>
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; offers no way to skip, force or proceed past what is owed" time="0.008548042">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard &gt; links to the record it opened rather than leaving it to be found" time="0.086404417">
+            <system-err>
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+An update to ForwardRef(LinkComponent) inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; offers a dropdown where a set is declared and a text box where it is not" time="0.010759042">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; prefills the default the registry declares" time="0.005431458">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; counts a prefilled required answer as answered" time="0.001963334">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; selects nothing by default where the registry declares no default" time="0.006456709">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; lets a prefilled answer be cleared" time="0.005881333">
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; labels a flag Yes and No but sends true and false" time="0.02760725">
+            <system-err>
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to EnrolWizard inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/components/enrol-wizard.test.tsx" name="EnrolWizard, where the registry declares the answers &gt; does not offer a value the registry has not declared" time="0.005591">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/identifier.test.tsx" timestamp="2026-09-20T17:43:00.153Z" hostname="tabla-01-mc" tests="5" failures="0" errors="0" skipped="0" time="0.035633583">
+        <testcase classname="src/components/identifier.test.tsx" name="PersonId &gt; separates the ISO 7064 check character from the number" time="0.022966208">
+        </testcase>
+        <testcase classname="src/components/identifier.test.tsx" name="PersonId &gt; leaves an identifier of an unexpected shape whole" time="0.003516458">
+        </testcase>
+        <testcase classname="src/components/identifier.test.tsx" name="PersonId &gt; does not lose a trailing separator" time="0.002123667">
+        </testcase>
+        <testcase classname="src/components/identifier.test.tsx" name="Standing &gt; does not render an erasure in the language of a fault" time="0.004461584">
+        </testcase>
+        <testcase classname="src/components/identifier.test.tsx" name="Standing &gt; renders a standing it has never seen without crashing" time="0.001155667">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/mismatch.test.tsx" timestamp="2026-09-20T17:43:00.153Z" hostname="tabla-01-mc" tests="6" failures="0" errors="0" skipped="0" time="0.041218125">
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; names the field, always" time="0.021725292">
+        </testcase>
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; says the server is older, and how to fix it, when it is" time="0.010027083">
+        </testcase>
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; treats a build with no contract at all as older" time="0.003637167">
+        </testcase>
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; sends you to the console when the console is the old one" time="0.001509125">
+        </testcase>
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; does not blame a version gap when the numbers agree" time="0.001335959">
+        </testcase>
+        <testcase classname="src/components/mismatch.test.tsx" name="Mismatch &gt; says so plainly when the server could not be asked" time="0.000940125">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/refusal.test.tsx" timestamp="2026-09-20T17:43:00.154Z" hostname="tabla-01-mc" tests="7" failures="0" errors="0" skipped="0" time="0.035386833">
+        <testcase classname="src/components/refusal.test.tsx" name="Refusals &gt; renders every blocker with its reason" time="0.022654583">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Refusals &gt; offers no control that bypasses a blocker" time="0.003617708">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Refusals &gt; says the refusal cannot be waived here" time="0.001315625">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Refusals &gt; counts requirements without mangling the plural" time="0.00281075">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Refusals &gt; renders nothing when there is nothing blocking" time="0.001177334">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Violations &gt; explains that a forbidden field is data held without a purpose" time="0.001815125">
+        </testcase>
+        <testcase classname="src/components/refusal.test.tsx" name="Violations &gt; renders nothing when the record matches its class" time="0.00030075">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/roster-table.test.tsx" timestamp="2026-09-20T17:43:00.154Z" hostname="tabla-01-mc" tests="12" failures="0" errors="0" skipped="0" time="0.416761584">
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; shows every row before anything is typed" time="0.039687542">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; finds a person by a fragment of their identifier" time="0.013587792">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; finds a person by role as well as by name" time="0.005962375">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; says how many of how many, and only while filtering" time="0.046662459">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; does not pretend an erased record has a name" time="0.033163834">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; builds its standing filters from the data, not from a list of its own" time="0.13130125">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; narrows to one standing and back again" time="0.063405083">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; sorts the name column by what it displays, then reverses, then returns" time="0.03878275">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; keeps an erased row out of the alphabet in both directions" time="0.016321334">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; sorts document counts as numbers" time="0.014609208">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; says nothing matched rather than showing an empty table" time="0.005205209">
+        </testcase>
+        <testcase classname="src/components/roster-table.test.tsx" name="RosterTable &gt; focuses the search on / and ignores it while typing" time="0.006054083">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/when.test.ts" timestamp="2026-09-20T17:43:00.155Z" hostname="tabla-01-mc" tests="5" failures="0" errors="0" skipped="0" time="0.003380292">
+        <testcase classname="src/components/when.test.ts" name="daysAgo &gt; names the near past in words" time="0.001700792">
+        </testcase>
+        <testcase classname="src/components/when.test.ts" name="daysAgo &gt; does not read an ISO date as UTC midnight" time="0.000114125">
+        </testcase>
+        <testcase classname="src/components/when.test.ts" name="daysAgo &gt; handles a date the ledger has not reached yet" time="0.000084917">
+        </testcase>
+        <testcase classname="src/components/when.test.ts" name="daysAgo &gt; coarsens as it gets older" time="0.000089625">
+        </testcase>
+        <testcase classname="src/components/when.test.ts" name="daysAgo &gt; returns nothing for anything that is not a plain ISO date" time="0.000093791">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/docket.test.ts" timestamp="2026-09-20T17:43:00.155Z" hostname="tabla-01-mc" tests="16" failures="0" errors="0" skipped="0" time="0.025178083">
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; returns the roster when the shape is what this console expects" time="0.013117584">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; forwards the operator&apos;s access token as a Bearer header on a read" time="0.000854541">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; turns a 401 into NotAuthenticated so the caller re-logs in, not an outage" time="0.00157075">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; throws NotAuthenticated on a read with no session, before the request" time="0.000788125">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; throws when a field the UI reads has been renamed" time="0.0013815">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; throws when a list arrives as something that is not a list" time="0.000268833">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; keeps `unevaluated` mandatory on retention" time="0.0004625">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; separates a server that refused from a server that is not there" time="0.001185584">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="reads &gt; falls back to the status when the error body is not JSON" time="0.000548959">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; sends the operator&apos;s token as a Bearer header, which is also the CSRF defence" time="0.00064625">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; refuses to send a write with no session, before the request" time="0.000561916">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; turns a 401 into NotAuthenticated rather than an error" time="0.000615834">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; turns a 409 into a refusal rather than an error" time="0.000484042">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; validates the shape of a refusal too" time="0.000479042">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; never sends force on advance" time="0.000544709">
+        </testcase>
+        <testcase classname="src/lib/docket.test.ts" name="writes &gt; percent-encodes a slug so it cannot escape its route" time="0.000195583">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/enrol-steps.test.ts" timestamp="2026-09-20T17:43:00.156Z" hostname="tabla-01-mc" tests="21" failures="0" errors="0" skipped="0" time="0.004651625">
+        <testcase classname="src/lib/enrol-steps.test.ts" name="buildSteps &gt; merges a group the API mentions more than once" time="0.001765584">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="buildSteps &gt; keeps required questions at the front of their step" time="0.000188042">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="buildSteps &gt; orders steps by where a group is first mentioned" time="0.000176417">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="buildSteps &gt; does not reorder a group whose name looks like a number" time="0.000181">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="buildSteps &gt; survives a class with no questions at all" time="0.000089833">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="given &gt; does not count whitespace as an answer" time="0.000136833">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="missingRequired &gt; names only the required questions with nothing in them" time="0.000083708">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="missingRequired &gt; is empty for a step that asks nothing mandatory" time="0.000061209">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="stepsNeedingAnswers &gt; reports every step still holding a required blank" time="0.000093958">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="stepsNeedingAnswers &gt; is empty once every required question is answered" time="0.000074375">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="requiredProgress &gt; counts required questions across every step, not the current one" time="0.000079834">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="answeredCount &gt; counts optional answers too" time="0.000052625">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="submittable &gt; drops a field that was opened and left empty" time="0.000064125">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="submittable &gt; trims what it keeps" time="0.000040667">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="label &gt; sentence-cases a group name and expands nothing" time="0.000062041">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="seedDefaults &gt; starts the form on the values the registry declares" time="0.000051333">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="seedDefaults &gt; ignores a default that is only whitespace" time="0.000027917">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="touched &gt; is false on a form that has only been opened" time="0.000055416">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="touched &gt; is true once a seeded value is changed" time="0.00003475">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="touched &gt; is true once a seeded value is cleared" time="0.000036">
+        </testcase>
+        <testcase classname="src/lib/enrol-steps.test.ts" name="touched &gt; is true once anything new is answered" time="0.000028875">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/explain.test.tsx" timestamp="2026-09-20T17:43:00.157Z" hostname="tabla-01-mc" tests="4" failures="0" errors="0" skipped="0" time="0.063598625">
+        <testcase classname="src/lib/explain.test.tsx" name="explain &gt; gives a wire mismatch a screen that names the field" time="0.0573065">
+        </testcase>
+        <testcase classname="src/lib/explain.test.tsx" name="explain &gt; gives an unreachable server its own screen" time="0.001822417">
+        </testcase>
+        <testcase classname="src/lib/explain.test.tsx" name="explain &gt; still renders the mismatch when health cannot be reached" time="0.001709375">
+        </testcase>
+        <testcase classname="src/lib/explain.test.tsx" name="explain &gt; lets anything else through to the error boundary" time="0.000130625">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/label.test.ts" timestamp="2026-09-20T17:43:00.157Z" hostname="tabla-01-mc" tests="6" failures="0" errors="0" skipped="0" time="0.001483083">
+        <testcase classname="src/lib/label.test.ts" name="humanise &gt; reads the last segment as a phrase" time="0.000617125">
+        </testcase>
+        <testcase classname="src/lib/label.test.ts" name="humanise &gt; handles a path with no dots" time="0.000066959">
+        </testcase>
+        <testcase classname="src/lib/label.test.ts" name="humanise &gt; does not invent an expansion it cannot know" time="0.000064875">
+        </testcase>
+        <testcase classname="src/lib/label.test.ts" name="humanise &gt; returns the path unchanged when there is nothing to read" time="0.000055541">
+        </testcase>
+        <testcase classname="src/lib/label.test.ts" name="groupLabel &gt; sentence-cases a group name" time="0.000060083">
+        </testcase>
+        <testcase classname="src/lib/label.test.ts" name="groupLabel &gt; survives an empty group" time="0.000042875">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/operator.test.ts" timestamp="2026-09-20T17:43:00.157Z" hostname="tabla-01-mc" tests="9" failures="0" errors="0" skipped="0" time="0.019481167">
+        <testcase classname="src/lib/operator.test.ts" name="currentOperator &gt; returns the signed-in operator for display" time="0.011942875">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="currentOperator &gt; is null when there is no session" time="0.000960334">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForRead &gt; forwards the stored token and never touches the cookie" time="0.0011095">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForRead &gt; throws NotAuthenticated with no session" time="0.001233167">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForWrite &gt; uses the stored token when it is not near expiry" time="0.001046458">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForWrite &gt; renews a near-expired token and persists the rotated bundle" time="0.000820334">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForWrite &gt; throws NotAuthenticated when the refresh fails" time="0.000284958">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="accessTokenForWrite &gt; throws NotAuthenticated when a near-expired session carries no refresh token" time="0.000255375">
+        </testcase>
+        <testcase classname="src/lib/operator.test.ts" name="clearSession &gt; forgets the session" time="0.000211959">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/palette.test.ts" timestamp="2026-09-20T17:43:00.157Z" hostname="tabla-01-mc" tests="28" failures="0" errors="0" skipped="0" time="0.012289417">
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; ink on paper clears 4.5 — body text" time="0.001527291">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; ink on paper-raised clears 4.5 — text on a sheet" time="0.000217875">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; ink-soft on paper clears 4.5 — secondary text" time="0.00014775">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; ink-faint on paper clears 3 — eyebrow labels" time="0.000130958">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; signal-ink on paper clears 4.5 — headings and links — the accent AS TYPE" time="0.00012225">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; chrome-ink on signal clears 4.5 — the mark and the wordmark on the signal ground" time="0.000137166">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; seal on seal-wash clears 4.5 — a refusal on its wash" time="0.0001155">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; seal on paper clears 4.5 — a refusal on the page" time="0.00017525">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; done on paper clears 4.5 — settled" time="0.00014475">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; pending on paper clears 4.5 — outstanding" time="0.000248958">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; pending on pending-wash clears 4.5 — outstanding on its wash" time="0.000112833">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="light theme &gt; chrome-ink on chrome clears 4.5 — the chrome band and every filled button" time="0.000104166">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; ink on paper clears 4.5 — body text" time="0.000125791">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; ink on paper-raised clears 4.5 — text on a sheet" time="0.000131917">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; ink-soft on paper clears 4.5 — secondary text" time="0.000084959">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; ink-faint on paper clears 3 — eyebrow labels" time="0.000071833">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; signal-ink on paper clears 4.5 — headings and links — the accent AS TYPE" time="0.000069833">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; chrome-ink on signal clears 4.5 — the mark and the wordmark on the signal ground" time="0.000071417">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; seal on seal-wash clears 4.5 — a refusal on its wash" time="0.000104208">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; seal on paper clears 4.5 — a refusal on the page" time="0.000077041">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; done on paper clears 4.5 — settled" time="0.000189083">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; pending on paper clears 4.5 — outstanding" time="0.000101708">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; pending on pending-wash clears 4.5 — outstanding on its wash" time="0.000077166">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="dark theme &gt; chrome-ink on chrome clears 4.5 — the chrome band and every filled button" time="0.000073083">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="the palette itself &gt; defines every token in both themes" time="0.000346208">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="the palette itself &gt; declares the dark tokens somewhere the browser will actually read them" time="0.0003655">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="the palette itself &gt; never sets type in the raw signal" time="0.005159666">
+        </testcase>
+        <testcase classname="src/lib/palette.test.ts" name="the palette itself &gt; keeps the chrome band from following the theme" time="0.00036625">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/app/login/route.test.ts" timestamp="2026-09-20T17:43:00.159Z" hostname="tabla-01-mc" tests="2" failures="0" errors="0" skipped="0" time="0.007306084">
+        <testcase classname="src/app/login/route.test.ts" name="GET /login &gt; redirects to id.paridyum.com authorize with PKCE and the operations audience" time="0.006219042">
+        </testcase>
+        <testcase classname="src/app/login/route.test.ts" name="GET /login &gt; sets the transient PKCE and state cookies, HttpOnly" time="0.0004895">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/auth/session.test.ts" timestamp="2026-09-20T17:43:00.159Z" hostname="tabla-01-mc" tests="7" failures="0" errors="0" skipped="0" time="0.00229725">
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; round-trips a session it signed" time="0.001043583">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; rejects a payload tampered after signing" time="0.000116792">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; rejects a signature made with a different key" time="0.000108458">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; rejects an expired session" time="0.00009">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; rejects a session carrying no subject or no access token" time="0.000120333">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; returns null for a missing or malformed cookie rather than throwing" time="0.000081791">
+        </testcase>
+        <testcase classname="src/lib/auth/session.test.ts" name="session cookie &gt; falls back to the subject when an older cookie carried no name" time="0.000133959">
+        </testcase>
+    </testsuite>
+</testsuites>

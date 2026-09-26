@@ -5,6 +5,19 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ## [Unreleased]
 
+### Changed
+
+- **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag
+  (ADR-0107).** `src/adapters/auth.rs` was the estate's second in-crate RSA/JWKS verifier and
+  ADR-0092 §3 recorded it as debt *"until a third consumer"*; `platform-tenancy` became the third, so
+  the debt is paid. What stays here is docket's own policy, which a shared library must not hold
+  (ANTI-0004): the single-plane issuer and `paridyum-operations` audience pins, the `operator` role
+  requirement, and the `resourceowner` → tenant uuid derivation (ADR-0082/ADR-0099). Behaviour is
+  unchanged, including the lenient `Bearer ` prefix this adapter has always accepted — the shared
+  `strip_bearer` is strict, and tightening this caller while moving its code would have been a
+  behaviour change disguised as a refactor. `OperatorVerifier::new` keeps its signature, so no call
+  site in `serve.rs`, `router.rs`, `server.rs` or `operator.rs` changed.
+
 ### Fixed
 
 - **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close

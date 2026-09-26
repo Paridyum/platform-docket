@@ -117,7 +117,7 @@ identity data.
 **Partially mitigated 2026-08-08.** ADR-0038 decision 5 adds a second, independent control: the
 repository layer asserts every returned row's `account_id` against the session context and raises
 on a mismatch. The two fail independently — RLS through a policy omitting `account_id`, a missing
-`FORCE`, or a `BYPASSRLS` role; the assertion only if `lib-auth` itself is wrong. That does not
+`FORCE`, or a `BYPASSRLS` role; the assertion only if `lib-auth-typescript` itself is wrong. That does not
 restore the *isolation* level Zitadel would have provided, and it does close the case where a
 single policy is written wrong.
 **Revisit if** a tenant's contract or auditor requires a dedicated user store, at which point

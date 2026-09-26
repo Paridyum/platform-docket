@@ -56,13 +56,18 @@ fi
 
 "\$K/scripts/check-commits.sh" --staged || exit 1
 "\$K/scripts/check-knowledge.sh" --staged || exit 1
-"\$K/scripts/check-repo.sh" >/dev/null || exit 1
+# NOT REDIRECTED TO /dev/null, AND THAT IS THE POINT (ADR-0059). Every gate here exits 0 on a
+# warning by design, so a redirect keeps the errors and throws away roughly a dozen \`warn\` checks
+# whose severity each artifact argued for on the premise that someone reads them.
+# repo.plugin_snapshot_matches_head reported the installed plugin as twelve days stale, by name
+# and with the remedy, into this exact redirect — and RFC-0027 research capture had never run.
+"\$K/scripts/check-repo.sh" || exit 1
 
 # check-migrations.sh inspects this repository's own migrations directory, and
 # check-changelog.sh must validate the CHANGELOG of the repository being committed
 # to — never the snapshot's copy of the knowledge base's changelog.
-"\$K/scripts/check-migrations.sh" >/dev/null || exit 1
-"\$K/templates/infra-ci/scripts/check-changelog.sh" "\$R/CHANGELOG.md" >/dev/null || exit 1
+"\$K/scripts/check-migrations.sh" || exit 1
+"\$K/templates/infra-ci/scripts/check-changelog.sh" "\$R/CHANGELOG.md" || exit 1
 # Was: \`command -v gitleaks >/dev/null && { gitleaks protect --staged ... }\` — which
 # silently skipped the scan on any machine without gitleaks installed, and used a
 # command deprecated in v8.19.0. secret-scan.sh resolves the binary itself (PATH
