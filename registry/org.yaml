@@ -126,3 +126,66 @@ companies:
 
     reference:
       format: "PCY/{kind}/{year}/{seq:04d}"
+
+  - code: PMD
+    # Owned by PARIDYUM. RFC-0052 D1. The media estate is one company and the
+    # three sub-brands -- Paridyum Explained, Paridyum Academy, Paridyum Labs --
+    # are BRANDS INSIDE IT, not entities (D2). They get no entry here and no
+    # serial format of their own, because a company is drawn on counterparties,
+    # liability, revenue contracts and regulatory surface, and on all four the
+    # three sub-brands are one business filmed three ways.
+    #
+    # WHY AN ENTITY AT ALL, rather than a division of PAR: liability. PAR will
+    # hold the patent filing RFC-0013 sequences, the catalogue contracts and the
+    # tenant relationships. Publishing exposure -- defamation, copyright,
+    # advertising disclosure, a takedown that becomes a dispute -- does not
+    # belong on that entity. That is what a subsidiary is for.
+    #
+    # ACADEMY IS EXPECTED TO LEAVE (D3). The operator confirms it will sell
+    # courses and certificates, which is trigger 1: contracting with end
+    # customers in its own right. When it does, it gets its own code here. A
+    # certificate issued under PMD's serial format is issued BY PMD and cannot
+    # be cleanly reissued under a successor -- so the promotion is better made
+    # at incorporation than after the first cohort.
+    #
+    # NO SIGNATORY YET, deliberately. ADR-0077 D4 resolves signing within the
+    # engagement's company; PMD has none, so it cannot issue a document until an
+    # officer is appointed under RFC-0042 section 5, authorised by Rohan Batra
+    # (ADR-0087 D1). The entity exists and cannot yet sign.
+    owned_by: PAR
+    name: PARIDYUM MEDIA
+    tagline: Media & Education
+
+    address: Opposite Raghav Tower, Near Aroma Clinic, Herbertpur, Dehradun -- 248142
+    email: legal@paridyum.com
+    web: www.paridyum.com
+
+    legal_status: Incorporation in Process
+    cin: null
+    incorporated_on: null
+
+    jurisdiction:
+      country: India
+      forum: Dehradun, Uttarakhand, India
+
+    security:
+      contact: ROHAN BATRA
+      contact_role: Chief Technology Officer (CTO)
+      email: security@paridyum.com
+
+    posh:
+      internal_committee: false
+      local_committee: District Officer, Dehradun District, Uttarakhand
+      contact_email: legal@paridyum.com
+
+    notice_period_days: 7
+
+    verification:
+      contact: legal@paridyum.com
+
+    grievance:
+      acknowledge_days: 3
+      outcome_days: 20
+
+    reference:
+      format: "PMD/{kind}/{year}/{seq:04d}"
