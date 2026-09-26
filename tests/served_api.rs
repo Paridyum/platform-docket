@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use tool_docket::adapters::auth::OperatorVerifier;
 use tool_docket::adapters::blobs::FileBlobs;
 use tool_docket::adapters::clock::{FixedClock, parse_iso};
+use tool_docket::adapters::correlation::CorrelationId;
 use tool_docket::adapters::http::request;
 use tool_docket::adapters::http::router::{self, Context};
 use tool_docket::adapters::pg::{self, PgStore};
@@ -103,7 +104,12 @@ fn an_operator_creates_and_lists_a_person_through_the_real_router() {
         )
         .expect("seed tenant");
 
-    let store = PgStore::new(pool, tenant, runtime.handle().clone());
+    let store = PgStore::new(
+        pool,
+        tenant,
+        runtime.handle().clone(),
+        CorrelationId::mint(),
+    );
     let blobs = FileBlobs::new(&paths);
     let ctx = Context {
         store: &store,

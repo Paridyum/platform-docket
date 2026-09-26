@@ -1456,3 +1456,64 @@ does not exist until `Paridyum/lib-auth-rust` is pushed.
 
 Skills used: none. Governance retrieved: ADR-0107, ADR-0092, ADR-0082, ADR-0099, ADR-0047, ADR-0070,
 ADR-0053, ANTI-0004, STD-0022.
+
+## 2026-09-26 — the fourth session value reaches docket, and where the edge is for a CLI
+
+T-G.2's last leg. `platform-tenancy` and `@paridyum/auth` got the same contract earlier today; this
+completes the three places in the estate that open a Postgres transaction.
+
+**The decision that took the thinking: where is the edge for a tool that is also a CLI?** ADR-0044 D1
+requires the id to be generated once at the outermost boundary and *propagated unchanged*. Two answers,
+and both are right:
+
+* **Served (ADR-0099)** — the HTTP dispatcher reads the request's headers, because a client's
+  `traceparent` is a trace that must survive rather than be replaced.
+* **CLI** — there is no inbound request, so `docket issue` *is* the edge. The id is minted **once per
+  invocation** and every transaction in that invocation shares it.
+
+Minting inside `enter()` would have been one line and is the thing this change is written not to do: a
+single `docket issue` opens several transactions, so per-transaction minting turns one command into
+four unrelated ids — the per-hop minting D1 forbids, in the place it would be least visible. So the id
+is a **parameter** of `enter()`, threaded from the edge. That is why this change touches eighteen
+signatures instead of one: the property is structural, not a convention somebody has to remember.
+
+**`PgStore` holds it rather than the `Store` trait carrying it.** A `PgStore` is built for the life of
+one request (`PgTenantStores::build`) or one CLI invocation, which makes the store the natural scope.
+Putting it on the trait would have added a parameter to a port that the **file-backed** implementation
+also satisfies — and that one has no sessions, no RLS and nothing to do with a correlation id.
+
+**It goes in the same statement as tenant and operator scope**, which costs no extra round trip, and
+before the account lookup because that lookup needs the other two set (`accounts` FORCEs RLS on
+`current_tenant()` AND `has_operator_scope()`). The ordering was already load-bearing; this did not
+change it.
+
+**The duplication is priced, not hidden — D-71.** This is the *third* implementation of one contract
+(`platform-tenancy/src/correlation.rs`, `@paridyum/auth`'s `correlation.ts`). It was not shared because
+`paridyum-auth` is the estate's **auth** crate and a correlation id is observability: putting it there
+because a crate happens to exist is ANTI-0004 pointed the other way, a library acquiring a concern it
+has no business owning. A `lib-observability-rust` for eighty lines is a repository, a version, a pin
+and a release path. **The trigger is written down so it fires:** a fourth Rust implementation, or any
+change to the parsing rules that must be made twice. That is the shape ADR-0092 D3 used for the JWKS
+verifier, which ADR-0107 extracted after the third copy — and this is the third copy, so the next
+change to these rules is the extraction.
+
+**D-72 is the other half, and it is honest about what is still missing.** Docket now carries an id that
+makes each unit of work joinable to its request, and **writes nothing to join**. The four sealed chains
+are what a document *is*, not who touched it: a read of a person record leaves no trace, and a refused
+write leaves less. `audit_events` is in tenancy migration 0010, unapplied, and no docket code inserts a
+row. The half that shipped is the half that cannot be added retroactively.
+
+**Verified:** `cargo test` — **289 unit** (up from 280) plus 5 + 7 + 14 in the adapter suites, all
+green; `clippy --all-targets --all-features` clean; `cargo fmt --check` clean. The nine new tests are
+mostly refusals: `ff`, an uppercase trace id, an all-zero trace id, a three-field header, and a
+fallback header carrying a space, a tab, a semicolon or a newline — each asserting the value is
+**replaced and reported**, never truncated.
+
+**Two failures in `tests/issuance.rs` are pre-existing and unrelated**, and the same two the ADR-0107
+entry recorded: `the_checked_in_registry_is_valid` and `the_binary_reports_meaningful_exit_codes` fail
+because **PMD has no active signatory** — deliberately red pending an officer appointment only the
+operator can make (RFC-0042 §5, ADR-0087 D1) — and because four person records still hold the
+template's `FILL-ME` placeholder in `pre_existing_ip`. Both are data, in `registry/` and `people/`.
+
+Skills used: none. Governance retrieved: ADR-0044, ADR-0041 D3, ADR-0038, ADR-0078, ADR-0092 D3,
+ADR-0099, ADR-0104, ADR-0107, ANTI-0004, RFC-0045 §D, GLO-0005, TASKS T-G.2, tenancy migration 0010.

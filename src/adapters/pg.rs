@@ -27,6 +27,7 @@
 //! and it would silently write one instance's people into another's.
 
 use crate::adapters::blobs;
+use crate::adapters::correlation::CorrelationId;
 use crate::adapters::http::server::{RequestStores, TenantStores};
 use crate::adapters::registry::Registry;
 use crate::adapters::store::Store;
@@ -63,16 +64,32 @@ pub async fn pool(url: &str) -> Result<PgPool> {
 ///
 /// # Errors
 /// Fails if the session variables cannot be set, or if the tenant has no docket account.
-async fn enter(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<Uuid> {
-    // Tenant and operator scope first, because resolving the third value needs them and not the
-    // other way round: `accounts` FORCEs RLS and its policy reads `current_tenant()` AND
-    // `has_operator_scope()` only. So this lookup is legal with two of the three set, and the
+async fn enter(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Uuid> {
+    // Tenant and operator scope first, because resolving the account needs them and not the other
+    // way round: `accounts` FORCEs RLS and its policy reads `current_tenant()` AND
+    // `has_operator_scope()` only. So this lookup is legal with two of the four set, and the
     // ordering is load-bearing rather than incidental.
+    //
+    // The correlation id goes in the same statement as those two, because it is needed no later and
+    // costs no round trip. It is the one value here that no policy reads: it grants and refuses
+    // nothing (ADR-0044 D1, RFC-0045 §D1). `audit_events` is `NOT NULL` on it and
+    // `paridyum.current_correlation()` raises rather than returning NULL, so a path that writes an
+    // audit event without it fails loudly instead of writing a row that joins to nothing.
+    //
+    // NOT MINTED HERE, and that is the point of taking it as a parameter. A minted-per-transaction
+    // id would turn one `docket issue` into four unrelated ids — the per-hop minting ADR-0044 D1
+    // forbids, in the place it would be least visible.
     sqlx::query(
         "SELECT set_config('paridyum.tenant_id', $1, true), \
-                set_config('paridyum.operator_scope', 'true', true)",
+                set_config('paridyum.operator_scope', 'true', true), \
+                set_config('paridyum.correlation_id', $2, true)",
     )
     .bind(tenant.to_string())
+    .bind(correlation.as_str())
     .execute(&mut **tx)
     .await
     .context("setting the tenant RLS session variables")?;
@@ -114,13 +131,14 @@ async fn enter(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<Uuid>
 async fn append_chain<T: Serialize + Sync + 'static>(
     pool: &PgPool,
     tenant: Uuid,
+    correlation: &CorrelationId,
     table: &str,
     record: &T,
 ) -> Result<()> {
     let sql =
         format!("INSERT INTO {table} (id, tenant_id, account_id, record) VALUES ($1, $2, $3, $4)");
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    let account = enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant, correlation).await?;
     sqlx::query(&sql)
         .bind(Uuid::new_v4())
         .bind(tenant)
@@ -136,11 +154,12 @@ async fn append_chain<T: Serialize + Sync + 'static>(
 async fn read_chain<T: Chained + DeserializeOwned + Send + Unpin + 'static>(
     pool: &PgPool,
     tenant: Uuid,
+    correlation: &CorrelationId,
     table: &str,
 ) -> Result<Vec<T>> {
     let sql = format!("SELECT record FROM {table} ORDER BY chain_seq");
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    enter(&mut tx, tenant, correlation).await?;
     let rows: Vec<(sqlx::types::Json<T>,)> = sqlx::query_as(&sql)
         .fetch_all(&mut *tx)
         .await
@@ -163,48 +182,75 @@ async fn read_chain<T: Chained + DeserializeOwned + Send + Unpin + 'static>(
 ///
 /// # Errors
 /// Fails if the entry cannot be serialised or the insert is refused (RLS, or an attempted rewrite).
-pub async fn append_register(pool: &PgPool, tenant: Uuid, entry: &Entry) -> Result<()> {
-    append_chain(pool, tenant, "docket_register", entry).await
+pub async fn append_register(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    entry: &Entry,
+) -> Result<()> {
+    append_chain(pool, tenant, correlation, "docket_register", entry).await
 }
 
 /// Read the register in issue order, verifying the seal before returning it.
 ///
 /// # Errors
 /// Fails if the read is refused, a row does not deserialise, or the chain does not verify.
-pub async fn read_register(pool: &PgPool, tenant: Uuid) -> Result<Vec<Entry>> {
-    read_chain(pool, tenant, "docket_register").await
+pub async fn read_register(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Vec<Entry>> {
+    read_chain(pool, tenant, correlation, "docket_register").await
 }
 
 /// Append one sealed identity record.
 ///
 /// # Errors
 /// As [`append_register`].
-pub async fn append_identity(pool: &PgPool, tenant: Uuid, record: &Record) -> Result<()> {
-    append_chain(pool, tenant, "docket_identities", record).await
+pub async fn append_identity(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    record: &Record,
+) -> Result<()> {
+    append_chain(pool, tenant, correlation, "docket_identities", record).await
 }
 
 /// Read the identity ledger in order, verifying the seal.
 ///
 /// # Errors
 /// As [`read_register`].
-pub async fn read_identities(pool: &PgPool, tenant: Uuid) -> Result<Vec<Record>> {
-    read_chain(pool, tenant, "docket_identities").await
+pub async fn read_identities(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Vec<Record>> {
+    read_chain(pool, tenant, correlation, "docket_identities").await
 }
 
 /// Append one sealed personnel event.
 ///
 /// # Errors
 /// As [`append_register`].
-pub async fn append_event(pool: &PgPool, tenant: Uuid, event: &Event) -> Result<()> {
-    append_chain(pool, tenant, "docket_events", event).await
+pub async fn append_event(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    event: &Event,
+) -> Result<()> {
+    append_chain(pool, tenant, correlation, "docket_events", event).await
 }
 
 /// Read the personnel-event log in order, verifying the seal.
 ///
 /// # Errors
 /// As [`read_register`].
-pub async fn read_events(pool: &PgPool, tenant: Uuid) -> Result<Vec<Event>> {
-    read_chain(pool, tenant, "docket_events").await
+pub async fn read_events(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Vec<Event>> {
+    read_chain(pool, tenant, correlation, "docket_events").await
 }
 
 /// Append one sealed signature (executed-document) record.
@@ -214,16 +260,25 @@ pub async fn read_events(pool: &PgPool, tenant: Uuid) -> Result<Vec<Event>> {
 ///
 /// # Errors
 /// As [`append_register`].
-pub async fn append_signature(pool: &PgPool, tenant: Uuid, record: &Signature) -> Result<()> {
-    append_chain(pool, tenant, "docket_signatures", record).await
+pub async fn append_signature(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    record: &Signature,
+) -> Result<()> {
+    append_chain(pool, tenant, correlation, "docket_signatures", record).await
 }
 
 /// Read the signature ledger in order, verifying the seal.
 ///
 /// # Errors
 /// As [`read_register`].
-pub async fn read_signatures(pool: &PgPool, tenant: Uuid) -> Result<Vec<Signature>> {
-    read_chain(pool, tenant, "docket_signatures").await
+pub async fn read_signatures(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Vec<Signature>> {
+    read_chain(pool, tenant, correlation, "docket_signatures").await
 }
 
 // ── The mutable person record ────────────────────────────────────────────────────────────────
@@ -237,10 +292,15 @@ pub async fn read_signatures(pool: &PgPool, tenant: Uuid) -> Result<Vec<Signatur
 ///
 /// # Errors
 /// Fails if the document cannot be serialised or the write is refused (RLS).
-pub async fn upsert_person(pool: &PgPool, tenant: Uuid, person: &Person) -> Result<()> {
+pub async fn upsert_person(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    person: &Person,
+) -> Result<()> {
     let record = serde_json::to_value(&person.value).context("serialising a person document")?;
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    let account = enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant, correlation).await?;
     // ON CONFLICT names (account_id, slug), which is the constraint migration 0012 left behind when
     // it replaced docket_persons_slug_unique. Naming (tenant_id, slug) here raises "no unique or
     // exclusion constraint matching" — the same class of break as the missing column, and it would
@@ -271,9 +331,14 @@ fn person_from(slug: String, record: serde_json::Value) -> Result<Person> {
 ///
 /// # Errors
 /// Fails if the read is refused or the stored document does not convert back to a value.
-pub async fn read_person(pool: &PgPool, tenant: Uuid, slug: &str) -> Result<Option<Person>> {
+pub async fn read_person(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    slug: &str,
+) -> Result<Option<Person>> {
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    enter(&mut tx, tenant, correlation).await?;
     let row: Option<(sqlx::types::Json<serde_json::Value>,)> =
         sqlx::query_as("SELECT record FROM docket_persons WHERE slug = $1")
             .bind(slug)
@@ -289,9 +354,13 @@ pub async fn read_person(pool: &PgPool, tenant: Uuid, slug: &str) -> Result<Opti
 ///
 /// # Errors
 /// Fails if the read is refused or a stored document does not convert back to a value.
-pub async fn list_persons(pool: &PgPool, tenant: Uuid) -> Result<Vec<Person>> {
+pub async fn list_persons(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Vec<Person>> {
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    enter(&mut tx, tenant, correlation).await?;
     let rows: Vec<(String, sqlx::types::Json<serde_json::Value>)> =
         sqlx::query_as("SELECT slug, record FROM docket_persons ORDER BY slug")
             .fetch_all(&mut *tx)
@@ -307,10 +376,15 @@ pub async fn list_persons(pool: &PgPool, tenant: Uuid) -> Result<Vec<Person>> {
 ///
 /// # Errors
 /// Fails if a record already exists for the slug, or the write is refused.
-pub async fn insert_person(pool: &PgPool, tenant: Uuid, person: &Person) -> Result<()> {
+pub async fn insert_person(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    person: &Person,
+) -> Result<()> {
     let record = serde_json::to_value(&person.value).context("serialising a person document")?;
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    let account = enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant, correlation).await?;
     let done = sqlx::query(
         "INSERT INTO docket_persons (id, tenant_id, account_id, slug, record) \
          VALUES ($1, $2, $3, $4, $5) \
@@ -341,12 +415,18 @@ pub async fn insert_person(pool: &PgPool, tenant: Uuid, person: &Person) -> Resu
 // end; appends to different chains or different tenants do not contend. This is the concurrency
 // correctness ADR-0093 §decision-2 moves from a file lock into the database.
 
-async fn seal_and_append<T>(pool: &PgPool, tenant: Uuid, table: &str, record: T) -> Result<T>
+async fn seal_and_append<T>(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    table: &str,
+    record: T,
+) -> Result<T>
 where
     T: Chained + Serialize + DeserializeOwned + Send + Unpin + 'static,
 {
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    let account = enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant, correlation).await?;
     // The lock key carries the ACCOUNT as well as the tenant, because since ADR-0104 a chain is
     // per-instance: two dockets under one tenant have two independent registers, and the tail this
     // transaction reads is bounded by the account predicate in 0014's policies. Keying on tenant
@@ -392,16 +472,30 @@ pub struct PgStore {
     pool: PgPool,
     tenant: Uuid,
     runtime: tokio::runtime::Handle,
+    /// The correlation id of the request (or CLI invocation) this store serves.
+    ///
+    /// **Held on the store rather than passed per method**, because a `PgStore` is built for the life
+    /// of ONE request (`PgTenantStores::build`) or one CLI invocation. That makes the store the
+    /// natural scope for it, and it means the `Store` trait — which the file-backed implementation
+    /// also satisfies, and which knows nothing about sessions — does not grow a parameter it has no
+    /// use for.
+    correlation: CorrelationId,
 }
 
 impl PgStore {
     /// A Postgres-backed store for `tenant`, driving async work on `runtime`.
     #[must_use]
-    pub fn new(pool: PgPool, tenant: Uuid, runtime: tokio::runtime::Handle) -> Self {
+    pub fn new(
+        pool: PgPool,
+        tenant: Uuid,
+        runtime: tokio::runtime::Handle,
+        correlation: CorrelationId,
+    ) -> Self {
         Self {
             pool,
             tenant,
             runtime,
+            correlation,
         }
     }
 
@@ -416,21 +510,31 @@ impl PgStore {
 impl Store for PgStore {
     fn person(&self, slug: &str) -> Result<Person> {
         self.runtime
-            .block_on(read_person(&self.pool, self.tenant, slug))?
+            .block_on(read_person(
+                &self.pool,
+                self.tenant,
+                &self.correlation,
+                slug,
+            ))?
             .with_context(|| format!("no person record for {slug}"))
     }
 
     fn person_exists(&self, slug: &str) -> Result<bool> {
         Ok(self
             .runtime
-            .block_on(read_person(&self.pool, self.tenant, slug))?
+            .block_on(read_person(
+                &self.pool,
+                self.tenant,
+                &self.correlation,
+                slug,
+            ))?
             .is_some())
     }
 
     fn slugs(&self) -> Result<Vec<String>> {
         Ok(self
             .runtime
-            .block_on(list_persons(&self.pool, self.tenant))?
+            .block_on(list_persons(&self.pool, self.tenant, &self.correlation))?
             .into_iter()
             .map(|p| p.slug)
             .collect())
@@ -438,25 +542,34 @@ impl Store for PgStore {
 
     fn create_person(&self, slug: &str, body: &str) -> Result<()> {
         let person = Self::body_to_person(slug, body)?;
-        self.runtime
-            .block_on(insert_person(&self.pool, self.tenant, &person))
+        self.runtime.block_on(insert_person(
+            &self.pool,
+            self.tenant,
+            &self.correlation,
+            &person,
+        ))
     }
 
     fn rewrite_person(&self, slug: &str, body: &str) -> Result<()> {
         let person = Self::body_to_person(slug, body)?;
-        self.runtime
-            .block_on(upsert_person(&self.pool, self.tenant, &person))
+        self.runtime.block_on(upsert_person(
+            &self.pool,
+            self.tenant,
+            &self.correlation,
+            &person,
+        ))
     }
 
     fn ledger(&self) -> Result<Vec<Record>> {
         self.runtime
-            .block_on(read_identities(&self.pool, self.tenant))
+            .block_on(read_identities(&self.pool, self.tenant, &self.correlation))
     }
 
     fn append_identity(&self, record: Record) -> Result<Record> {
         self.runtime.block_on(seal_and_append(
             &self.pool,
             self.tenant,
+            &self.correlation,
             "docket_identities",
             record,
         ))
@@ -464,26 +577,29 @@ impl Store for PgStore {
 
     fn register(&self) -> Result<Vec<Entry>> {
         self.runtime
-            .block_on(read_register(&self.pool, self.tenant))
+            .block_on(read_register(&self.pool, self.tenant, &self.correlation))
     }
 
     fn append_register(&self, entry: Entry) -> Result<Entry> {
         self.runtime.block_on(seal_and_append(
             &self.pool,
             self.tenant,
+            &self.correlation,
             "docket_register",
             entry,
         ))
     }
 
     fn events(&self) -> Result<Vec<Event>> {
-        self.runtime.block_on(read_events(&self.pool, self.tenant))
+        self.runtime
+            .block_on(read_events(&self.pool, self.tenant, &self.correlation))
     }
 
     fn append_event(&self, event: Event) -> Result<Event> {
         self.runtime.block_on(seal_and_append(
             &self.pool,
             self.tenant,
+            &self.correlation,
             "docket_events",
             event,
         ))
@@ -491,13 +607,14 @@ impl Store for PgStore {
 
     fn signatures(&self) -> Result<Vec<Signature>> {
         self.runtime
-            .block_on(read_signatures(&self.pool, self.tenant))
+            .block_on(read_signatures(&self.pool, self.tenant, &self.correlation))
     }
 
     fn append_signature(&self, record: Signature) -> Result<Signature> {
         self.runtime.block_on(seal_and_append(
             &self.pool,
             self.tenant,
+            &self.correlation,
             "docket_signatures",
             record,
         ))
@@ -541,10 +658,15 @@ impl PgTenantStores {
 /// Read every `record` in a tenant's config table (ADR-0099), under its operator RLS context. The
 /// table name comes from `Registry::from_db`'s fixed constants, never caller input, so the `format!`
 /// carries no injection — the same property the chain reads above rely on.
-async fn read_config(pool: &PgPool, tenant: Uuid, table: &str) -> Result<Vec<serde_json::Value>> {
+async fn read_config(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+    table: &str,
+) -> Result<Vec<serde_json::Value>> {
     let sql = format!("SELECT record FROM {table} ORDER BY id");
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    enter(&mut tx, tenant, correlation).await?;
     let rows: Vec<(sqlx::types::Json<serde_json::Value>,)> = sqlx::query_as(&sql)
         .fetch_all(&mut *tx)
         .await
@@ -554,15 +676,22 @@ async fn read_config(pool: &PgPool, tenant: Uuid, table: &str) -> Result<Vec<ser
 }
 
 impl TenantStores for PgTenantStores {
-    fn build(&self, tenant: Uuid) -> Result<RequestStores<'_>> {
-        let store = PgStore::new(self.pool.clone(), tenant, self.handle.clone());
+    fn build(&self, tenant: Uuid, correlation: &CorrelationId) -> Result<RequestStores<'_>> {
+        let store = PgStore::new(
+            self.pool.clone(),
+            tenant,
+            self.handle.clone(),
+            correlation.clone(),
+        );
         let blobs = blobs::open(&self.paths, &tenant.to_string(), Some(self.handle.clone()))
             .context("opening the blob store (DOCKET_S3_* configured?)")?;
         // The tenant's configuration from its 0008 rows, or `None` when it has none yet — the served
         // dispatcher then falls back to the git registry until it is seeded (ADR-0099).
-        let config =
-            Registry::from_db(|table| self.handle.block_on(read_config(&self.pool, tenant, table)))
-                .context("loading the tenant's configuration")?;
+        let config = Registry::from_db(|table| {
+            self.handle
+                .block_on(read_config(&self.pool, tenant, correlation, table))
+        })
+        .context("loading the tenant's configuration")?;
         Ok((Box::new(store), blobs, config))
     }
 }
@@ -591,7 +720,9 @@ mod tests {
         // A fresh tenant that never had a row: the factory builds a store bound to it, and a read
         // returns empty rather than another tenant's data — the store is tenant-scoped.
         let tenant = Uuid::new_v4();
-        let (store, _blobs, config) = factory.build(tenant).expect("build a store for the tenant");
+        let (store, _blobs, config) = factory
+            .build(tenant, &CorrelationId::mint())
+            .expect("build a store for the tenant");
         assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
         // A fresh tenant has no config rows, so the factory returns None and the dispatcher would
         // fall back to the git registry.

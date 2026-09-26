@@ -9,6 +9,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 
 use sqlx::PgPool;
+use tool_docket::adapters::correlation::CorrelationId;
 use tool_docket::adapters::pg::{self, PgStore};
 use tool_docket::adapters::store::Store;
 use tool_docket::domain::chain::{seal, verify};
@@ -18,6 +19,12 @@ use tool_docket::domain::person::Person;
 use tool_docket::domain::register::{Entry, verify_chain};
 use tool_docket::domain::signature::{Method, Record as Signature};
 use uuid::Uuid;
+
+/// One id for the whole test, the way a CLI invocation has one (ADR-0044 D1). A fresh id per call
+/// would be per-transaction minting, which is what the production paths are written not to do.
+fn cid() -> CorrelationId {
+    CorrelationId::mint()
+}
 
 fn entry(seq: u32) -> Entry {
     Entry {
@@ -122,13 +129,15 @@ async fn register_round_trips_through_postgres_with_the_seal_intact() {
     let mut sealed: Vec<Entry> = Vec::new();
     for i in 1..=3 {
         let e = entry(i).seal(sealed.last()).expect("seal");
-        pg::append_register(&pool, tenant, &e)
+        pg::append_register(&pool, tenant, &cid(), &e)
             .await
             .expect("append");
         sealed.push(e);
     }
 
-    let read = pg::read_register(&pool, tenant).await.expect("read");
+    let read = pg::read_register(&pool, tenant, &cid())
+        .await
+        .expect("read");
     assert_eq!(read.len(), 3);
     assert!(
         verify_chain(&read).expect("verifiable").is_empty(),
@@ -140,7 +149,7 @@ async fn register_round_trips_through_postgres_with_the_seal_intact() {
         "records unchanged by Postgres"
     );
 
-    let elsewhere = pg::read_register(&pool, fresh_tenant(&pool).await)
+    let elsewhere = pg::read_register(&pool, fresh_tenant(&pool).await, &cid())
         .await
         .expect("read other");
     assert!(elsewhere.is_empty(), "RLS isolates the register by tenant");
@@ -164,13 +173,15 @@ async fn the_identity_chain_round_trips_through_postgres() {
             sealed.last(),
         )
         .expect("seal");
-        pg::append_identity(&pool, tenant, &r)
+        pg::append_identity(&pool, tenant, &cid(), &r)
             .await
             .expect("append");
         sealed.push(r);
     }
 
-    let read = pg::read_identities(&pool, tenant).await.expect("read");
+    let read = pg::read_identities(&pool, tenant, &cid())
+        .await
+        .expect("read");
     assert_eq!(read.len(), 3);
     assert!(
         verify(&read).expect("verifiable").is_empty(),
@@ -190,11 +201,13 @@ async fn the_event_chain_round_trips_through_postgres() {
     let mut sealed: Vec<Event> = Vec::new();
     for kind in [Kind::Created, Kind::StageChanged, Kind::Separated] {
         let e = seal(evt(kind), sealed.last()).expect("seal");
-        pg::append_event(&pool, tenant, &e).await.expect("append");
+        pg::append_event(&pool, tenant, &cid(), &e)
+            .await
+            .expect("append");
         sealed.push(e);
     }
 
-    let read = pg::read_events(&pool, tenant).await.expect("read");
+    let read = pg::read_events(&pool, tenant, &cid()).await.expect("read");
     assert_eq!(read.len(), 3);
     assert!(
         verify(&read).expect("verifiable").is_empty(),
@@ -218,13 +231,15 @@ async fn the_signature_chain_round_trips_through_postgres() {
         ("PAR/OFR/2026/0001", Method::Electronic),
     ] {
         let s = seal(sig(serial, method), sealed.last()).expect("seal");
-        pg::append_signature(&pool, tenant, &s)
+        pg::append_signature(&pool, tenant, &cid(), &s)
             .await
             .expect("append");
         sealed.push(s);
     }
 
-    let read = pg::read_signatures(&pool, tenant).await.expect("read");
+    let read = pg::read_signatures(&pool, tenant, &cid())
+        .await
+        .expect("read");
     assert_eq!(read.len(), 3);
     assert!(
         verify(&read).expect("verifiable").is_empty(),
@@ -232,7 +247,7 @@ async fn the_signature_chain_round_trips_through_postgres() {
     );
     assert_eq!(as_json(&read), as_json(&sealed));
 
-    let elsewhere = pg::read_signatures(&pool, fresh_tenant(&pool).await)
+    let elsewhere = pg::read_signatures(&pool, fresh_tenant(&pool).await, &cid())
         .await
         .expect("read other");
     assert!(elsewhere.is_empty(), "RLS isolates signatures by tenant");
@@ -253,7 +268,7 @@ fn the_pg_store_port_seals_every_chain_and_manages_a_person() {
         let tenant = fresh_tenant(&pool).await;
         (pool, tenant)
     });
-    let store = PgStore::new(pool, tenant, rt.handle().clone());
+    let store = PgStore::new(pool, tenant, rt.handle().clone(), cid());
 
     // The person: create is create-only; read, list and rewrite behave through the port.
     assert!(!store.person_exists("asha-verma").expect("exists"));
@@ -332,7 +347,7 @@ fn concurrent_appends_to_one_chain_do_not_fork_it() {
     // Eight threads append to the SAME event chain at once. Without the per-chain advisory lock in
     // seal_and_append, two would read the same tail and seal onto it, forking the chain — and the
     // append-only table would keep both. verify() would then find the fork.
-    let store = std::sync::Arc::new(PgStore::new(pool, tenant, rt.handle().clone()));
+    let store = std::sync::Arc::new(PgStore::new(pool, tenant, rt.handle().clone(), cid()));
     let mut handles = Vec::new();
     for _ in 0..8 {
         let store = std::sync::Arc::clone(&store);
@@ -366,10 +381,10 @@ async fn a_person_upserts_reads_and_lists() {
     };
 
     // insert
-    pg::upsert_person(&pool, tenant, &doc("Asha Verma"))
+    pg::upsert_person(&pool, tenant, &cid(), &doc("Asha Verma"))
         .await
         .expect("insert");
-    let got = pg::read_person(&pool, tenant, "asha-verma")
+    let got = pg::read_person(&pool, tenant, &cid(), "asha-verma")
         .await
         .expect("read");
     assert_eq!(
@@ -378,10 +393,10 @@ async fn a_person_upserts_reads_and_lists() {
     );
 
     // update (the mutable record — same slug upserts)
-    pg::upsert_person(&pool, tenant, &doc("Asha K Verma"))
+    pg::upsert_person(&pool, tenant, &cid(), &doc("Asha K Verma"))
         .await
         .expect("update");
-    let got = pg::read_person(&pool, tenant, "asha-verma")
+    let got = pg::read_person(&pool, tenant, &cid(), "asha-verma")
         .await
         .expect("read");
     assert_eq!(
@@ -391,11 +406,11 @@ async fn a_person_upserts_reads_and_lists() {
     );
 
     // roster lists it once, not twice
-    let roster = pg::list_persons(&pool, tenant).await.expect("list");
+    let roster = pg::list_persons(&pool, tenant, &cid()).await.expect("list");
     assert_eq!(roster.len(), 1, "one person after an upsert, not two");
 
     // RLS: another tenant sees no person
-    let none = pg::read_person(&pool, fresh_tenant(&pool).await, "asha-verma")
+    let none = pg::read_person(&pool, fresh_tenant(&pool).await, &cid(), "asha-verma")
         .await
         .expect("read other");
     assert!(none.is_none(), "RLS isolates persons by tenant");

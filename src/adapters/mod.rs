@@ -5,6 +5,7 @@ pub mod auth;
 pub mod blobs;
 pub mod clock;
 pub mod console;
+pub mod correlation;
 pub mod crypt;
 pub mod http;
 pub mod lock;

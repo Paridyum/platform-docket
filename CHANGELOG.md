@@ -5,6 +5,26 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ## [Unreleased]
 
+### Added
+
+- **A correlation id reaches every database transaction** (T-G.2, ADR-0041 D3 / ADR-0044 D1 /
+  RFC-0045 §D1). `enter()` now sets a fourth session value, `paridyum.correlation_id`, alongside
+  tenant, operator scope and account. `src/adapters/correlation.rs` reads a W3C `traceparent`'s
+  **trace id** — never its parent id, which changes per hop — or an `X-Correlation-Id` matching a
+  narrow shape, and mints one only when nothing usable arrived, reporting which of the three happened.
+
+  **Two edges, both correct.** The served dispatcher (ADR-0099) reads the request's headers, so a
+  client's trace survives. The CLI mints **once per invocation**: `docket issue` *is* the edge, and
+  minting per transaction would give one command four unrelated ids — the per-hop minting ADR-0044 D1
+  forbids, in the place it would be least visible.
+
+  The id is a **parameter**, never resolved inside `enter()`, which is what makes that property
+  structural rather than a convention. `TenantStores::build` takes it; `PgStore` holds it for the life
+  of the one request or invocation it serves.
+
+  Three implementations of this contract now exist in the estate. That is priced and recorded, with
+  the trigger that turns it into a shared crate, in DECISION-DEBT D-71.
+
 ### Changed
 
 - **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag

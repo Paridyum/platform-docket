@@ -8,6 +8,7 @@
 use crate::adapters::auth::OperatorVerifier;
 use crate::adapters::blobs::Blobs;
 use crate::adapters::clock::Clock;
+use crate::adapters::correlation::CorrelationId;
 use crate::adapters::http::operator::AUTHORIZATION_HEADER;
 use crate::adapters::http::request::{self, Request};
 use crate::adapters::http::response::Response;
@@ -37,10 +38,14 @@ pub trait TenantStores: Sync {
     /// outlives every request in the loop. The config is `Some` when the tenant has been seeded
     /// (ADR-0099), and `None` when it has not — the dispatcher then falls back to the git registry.
     ///
+    /// `correlation` is the request's id (ADR-0044 D1), read from its headers by the dispatcher and
+    /// passed in rather than minted here: a store that minted its own would give one request an id
+    /// nothing else in the estate shares, which is the failure D1 names.
+    ///
     /// # Errors
     /// Fails if the stores cannot be opened (a bad pool or missing S3 configuration) or the config
     /// cannot be read.
-    fn build(&self, tenant: Uuid) -> Result<RequestStores<'_>>;
+    fn build(&self, tenant: Uuid, correlation: &CorrelationId) -> Result<RequestStores<'_>>;
 }
 
 /// How a request's record/blob stores are obtained.
@@ -217,7 +222,11 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                 Ok(op) => op.tenant,
                 Err(e) => return Response::error(401, &format!("{e:#}")),
             };
-            let (store, blobs, config) = match stores.build(tenant) {
+            // ADR-0044 D1: the id comes off the request, and is minted here only when the client
+            // sent nothing usable. `req.header` matches case-insensitively (see request.rs), which is
+            // what makes `traceparent` from any client reach this.
+            let correlation = CorrelationId::from_headers(|name| req.header(name));
+            let (store, blobs, config) = match stores.build(tenant, &correlation) {
                 Ok(built) => built,
                 Err(e) => {
                     return Response::error(
@@ -337,7 +346,7 @@ mod tests {
     /// backend builds a store per request and routes through it.
     struct FakeStores;
     impl TenantStores for FakeStores {
-        fn build(&self, _tenant: Uuid) -> Result<RequestStores<'_>> {
+        fn build(&self, _tenant: Uuid, _correlation: &CorrelationId) -> Result<RequestStores<'_>> {
             // No config: the dispatcher falls back to the git registry, which is what these tests
             // route against (GET /api/operators reads it).
             Ok((Box::new(NullStore), Box::new(NullBlobs), None))

@@ -1268,7 +1268,7 @@ not a widening. It must be a *lookup that fails loudly* when the row is absent, 
 because absence is how an end user silently acquires the whole tenant. Path routing then replaces
 the lookup without touching the SQL.
 
-**Closes when:** `enter()` sets all three session values, the five inserts carry `account_id`, and
+**Closes when:** `enter()` sets all the session values, the five inserts carry `account_id`, and
 `platform-tenancy/scripts/prove-isolation.py` is extended to prove the docket account boundary
 behaviourally (it proves `applications` today).
 
@@ -1284,6 +1284,10 @@ behaviourally (it proves `applications` today).
 >    That over-locks rather than under-locks, so it was safe — but it asserted something untrue
 >    about what the lock protects. Now `(tenant, account, table)`.
 >
+> **`enter()` sets FOUR values as of 2026-09-26 (T-G.2).** The fourth is the request correlation id
+> (ADR-0044 D1), and it is unlike the other three: no policy reads it, so it grants and refuses
+> nothing. `audit_events` (tenancy migration 0010) is `NOT NULL` on it. See D-71.
+>
 > **Account creation is deliberately NOT here.** `accounts` is platform-tenancy's table;
 > `scripts/seed-releases.py` creates the `product='docket', slug='default'` row, and ADR-0039's saga
 > creates it for a tenant provisioned later. This adapter resolves and raises, and must never
@@ -1292,3 +1296,41 @@ behaviourally (it proves `applications` today).
 > **Still open:** the behavioural proof. `cargo test` (407 passing) and `clippy -D warnings` are
 > green, but no test exercises the account boundary against a real database — that needs
 > `prove-isolation.py` extended, and it needs 0014 applied first.
+
+## D-71 — The correlation contract has three implementations, and this is the third  (PRICED 2026-09-26)
+
+`src/adapters/correlation.rs` reads a W3C `traceparent` or an `X-Correlation-Id` and mints one only as
+a fallback (ADR-0044 D1). **`platform-tenancy/src/correlation.rs` and `@paridyum/auth`'s
+`correlation.ts` hold the same rules**, down to which values they refuse.
+
+**Why it was not shared, stated so the choice is reviewable rather than discovered:**
+
+- **`paridyum-auth` (`lib-auth-rust`) is the estate's shared *auth* crate.** A correlation id is
+  observability, not authorization. Putting it there because a crate happens to exist is ANTI-0004
+  pointed the other way — a library acquiring a concern it has no business owning, which is how a
+  shared library becomes the place everything lands.
+- **A `lib-observability-rust` for one module** is a repository, a version, a pin and a release path
+  for eighty lines, and this estate already carries the cost of a library nothing imports.
+
+**What is actually at risk:** the three copies drifting on a refusal. All three reject a `ff` version,
+an uppercase trace id, an all-zero trace id and an out-of-shape fallback header today; a fix applied
+to one is a divergence nothing reports, because no test spans two repositories.
+
+**Closes when:** a *fourth* Rust implementation appears, or any change has to be made to the parsing
+rules in more than one place. Either turns a priced duplication into drift, and the answer then is a
+shared crate — the same shape ADR-0092 D3 used for the JWKS verifier, which ADR-0107 eventually
+extracted after the third copy.
+
+## D-72 — Docket writes no audit event, and now has the id one would need  (OPEN 2026-09-26)
+
+`enter()` now carries a correlation id into every transaction, which makes each unit of work joinable
+to the request that caused it. **Nothing is written to join.** `audit_events` exists in tenancy
+migration 0010 (unapplied) and no docket code inserts a row, so the question ADR-0044 D6 asks — who
+did what, when, from where, **including denials** — has no answer here.
+
+The four sealed chains are not that record: they are what a document *is*, not who touched it. A read
+of a person record leaves no trace at all, and a refused write leaves less.
+
+**Closes when:** migration 0010 is applied and docket writes an audit event for at least the issuing
+path and every refusal on it. Until then the correlation id is half a mechanism, which is worth having
+— the half that cannot be added retroactively (ADR-0041 D3).

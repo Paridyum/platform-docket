@@ -13,6 +13,7 @@ use tool_docket::adapters::api::{
 use tool_docket::adapters::blobs::{self, Blobs};
 use tool_docket::adapters::clock::{self, Clock, SystemClock};
 use tool_docket::adapters::console;
+use tool_docket::adapters::correlation::CorrelationId;
 use tool_docket::adapters::http;
 use tool_docket::adapters::lock;
 use tool_docket::adapters::pg::{self, PgStore};
@@ -866,7 +867,16 @@ fn open_backend(paths: &Paths) -> Result<Backend<'_>> {
          cluster, NOT local files (ADR-0093 §3)",
         db_host(&url)
     );
-    let store = PgStore::new(pool, tenant, runtime.handle().clone());
+    // ONE id for the whole invocation, minted here because the CLI *is* the edge: there is no
+    // inbound request to propagate from (ADR-0044 D1). Minting inside each transaction instead would
+    // give a single `docket issue` four unrelated ids, which is the per-hop minting D1 forbids in the
+    // place it would be least visible.
+    let store = PgStore::new(
+        pool,
+        tenant,
+        runtime.handle().clone(),
+        CorrelationId::mint(),
+    );
     Ok(Backend::Pg {
         store,
         _runtime: runtime,
