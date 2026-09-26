@@ -1331,6 +1331,13 @@ did what, when, from where, **including denials** — has no answer here.
 The four sealed chains are not that record: they are what a document *is*, not who touched it. A read
 of a person record leaves no trace at all, and a refused write leaves less.
 
-**Closes when:** migration 0010 is applied and docket writes an audit event for at least the issuing
-path and every refusal on it. Until then the correlation id is half a mechanism, which is worth having
-— the half that cannot be added retroactively (ADR-0041 D3).
+**The unit was undecided, and that was the actual blocker — now `ADR-0110` (`proposed` 2026-09-26).**
+This tool is a CLI *and* a served API from one codebase, so `docket check` audited per store call writes
+tens of rows where the same work served over HTTP writes one, and nobody requests a `SELECT` on
+`docket_signatures` — they request a document. ADR-0044 D6 fixes what a record contains and is silent on
+how many one action produces. ADR-0110 proposes **one event per operation a caller requested**, with one
+event per silo where an operation legitimately spans two, which is what `platform-tenancy` already does.
+
+**Closes when:** ADR-0110 is accepted, migration 0010 is applied, and docket writes an audit event for
+at least the issuing path and every refusal on it. Until then the correlation id is half a mechanism,
+which is worth having — the half that cannot be added retroactively (ADR-0041 D3).
