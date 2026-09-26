@@ -6,11 +6,25 @@
 //! async (sqlx, ADR-0005): the served backend awaits it, and the break-glass CLI `block_on`s it
 //! (ADR-0093 §3), one implementation for both callers.
 //!
-//! EVERY OPERATION SETS THE RLS SESSION VARIABLES first, inside its transaction. Migration 0006's
-//! policies gate on `paridyum.current_tenant()` AND `paridyum.has_operator_scope()`, and the
-//! accessors RAISE when unset rather than defaulting (ADR-0038) — so an operation that forgot them
-//! is refused, never silently widened. They are set LOCAL to the transaction, so a pooled
-//! connection cannot carry one request's identity into the next.
+//! EVERY OPERATION SETS THE RLS SESSION VARIABLES first, inside its transaction. Since migration
+//! 0012/0014 that is THREE values, not two: `paridyum.tenant_id`, `paridyum.account_id` and
+//! `paridyum.operator_scope`. The accessors RAISE when unset rather than defaulting (ADR-0038), so
+//! an operation that forgot one is refused, never silently widened. They are set LOCAL to the
+//! transaction, so a pooled connection cannot carry one request's identity into the next.
+//!
+//! WHY THE ACCOUNT IS HERE AT ALL. ADR-0104 makes a product instance an account: a tenant may run
+//! two dockets, and their person records must not mix. Migration 0012 put `account_id NOT NULL` on
+//! all five person-bearing tables and 0014 put it in their policies. This adapter set two session
+//! values and inserted none of it, so on the day 0012 applied every write here began failing — the
+//! retrofit was written without its only writer being updated (T-G.19, D-70).
+//!
+//! THE RESOLUTION IS AN INTERIM AND IS DELIBERATELY NOT A DEFAULT. ADR-0104 D5 addresses instances
+//! by path — `<tenant-host>/<product>/<slug>` — and this repository has no such routing yet. Until
+//! it does, `enter` looks up the tenant's `slug = 'default'` docket account, which ADR-0104 cost 2
+//! explicitly permits ("a default instance is still an account, never a null"). It RAISES when that
+//! row is absent. It must never acquire a fallback: a nil uuid or an `unwrap_or_default` here is
+//! the widening-by-absence GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist to forbid,
+//! and it would silently write one instance's people into another's.
 
 use crate::adapters::blobs;
 use crate::adapters::http::server::{RequestStores, TenantStores};
@@ -41,8 +55,19 @@ pub async fn pool(url: &str) -> Result<PgPool> {
         .context("connecting to the docket database")
 }
 
-/// Enter a tenant's operator context for the life of this transaction.
-async fn enter(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<()> {
+/// Enter a tenant's operator context for the life of this transaction, and resolve which docket
+/// instance that context is serving.
+///
+/// Returns the `accounts.id` every write below must carry. See this module's header for why the
+/// lookup is an interim, and why it raises instead of defaulting.
+///
+/// # Errors
+/// Fails if the session variables cannot be set, or if the tenant has no docket account.
+async fn enter(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<Uuid> {
+    // Tenant and operator scope first, because resolving the third value needs them and not the
+    // other way round: `accounts` FORCEs RLS and its policy reads `current_tenant()` AND
+    // `has_operator_scope()` only. So this lookup is legal with two of the three set, and the
+    // ordering is load-bearing rather than incidental.
     sqlx::query(
         "SELECT set_config('paridyum.tenant_id', $1, true), \
                 set_config('paridyum.operator_scope', 'true', true)",
@@ -50,8 +75,32 @@ async fn enter(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<()> {
     .bind(tenant.to_string())
     .execute(&mut **tx)
     .await
-    .context("setting the RLS session variables")?;
-    Ok(())
+    .context("setting the tenant RLS session variables")?;
+
+    let found: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM accounts WHERE tenant_id = $1 AND product = 'docket' AND slug = 'default'",
+    )
+    .bind(tenant)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("resolving this tenant's docket account")?;
+
+    let Some((account,)) = found else {
+        bail!(
+            "tenant {tenant} has no docket account (product='docket', slug='default'). \
+             Refusing rather than inventing one: an account is the boundary between two instances \
+             of docket under one tenant (ADR-0104), and a write that guesses it puts one \
+             instance's people into another's. Provision the account first."
+        );
+    };
+
+    sqlx::query("SELECT set_config('paridyum.account_id', $1, true)")
+        .bind(account.to_string())
+        .execute(&mut **tx)
+        .await
+        .context("setting the account RLS session variable")?;
+
+    Ok(account)
 }
 
 // ── The four sealed chains ───────────────────────────────────────────────────────────────────
@@ -68,12 +117,14 @@ async fn append_chain<T: Serialize + Sync + 'static>(
     table: &str,
     record: &T,
 ) -> Result<()> {
-    let sql = format!("INSERT INTO {table} (id, tenant_id, record) VALUES ($1, $2, $3)");
+    let sql =
+        format!("INSERT INTO {table} (id, tenant_id, account_id, record) VALUES ($1, $2, $3, $4)");
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant).await?;
     sqlx::query(&sql)
         .bind(Uuid::new_v4())
         .bind(tenant)
+        .bind(account)
         .bind(sqlx::types::Json(record))
         .execute(&mut *tx)
         .await
@@ -189,13 +240,19 @@ pub async fn read_signatures(pool: &PgPool, tenant: Uuid) -> Result<Vec<Signatur
 pub async fn upsert_person(pool: &PgPool, tenant: Uuid, person: &Person) -> Result<()> {
     let record = serde_json::to_value(&person.value).context("serialising a person document")?;
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant).await?;
+    // ON CONFLICT names (account_id, slug), which is the constraint migration 0012 left behind when
+    // it replaced docket_persons_slug_unique. Naming (tenant_id, slug) here raises "no unique or
+    // exclusion constraint matching" — the same class of break as the missing column, and it would
+    // have survived a compile.
     sqlx::query(
-        "INSERT INTO docket_persons (id, tenant_id, slug, record) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (tenant_id, slug) DO UPDATE SET record = EXCLUDED.record, updated_at = now()",
+        "INSERT INTO docket_persons (id, tenant_id, account_id, slug, record) \
+         VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (account_id, slug) DO UPDATE SET record = EXCLUDED.record, updated_at = now()",
     )
     .bind(Uuid::new_v4())
     .bind(tenant)
+    .bind(account)
     .bind(&person.slug)
     .bind(sqlx::types::Json(&record))
     .execute(&mut *tx)
@@ -253,13 +310,15 @@ pub async fn list_persons(pool: &PgPool, tenant: Uuid) -> Result<Vec<Person>> {
 pub async fn insert_person(pool: &PgPool, tenant: Uuid, person: &Person) -> Result<()> {
     let record = serde_json::to_value(&person.value).context("serialising a person document")?;
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant).await?;
     let done = sqlx::query(
-        "INSERT INTO docket_persons (id, tenant_id, slug, record) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (tenant_id, slug) DO NOTHING",
+        "INSERT INTO docket_persons (id, tenant_id, account_id, slug, record) \
+         VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (account_id, slug) DO NOTHING",
     )
     .bind(Uuid::new_v4())
     .bind(tenant)
+    .bind(account)
     .bind(&person.slug)
     .bind(sqlx::types::Json(&record))
     .execute(&mut *tx)
@@ -287,9 +346,15 @@ where
     T: Chained + Serialize + DeserializeOwned + Send + Unpin + 'static,
 {
     let mut tx = pool.begin().await.context("beginning a transaction")?;
-    enter(&mut tx, tenant).await?;
+    let account = enter(&mut tx, tenant).await?;
+    // The lock key carries the ACCOUNT as well as the tenant, because since ADR-0104 a chain is
+    // per-instance: two dockets under one tenant have two independent registers, and the tail this
+    // transaction reads is bounded by the account predicate in 0014's policies. Keying on tenant
+    // alone would still be *safe* — it over-locks, serialising two instances that never contend —
+    // but it would say something untrue about what the lock protects, and the next person to widen
+    // it would have no way to tell over-locking from a deliberate invariant.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(format!("docket:{tenant}:{table}"))
+        .bind(format!("docket:{tenant}:{account}:{table}"))
         .execute(&mut *tx)
         .await
         .context("locking the chain for append")?;
@@ -300,10 +365,12 @@ where
         .with_context(|| format!("reading the tail of {table}"))?;
     let previous: Option<T> = last.map(|(json,)| json.0);
     let sealed = seal(record, previous.as_ref()).context("sealing onto the chain")?;
-    let insert_sql = format!("INSERT INTO {table} (id, tenant_id, record) VALUES ($1, $2, $3)");
+    let insert_sql =
+        format!("INSERT INTO {table} (id, tenant_id, account_id, record) VALUES ($1, $2, $3, $4)");
     sqlx::query(&insert_sql)
         .bind(Uuid::new_v4())
         .bind(tenant)
+        .bind(account)
         .bind(sqlx::types::Json(&sealed))
         .execute(&mut *tx)
         .await

@@ -1213,7 +1213,7 @@ and set as `PARIDYUM_PACKAGES_TOKEN` on tool-docket — the fine-grained replace
 names as the answer to risk R3. A broad classic/OAuth token would work but re-widens R3, so it is not
 the fix. **Reopens/closes when:** that token is created and set.
 
-## D-70 — The adapter supplies no `account_id`, and tenancy migration 0012 is now applied  (OPEN, ⛔ docket's WRITE PATH IS BROKEN)
+## D-70 — The adapter supplies no `account_id`, and tenancy migration 0012 is now applied  (ADDRESSED 2026-09-25, pending 0014 + a behavioural proof)
 
 **`platform-tenancy` migration 0012 adds `account_id uuid NOT NULL REFERENCES accounts (id)` to
 all five person-bearing docket tables** — `docket_persons`, `docket_identities`, `docket_register`,
@@ -1271,3 +1271,24 @@ the lookup without touching the SQL.
 **Closes when:** `enter()` sets all three session values, the five inserts carry `account_id`, and
 `platform-tenancy/scripts/prove-isolation.py` is extended to prove the docket account boundary
 behaviourally (it proves `applications` today).
+
+> **Two of the three done on 2026-09-25 (T-G.19).** `enter()` now sets all three session values and
+> returns the resolved account; the four insert sites carry `account_id`. Two things were found
+> while doing it that the original entry had not:
+>
+> 1. **`ON CONFLICT (tenant_id, slug)` no longer matches anything.** Migration 0012 replaced
+>    `docket_persons_slug_unique` with `(account_id, slug)`, so both person upserts would have
+>    raised *"no unique or exclusion constraint matching"* — a runtime break that compiles fine.
+>    Now `(account_id, slug)`.
+> 2. **The chain advisory lock was keyed on `(tenant, table)`** while a chain is now per-instance.
+>    That over-locks rather than under-locks, so it was safe — but it asserted something untrue
+>    about what the lock protects. Now `(tenant, account, table)`.
+>
+> **Account creation is deliberately NOT here.** `accounts` is platform-tenancy's table;
+> `scripts/seed-releases.py` creates the `product='docket', slug='default'` row, and ADR-0039's saga
+> creates it for a tenant provisioned later. This adapter resolves and raises, and must never
+> acquire a fallback.
+>
+> **Still open:** the behavioural proof. `cargo test` (407 passing) and `clippy -D warnings` are
+> green, but no test exercises the account boundary against a real database — that needs
+> `prove-isolation.py` extended, and it needs 0014 applied first.
