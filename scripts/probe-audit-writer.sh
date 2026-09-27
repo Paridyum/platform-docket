@@ -18,14 +18,16 @@
 #
 # TENANCY_MIGRATIONS may point at a directory holding a SUBSET — the migrations the cluster has
 # applied — to prove docket against the schema it is about to be deployed into. The audit sink's test
-# then fails without `audit_events` (0010), which is the honest answer for that schema.
+# then reports SKIPPED without `audit_events` (0010), and says what that means for a deploy.
 #
 # IT RUNS EVERY DATABASE TEST, not only its namesake: the audit sink's, the store's round trips
 # (`tests/pg_store.rs`) and the served router end to end (`tests/served_api.rs`). Without this they
 # skip, and they had rotted unnoticed — seeding tenants with no `region` and no docket account.
 #
-# IT PROVES THE POLICIES AS WRITTEN, NOT THE CLUSTER. Whether 0010 is applied there is `migrate.py
-# status`'s question, not this script's.
+# WHAT A PASS MEANS. It proves docket against the migrations REPLAYED here, as written — the full
+# stream by default, or the subset TENANCY_MIGRATIONS names. It does not read the cluster: which
+# migrations are applied there is `migrate.py status`'s question, and choosing the matching subset is
+# how a caller asks "is docket safe to deploy into THAT schema".
 set -uo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,8 +68,12 @@ psql -q -v ON_ERROR_STOP=1 -d "$DB" \
 
 # The role exists BEFORE the replay, as it does on the live database — so each migration's guarded
 # grant block takes the branch the cluster takes, not the "role absent" branch.
+shopt -s nullglob
+files=("$MIGRATIONS"/*.sql)
+shopt -u nullglob
+(( ${#files[@]} > 0 )) || { printf '✘ no *.sql migrations in %s\n' "$MIGRATIONS"; exit 3; }
 applied=0
-for f in "$MIGRATIONS"/*.sql; do
+for f in "${files[@]}"; do
   if ! python3 -c 'import pathlib,sys; sys.stdout.write(pathlib.Path(sys.argv[1]).read_text().split("-- migrate:down")[0])' "$f" \
        | psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null; then
     printf '✘ %s failed to apply\n' "$(basename "$f")"; exit 1
@@ -113,7 +119,15 @@ cd "$HERE/.." || exit 3
 # is what migration 0015 broke for a three-value session, and it is these suites that exercise it.
 # Full output: on a failure the assertion message is the evidence, and `tail` would cut it.
 status=0
-cargo test -q --lib adapters::pg::tests:: -- --nocapture || status=1
+# The audit sink's test decides for itself whether the schema has `audit_events` (0010) and says
+# SKIPPED if not. What this script checks is that the test RAN — by name, exactly one — because a
+# filter that matches nothing exits 0 with "0 tests run", and a renamed test would otherwise turn this
+# gate into a silent pass.
+sink_out="$(cargo test -q --lib adapters::pg::tests::the_audit_sink_writes_under_the_four_value_session \
+  -- --exact --nocapture 2>&1)" || status=1
+printf '%s\n' "$sink_out"
+printf '%s\n' "$sink_out" | grep -q "^running 1 test" \
+  || { printf '✘ the audit sink test did not run (renamed? moved?) — this gate would have passed empty\n'; status=1; }
 cargo test -q --test pg_store -- --test-threads=1 || status=1
 cargo test -q --test served_api || status=1
 exit $status

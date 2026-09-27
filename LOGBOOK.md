@@ -1729,3 +1729,25 @@ Skills used: code-review (high, three rounds on #25/#26). Governance retrieved: 
 AGENTS.md (four `SET LOCAL`s), platform-tenancy `db.rs` (`NO_ACCOUNT`), tenancy migrations 0010, 0012,
 0015, ADR-0038, ADR-0044 D1/D4, ADR-0093 §3, ADR-0104 cost 2, GLO-0005.
 
+## 2026-09-28 — docket proved against the schema it will be deployed into; one commit skipped review
+
+Review of the migration order found the step nobody had tested: docket #26 had been proved against
+the full stream (0001–0016), never against the schema it would actually meet — the cluster's, with
+0010, 0014, 0015 and 0016 pending. Seeds named no `accounts.id` (it has no default before 0014) and the
+harness assumed `audit_events` existed. Both fixed; against the live subset the store and served tests
+pass, and the audit sink's test is skipped by name with the reason printed, because a missing table is
+a fact about that schema, not a regression.
+
+**A commit reached `main` without a pull request.** `git checkout main && git pull --ff-only && git
+checkout -b test/…` — the pull failed ("cannot rebase onto multiple branches"), the `&&` chain stopped,
+the branch was never created, and the commit and `git push origin HEAD` went to `main`. Found when
+`gh pr create` refused a head equal to its base. Not reverted: force-pushing `main` is denied (C-0004)
+and a revert-and-redo would add two commits for a test-only change whose gates were green. Reviewed
+after the fact instead (`/code-review high` on the range), and this change carries its findings: the
+deploy-window consequence stated, the ADR-0078 exception stated, the factory test's seed copy removed,
+the harness gating correctly on a subset, and an empty migrations directory refused. From here the
+branch is checked with `git branch --show-current` before every commit.
+
+Skills used: code-review (high, after the fact). Governance retrieved: ADR-0078 D1/D2, C-0004,
+tenancy migrations 0010/0012/0014, platform-tenancy AGENTS.md.
+

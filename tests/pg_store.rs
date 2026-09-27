@@ -2,7 +2,9 @@
 //! seal, the mutable person record upserts and reads back, and RLS isolates tenants (ADR-0093,
 //! RFC-0039 D1). Runs only when `DOCKET_DATABASE_URL` points at a database with the tenancy migrations
 //! applied; otherwise it says SKIPPED and returns, so `cargo test` needs no database.
-//! `scripts/probe-audit-writer.sh` replays every migration into a scratch database and runs it.
+//! `scripts/probe-audit-writer.sh` replays the tenancy migrations into a scratch database and runs it —
+//! the full stream by default, or the subset `TENANCY_MIGRATIONS` names, which is how it proves docket
+//! against the schema it is about to be deployed into.
 
 // A test that cannot assert an expected value is not a test — the crate's expect/unwrap denial is
 // exempted here exactly as it is inside the unit-test modules.
@@ -413,4 +415,67 @@ async fn a_person_upserts_reads_and_lists() {
         .await
         .expect("read other");
     assert!(none.is_none(), "RLS isolates persons by tenant");
+}
+
+/// The factory against the real schema: a tenant with no docket account is REFUSED — loudly, never
+/// defaulted (ADR-0104 cost 2) — and a provisioned tenant builds a store that sees nothing of any
+/// other tenant's. Scratch-only (`DOCKET_PROBE_DB` must name the `*_probe` database it connects to),
+/// because it seeds rows; `scripts/probe-audit-writer.sh` provides the database and the admin URL.
+///
+/// Moved here from a unit test in `src/adapters/pg.rs` so it seeds through `common::seed`, the one
+/// copy — the unit test had its own, and the review that moved it found the two had already diverged.
+/// A plain `#[test]`: `PgStore` calls `block_on` on the handle from THIS thread, outside the runtime.
+#[test]
+fn the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one() {
+    use tool_docket::adapters::http::server::TenantStores;
+    use tool_docket::adapters::pg::PgTenantStores;
+    use tool_docket::config::Paths;
+
+    let (Some(url), Ok(scratch), Ok(_admin)) = (
+        url(),
+        std::env::var("DOCKET_PROBE_DB"),
+        std::env::var("DOCKET_ADMIN_DATABASE_URL"),
+    ) else {
+        eprintln!(
+            "SKIPPED the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one — it \
+             seeds rows, so it needs DOCKET_PROBE_DB (a *_probe database) and DOCKET_ADMIN_DATABASE_URL; \
+             scripts/probe-audit-writer.sh sets both"
+        );
+        return;
+    };
+    assert!(
+        scratch.ends_with("_probe"),
+        "DOCKET_PROBE_DB must name a *_probe database"
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let pool = runtime.block_on(pg::pool(&url)).expect("connect");
+    let (connected,): (String,) = runtime
+        .block_on(sqlx::query_as("SELECT current_database()").fetch_one(&pool))
+        .expect("current_database");
+    assert_eq!(
+        connected, scratch,
+        "connected to a database other than the named scratch one"
+    );
+    let dir = tempfile::tempdir().expect("tempdir");
+    let factory = PgTenantStores::new(pool, runtime.handle().clone(), Paths::resolve(dir.path()));
+
+    // A tenant with no docket account: refused, and the refusal names what is missing.
+    let Err(refusal) = factory.build(Uuid::new_v4(), &cid()) else {
+        unreachable!("a tenant with no docket account built a store");
+    };
+    assert!(
+        format!("{refusal:#}").contains("has no docket account"),
+        "the refusal did not name the missing account: {refusal:#}"
+    );
+
+    // A provisioned tenant: the store reads empty — nothing of another tenant's — and no config.
+    let tenant = runtime.block_on(fresh_tenant(&url));
+    let (store, _blobs, config) = factory
+        .build(tenant, &cid())
+        .expect("build a store for the provisioned tenant");
+    assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
+    assert!(config.is_none(), "an unseeded tenant has no config");
 }

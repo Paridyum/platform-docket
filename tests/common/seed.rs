@@ -10,15 +10,30 @@
 //! harness's grants — mirrored from platform-tenancy's probe — happen to be broader than that; the
 //! deployment's need not be.
 
-use sqlx::PgPool;
-use tool_docket::adapters::pg;
+use sqlx::{Connection, PgConnection};
 use uuid::Uuid;
 
 /// Seed a fresh tenant and its default docket account, and return the tenant's id.
 pub async fn seed_tenant(test_url: &str, name: &str) -> Uuid {
     let admin_url =
         std::env::var("DOCKET_ADMIN_DATABASE_URL").unwrap_or_else(|_| test_url.to_owned());
-    let admin: PgPool = pg::pool(&admin_url).await.expect("connect (admin)");
+    // One connection, not a pool: two statements, then closed.
+    let mut admin = PgConnection::connect(&admin_url)
+        .await
+        .expect("connect (admin)");
+    // The rows below are written through THIS connection, so it is the one the scratch guard must
+    // check — not only the test's own pool. A leftover DOCKET_ADMIN_DATABASE_URL pointing at a real
+    // database would otherwise seed a test tenant into the real control-plane tables.
+    if let Ok(scratch) = std::env::var("DOCKET_PROBE_DB") {
+        let (db,): (String,) = sqlx::query_as("SELECT current_database()")
+            .fetch_one(&mut admin)
+            .await
+            .expect("current_database (admin)");
+        assert_eq!(
+            db, scratch,
+            "the admin connection is not the named scratch database"
+        );
+    }
     let tenant = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO tenants (id, slug, name, zitadel_org_id, region) VALUES ($1, $2, $3, $4, 'in')",
@@ -27,20 +42,23 @@ pub async fn seed_tenant(test_url: &str, name: &str) -> Uuid {
     .bind(format!("test-{tenant}"))
     .bind(name)
     .bind(tenant.simple().to_string())
-    .execute(&admin)
+    .execute(&mut admin)
     .await
     .expect("seed a fresh tenant");
+    // ADR-0078 D2 says no INSERT names the surrogate key — the column's `uuidv7()` default mints it.
+    // `accounts.id` HAS no default until tenancy 0014, and these suites must run against the schema
+    // docket is deployed into (0014 pending on the cluster today), so this is the ADR's own case of a
+    // missing default being fixed, not a second call site: a v7 key (ADR-0078 D1), named only because
+    // the default does not exist yet. Remove the `id` here once 0014 is applied everywhere it runs.
     sqlx::query(
-        // An explicit id: `accounts.id` has no default before tenancy 0014, and these suites must run
-        // against the schema docket is deployed INTO (0001–0013 today), not only the full stream.
         "INSERT INTO accounts (id, tenant_id, product, slug, display_name) \
          VALUES ($1, $2, 'docket', 'default', 'Docket')",
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::now_v7())
     .bind(tenant)
-    .execute(&admin)
+    .execute(&mut admin)
     .await
     .expect("seed the tenant's docket account");
-    admin.close().await;
+    admin.close().await.expect("close (admin)");
     tenant
 }

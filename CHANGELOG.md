@@ -41,11 +41,14 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 ### Fixed
 
 - **The database suites can prove docket against the schema it is deployed into, not only the full
-  stream.** Seeds insert `accounts.id` explicitly (it has no default before tenancy 0014), and the
-  harness grants on `audit_events` only if 0010 is in the replayed set. Run against the live schema
-  (0001–0009, 0011–0013): the seven store round trips, the served end-to-end test and the factory
-  test pass; the audit sink's fails on the missing `audit_events`, which in production is a logged,
-  swallowed write. That is the evidence for the deploy order: account row, this image, migrations.
+  stream.** Against the live schema (0001–0009, 0011–0013) the eight store tests (the factory test
+  now among them) and the served end-to-end test pass. With no `audit_events` (0010) replayed the
+  harness skips the audit sink's test by name and says why — a docket deployed into that schema
+  serves every request while its audit writes fail, logged — and every other test still gates the
+  exit code. The deploy order this proves: account row, this image, then the migrations, with the
+  last two minutes apart, because audit rows written between them are lost. (No regression: the
+  image running today, from 2026-09-15, writes none.) Seeds name `accounts.id` with a v7 key only
+  because it has no default before 0014 — ADR-0078's own case, stated where it happens.
 
 - **Every docket transaction sets all four session values, through one function — and applying
   tenancy migration 0015 would otherwise have taken docket down.** `enter()` read `accounts` with

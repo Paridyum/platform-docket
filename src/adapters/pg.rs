@@ -854,6 +854,24 @@ mod tests {
             connected, scratch,
             "connected to a database other than the named scratch one"
         );
+        // The schema decides whether this test applies, and the TEST decides — not a shell branch on
+        // its name, which a rename would silently turn into "0 tests run". Without `audit_events`
+        // (tenancy 0010) a deployed docket serves every request while its audit writes fail, logged:
+        // a fact about that schema, stated rather than failed.
+        let (has_audit,): (bool,) = runtime
+            .block_on(
+                sqlx::query_as("SELECT to_regclass('public.audit_events') IS NOT NULL")
+                    .fetch_one(&pool),
+            )
+            .expect("probe for audit_events");
+        if !has_audit {
+            eprintln!(
+                "SKIPPED the_audit_sink_writes_under_the_four_value_session — no audit_events in this \
+                 schema (tenancy 0010 not applied): a docket deployed into it serves every request while \
+                 its audit writes fail, logged"
+            );
+            return;
+        }
 
         let dir = tempfile::tempdir().expect("tempdir");
         let sink = PgTenantStores::new(
@@ -976,92 +994,5 @@ mod tests {
                 "operator scope did not see the tenant"
             );
         });
-    }
-
-    /// The factory against the real schema: a tenant with no docket account is REFUSED — loudly, never
-    /// defaulted (ADR-0104 cost 2) — and a provisioned tenant builds a store that sees nothing of any
-    /// other tenant's. Scratch-only, like the audit test: it seeds `tenants` and `accounts` through
-    /// `DOCKET_ADMIN_DATABASE_URL`, which `scripts/probe-audit-writer.sh` provides.
-    ///
-    /// Written before migration 0012, this test used to build a store for a tenant that had no row at
-    /// all and expect an empty one. Since 0012 that tenant has no docket account and `enter()` refuses
-    /// it, which is the behaviour ADR-0104 asks for — so the test now asserts the refusal instead of
-    /// a success that would have required a fallback. A plain `#[test]`: `PgStore` calls `block_on` on the
-    /// handle from THIS thread, outside the runtime.
-    #[test]
-    fn the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one() {
-        let (Ok(url), Ok(admin_url), Ok(scratch)) = (
-            std::env::var("DOCKET_DATABASE_URL"),
-            std::env::var("DOCKET_ADMIN_DATABASE_URL"),
-            std::env::var("DOCKET_PROBE_DB"),
-        ) else {
-            eprintln!(
-                "SKIPPED the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one \
-                 — run scripts/probe-audit-writer.sh"
-            );
-            return;
-        };
-        assert!(
-            scratch.ends_with("_probe"),
-            "DOCKET_PROBE_DB must name a *_probe database"
-        );
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
-        let pool = runtime.block_on(pool(&url)).expect("connect");
-        let admin = runtime
-            .block_on(super::pool(&admin_url))
-            .expect("connect (admin)");
-        let (connected,): (String,) = runtime
-            .block_on(sqlx::query_as("SELECT current_database()").fetch_one(&pool))
-            .expect("current_database");
-        assert_eq!(
-            connected, scratch,
-            "connected to a database other than the named scratch one"
-        );
-        let dir = tempfile::tempdir().expect("tempdir");
-        let factory =
-            PgTenantStores::new(pool, runtime.handle().clone(), Paths::resolve(dir.path()));
-
-        // A tenant with no docket account: refused, and the refusal names what is missing.
-        let unprovisioned = Uuid::new_v4();
-        let Err(refusal) = factory.build(unprovisioned, &CorrelationId::mint()) else {
-            unreachable!("a tenant with no docket account built a store");
-        };
-        assert!(
-            format!("{refusal:#}").contains("has no docket account"),
-            "the refusal did not name the missing account: {refusal:#}"
-        );
-
-        // A provisioned tenant: the store reads empty — nothing of another tenant's — and no config.
-        let tenant = Uuid::new_v4();
-        runtime.block_on(async {
-            sqlx::query(
-                "INSERT INTO tenants (id, slug, name, zitadel_org_id, region) \
-                 VALUES ($1, $2, 'Factory test', $3, 'in')",
-            )
-            .bind(tenant)
-            .bind(format!("factory-{tenant}"))
-            .bind(tenant.simple().to_string())
-            .execute(&admin)
-            .await
-            .expect("seed the tenant");
-            sqlx::query(
-                // An explicit id: `accounts.id` has no default before tenancy 0014.
-                "INSERT INTO accounts (id, tenant_id, product, slug, display_name) \
-                 VALUES ($1, $2, 'docket', 'default', 'Docket')",
-            )
-            .bind(Uuid::new_v4())
-            .bind(tenant)
-            .execute(&admin)
-            .await
-            .expect("seed its docket account");
-        });
-        let (store, _blobs, config) = factory
-            .build(tenant, &CorrelationId::mint())
-            .expect("build a store for the provisioned tenant");
-        assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
-        assert!(config.is_none(), "an unseeded tenant has no config");
     }
 }
