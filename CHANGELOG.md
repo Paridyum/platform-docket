@@ -40,6 +40,13 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **The database suites can prove docket against the schema it is deployed into, not only the full
+  stream.** Seeds insert `accounts.id` explicitly (it has no default before tenancy 0014), and the
+  harness grants on `audit_events` only if 0010 is in the replayed set. Run against the live schema
+  (0001–0009, 0011–0013): the seven store round trips, the served end-to-end test and the factory
+  test pass; the audit sink's fails on the missing `audit_events`, which in production is a logged,
+  swallowed write. That is the evidence for the deploy order: account row, this image, migrations.
+
 - **Every docket transaction sets all four session values, through one function — and applying
   tenancy migration 0015 would otherwise have taken docket down.** `enter()` read `accounts` with
   three values set, under a comment that the lookup was "legal with two of the four". Tenancy 0015

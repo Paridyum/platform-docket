@@ -16,6 +16,10 @@
 # throwaway login role that is a MEMBER of `paridyum_app` (creating `paridyum_app` NOLOGIN only if it
 # is absent, and dropping only what it created), and connects as that.
 #
+# TENANCY_MIGRATIONS may point at a directory holding a SUBSET — the migrations the cluster has
+# applied — to prove docket against the schema it is about to be deployed into. The audit sink's test
+# then fails without `audit_events` (0010), which is the honest answer for that schema.
+#
 # IT RUNS EVERY DATABASE TEST, not only its namesake: the audit sink's, the store's round trips
 # (`tests/pg_store.rs`) and the served router end to end (`tests/served_api.rs`). Without this they
 # skip, and they had rotted unnoticed — seeding tenants with no `region` and no docket account.
@@ -77,7 +81,13 @@ printf '✔ %d tenancy migration(s) replayed into %s\n' "$applied" "$DB"
 # DML elsewhere, NO BYPASSRLS and NO SUPERUSER, or every assertion would pass vacuously.
 psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'EOS' || { printf '✘ granting failed\n'; exit 3; }
 GRANT USAGE ON SCHEMA public, paridyum TO paridyum_app;
-GRANT SELECT, INSERT ON audit_events TO paridyum_app;
+-- Only if 0010 is in the replayed set: TENANCY_MIGRATIONS may name the schema as the cluster has it
+-- (0010 pending), which is the schema docket is deployed INTO.
+DO $a$ BEGIN
+  IF to_regclass('public.audit_events') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON audit_events TO paridyum_app;
+  END IF;
+END $a$;
 DO $g$
 DECLARE t text;
 BEGIN

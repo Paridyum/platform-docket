@@ -31,9 +31,12 @@ pub async fn seed_tenant(test_url: &str, name: &str) -> Uuid {
     .await
     .expect("seed a fresh tenant");
     sqlx::query(
-        "INSERT INTO accounts (tenant_id, product, slug, display_name) \
-         VALUES ($1, 'docket', 'default', 'Docket')",
+        // An explicit id: `accounts.id` has no default before tenancy 0014, and these suites must run
+        // against the schema docket is deployed INTO (0001–0013 today), not only the full stream.
+        "INSERT INTO accounts (id, tenant_id, product, slug, display_name) \
+         VALUES ($1, $2, 'docket', 'default', 'Docket')",
     )
+    .bind(Uuid::new_v4())
     .bind(tenant)
     .execute(&admin)
     .await
