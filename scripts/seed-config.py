@@ -127,13 +127,22 @@ def main() -> int:
 
     # One transaction per table, under the tenant's operator RLS context. Dollar-quoting the jsonb
     # avoids escaping; ON CONFLICT DO NOTHING makes a re-run add only what is missing.
+    #
+    # ALL FOUR SESSION VALUES, as src/adapters/pg.rs `set_session` and tenancy's `Db::begin()` set
+    # them. Two worked only because today's config-table policies read tenant and scope alone; tenancy
+    # 0015 showed what happens to a caller that relies on that — `enter()` raised on every call. The
+    # account is the nil uuid, tenancy's NO_ACCOUNT ("not a sentinel that widens anything"), and one
+    # correlation id is minted per run: this script is its own request (ADR-0044 D1).
+    correlation = f"seed-config-{uuid.uuid4().hex}"
     for table, items in planned:
         if not items:
             continue
         lines = [
             "BEGIN;",
-            f"SELECT set_config('paridyum.tenant_id', '{args.tenant}', true);",
-            "SELECT set_config('paridyum.operator_scope', 'true', true);",
+            f"SELECT set_config('paridyum.tenant_id', '{args.tenant}', true), "
+            "set_config('paridyum.account_id', '00000000-0000-0000-0000-000000000000', true), "
+            "set_config('paridyum.operator_scope', 'true', true), "
+            f"set_config('paridyum.correlation_id', '{correlation}', true);",
         ]
         for entry in items:
             rec = json.dumps(entry, ensure_ascii=False)

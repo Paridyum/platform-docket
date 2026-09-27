@@ -3,9 +3,12 @@
 //! the `adapters::http` router together on the happy path — each piece has its own tests; this proves
 //! they work as one, over the same router and wire contract the console speaks. It also checks the two
 //! auth refusals the served path must make (missing token → 401, unknown subject → 403). Runs only
-//! when `DOCKET_DATABASE_URL` is set (migrations 0001–0006 applied); otherwise it skips.
+//! when `DOCKET_DATABASE_URL` is set (the tenancy migrations applied — `scripts/probe-audit-writer.sh`
+//! replays them all); otherwise it says SKIPPED and returns.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
+
+mod common;
 
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, encode};
 use rsa::RsaPrivateKey;
@@ -21,7 +24,6 @@ use tool_docket::adapters::http::router::{self, Context};
 use tool_docket::adapters::pg::{self, PgStore};
 use tool_docket::adapters::registry::Registry;
 use tool_docket::config::Paths;
-use uuid::Uuid;
 
 const ISS: &str = "https://id.test";
 const AUD: &str = "ops-project";
@@ -56,7 +58,9 @@ fn call(ctx: &Context<'_>, raw: &str) -> (u16, Value) {
 #[test]
 fn an_operator_creates_and_lists_a_person_through_the_real_router() {
     let Ok(url) = std::env::var("DOCKET_DATABASE_URL") else {
-        eprintln!("skipping: DOCKET_DATABASE_URL not set");
+        eprintln!(
+            "SKIPPED served_api — DOCKET_DATABASE_URL not set; scripts/probe-audit-writer.sh runs it"
+        );
         return;
     };
 
@@ -90,19 +94,7 @@ fn an_operator_creates_and_lists_a_person_through_the_real_router() {
     let clock = FixedClock(parse_iso("2026-09-14").expect("date"));
 
     let pool = runtime.block_on(pg::pool(&url)).expect("connect");
-    let tenant = Uuid::new_v4();
-    runtime
-        .block_on(
-            sqlx::query(
-                "INSERT INTO tenants (id, slug, name, zitadel_org_id) VALUES ($1, $2, $3, $4)",
-            )
-            .bind(tenant)
-            .bind(format!("test-{tenant}"))
-            .bind("Served e2e")
-            .bind(tenant.simple().to_string())
-            .execute(&pool),
-        )
-        .expect("seed tenant");
+    let tenant = runtime.block_on(common::seed::seed_tenant(&url, "Served e2e"));
 
     let store = PgStore::new(
         pool,

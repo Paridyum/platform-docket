@@ -6,11 +6,20 @@
 //! async (sqlx, ADR-0005): the served backend awaits it, and the break-glass CLI `block_on`s it
 //! (ADR-0093 §3), one implementation for both callers.
 //!
-//! EVERY OPERATION SETS THE RLS SESSION VARIABLES first, inside its transaction. Since migration
-//! 0012/0014 that is THREE values, not two: `paridyum.tenant_id`, `paridyum.account_id` and
-//! `paridyum.operator_scope`. The accessors RAISE when unset rather than defaulting (ADR-0038), so
-//! an operation that forgot one is refused, never silently widened. They are set LOCAL to the
-//! transaction, so a pooled connection cannot carry one request's identity into the next.
+//! EVERY OPERATION SETS ALL FOUR RLS SESSION VALUES first, inside its transaction, through one
+//! function — `set_session` — as `platform-tenancy`'s `Db::begin()` does: `paridyum.tenant_id`,
+//! `paridyum.account_id`, `paridyum.operator_scope` and `paridyum.correlation_id`. *"Four `SET
+//! LOCAL`s, always"* (tenancy's AGENTS.md): the accessors RAISE when unset (ADR-0038) and Postgres does
+//! not guarantee `OR` short-circuits in a policy, so a transaction that sets fewer works only until a
+//! policy on its path reads the missing one. That is not hypothetical here — tenancy 0015's
+//! `accounts_read` reads `current_account()`, and `enter()`'s three-value lookup raised against it
+//! every time. They are set LOCAL to the transaction, so a pooled connection cannot carry one
+//! request's identity into the next.
+//!
+//! TWO DIFFERENT NILS, and only one is forbidden. In the SESSION, the nil account is the estate's
+//! value for "not account-scoped" — tenancy's `NO_ACCOUNT`, *"not a sentinel that widens anything"*:
+//! it matches no row, so access is decided by operator scope alone. As the account a RECORD IS
+//! WRITTEN UNDER, a nil uuid is forbidden (below): that would put one instance's people into none.
 //!
 //! WHY THE ACCOUNT IS HERE AT ALL. ADR-0104 makes a product instance an account: a tenant may run
 //! two dockets, and their person records must not mix. Migration 0012 put `account_id NOT NULL` on
@@ -22,9 +31,10 @@
 //! by path — `<tenant-host>/<product>/<slug>` — and this repository has no such routing yet. Until
 //! it does, `enter` looks up the tenant's `slug = 'default'` docket account, which ADR-0104 cost 2
 //! explicitly permits ("a default instance is still an account, never a null"). It RAISES when that
-//! row is absent. It must never acquire a fallback: a nil uuid or an `unwrap_or_default` here is
-//! the widening-by-absence GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist to forbid,
-//! and it would silently write one instance's people into another's.
+//! row is absent. The account it RETURNS — the one every write carries — must never acquire a
+//! fallback: a nil uuid or an `unwrap_or_default` there is the widening-by-absence GLO-0005 and
+//! `db.operator_scope_is_an_explicit_grant` exist to forbid, and it would silently write one
+//! instance's people into another's.
 
 use crate::adapters::audit;
 use crate::adapters::blobs;
@@ -57,45 +67,60 @@ pub async fn pool(url: &str) -> Result<PgPool> {
         .context("connecting to the docket database")
 }
 
-/// The session values every docket transaction carries, as ONE literal: the tenant and the request's
-/// correlation id (ADR-0038, ADR-0044 D1). `$1` is the tenant, `$2` the correlation id. A macro so the
-/// operator variant below is built FROM it rather than retyping it — a new session value added here
-/// reaches both, and cannot be added to one and missed in the other.
-macro_rules! request_session_sql {
-    () => {
-        "SELECT set_config('paridyum.tenant_id', $1, true), \
-         set_config('paridyum.correlation_id', $2, true)"
-    };
+/// The account of a session that is not account-scoped: tenancy's `NO_ACCOUNT`, the nil uuid. It
+/// equals no real `accounts.id`, so `account_id = current_account()` is false in every policy and
+/// access is decided by operator scope alone; with scope false, a read matches nothing and fails
+/// closed. Never the account a record is written under — see the module header.
+pub(crate) const NO_ACCOUNT: Uuid = Uuid::nil();
+
+/// All four session values in one statement — the estate's rule, in one place. `$1` tenant, `$2`
+/// account, `$3` operator scope (`'true'`/`'false'`), `$4` correlation id.
+const SESSION: &str = "SELECT set_config('paridyum.tenant_id', $1, true), \
+     set_config('paridyum.account_id', $2, true), \
+     set_config('paridyum.operator_scope', $3, true), \
+     set_config('paridyum.correlation_id', $4, true)";
+
+/// Set the four session values on `conn` — the one place docket does it (tenancy's `Db::begin()` is
+/// the one place tenancy does). `enter()` calls it with [`NO_ACCOUNT`] to read `accounts` and again
+/// with the resolved account; the audit sink calls it with [`NO_ACCOUNT`] and the verified scope.
+async fn set_session(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    account: Uuid,
+    operator_scope: bool,
+    correlation: &CorrelationId,
+) -> Result<()> {
+    sqlx::query(SESSION)
+        .bind(tenant.to_string())
+        .bind(account.to_string())
+        .bind(if operator_scope { "true" } else { "false" })
+        .bind(correlation.as_str())
+        .execute(conn)
+        .await
+        .context("setting the RLS session values")?;
+    Ok(())
 }
 
-/// The request session — what the audit sink sets, and all it sets (see `Sink::record` below).
-const REQUEST_SESSION: &str = request_session_sql!();
-
-/// [`REQUEST_SESSION`] plus operator scope, in one statement: what `enter()` needs to read
-/// `accounts`. Same parameters.
-const OPERATOR_SESSION: &str = concat!(
-    request_session_sql!(),
-    ", set_config('paridyum.operator_scope', 'true', true)"
-);
-
-/// Begin a transaction carrying the request session and nothing more. The audit sink writes through
-/// this, and its live test reads through it — so the test exercises the session the sink actually
-/// sets, not a copy of it.
-async fn request_transaction(
+/// Begin a transaction carrying the audit session: the tenant, [`NO_ACCOUNT`], the operator scope
+/// the verifier read off the token, and the correlation id. The sink writes through this, and its
+/// live test reads through it — so the test exercises the session the sink actually sets.
+///
+/// With scope true, a read in this transaction sees what the operator may see across the tenant —
+/// that is the grant, not a widening; with scope false it sees nothing. An earlier version (#25) set
+/// only two values on the premise that the nil account widened access; it did not, and two values
+/// made the write depend on today's append policy reading the tenant alone — a future account-aware
+/// policy would have raised, silently, in a sink that swallows its failures.
+async fn audit_transaction(
     pool: &PgPool,
     tenant: Uuid,
     correlation: &CorrelationId,
+    operator_scope: bool,
 ) -> Result<Transaction<'static, Postgres>> {
     let mut tx = pool
         .begin()
         .await
-        .context("beginning the request transaction")?;
-    sqlx::query(REQUEST_SESSION)
-        .bind(tenant.to_string())
-        .bind(correlation.as_str())
-        .execute(&mut *tx)
-        .await
-        .context("setting the request session values")?;
+        .context("beginning the audit transaction")?;
+    set_session(&mut tx, tenant, NO_ACCOUNT, operator_scope, correlation).await?;
     Ok(tx)
 }
 
@@ -112,29 +137,31 @@ async fn enter(
     tenant: Uuid,
     correlation: &CorrelationId,
 ) -> Result<Uuid> {
-    // Tenant and operator scope first, because resolving the account needs them and not the other
-    // way round: `accounts` FORCEs RLS and its policy reads `current_tenant()` AND
-    // `has_operator_scope()` only. So this lookup is legal with two of the four set, and the
-    // ordering is load-bearing rather than incidental.
+    // ALL FOUR VALUES BEFORE THE LOOKUP, with the account still unknown — so it is NO_ACCOUNT. This
+    // used to set three, and its comment said the lookup was "legal with two of the four set"
+    // because `accounts`' policy read tenant and operator scope only. Tenancy 0015 then added
+    // `accounts_read`, whose predicate is `id = current_account() OR has_operator_scope()`: against
+    // it, the three-value lookup raised on every call (measured on a replay of 0001–0016). Setting
+    // all four is the estate's rule for exactly this — a transaction must not depend on which
+    // accessors today's policies happen to read.
     //
-    // The correlation id goes in the same statement as those two, because it is needed no later and
-    // costs no round trip. It is the one value here that no policy reads: it grants and refuses
-    // nothing (ADR-0044 D1, RFC-0045 §D1). `audit_events` is `NOT NULL` on it and
-    // `paridyum.current_correlation()` raises rather than returning NULL, so a path that writes an
-    // audit event without it fails loudly instead of writing a row that joins to nothing.
+    // The correlation id is set here too, and no policy reads it: it grants and refuses nothing
+    // (ADR-0044 D1, RFC-0045 §D1). `audit_events` is `NOT NULL` on it and
+    // `paridyum.current_correlation()` raises rather than returning NULL. NOT MINTED HERE: a
+    // minted-per-transaction id would turn one `docket issue` into four unrelated ids — the per-hop
+    // minting ADR-0044 D1 forbids, in the place it would be least visible.
     //
-    // NOT MINTED HERE, and that is the point of taking it as a parameter. A minted-per-transaction
-    // id would turn one `docket issue` into four unrelated ids — the per-hop minting ADR-0044 D1
-    // forbids, in the place it would be least visible.
-    sqlx::query(OPERATOR_SESSION)
-        .bind(tenant.to_string())
-        .bind(correlation.as_str())
-        .execute(&mut **tx)
-        .await
-        .context("setting the tenant RLS session variables")?;
+    // `true`: every caller of `enter()` is the served backend acting for a `VerifiedOperator`, or the
+    // break-glass CLI (ADR-0093 §3), and both hold operator scope. D-75 records carrying the verified
+    // value here, as the audit sink already does.
+    set_session(tx, tenant, NO_ACCOUNT, true, correlation).await?;
 
+    // The lookup SETS the account in the same statement, so the session goes from NO_ACCOUNT to the
+    // resolved account without a third round trip and without ever being partial: `set_config` runs
+    // only for a row that matched, and no match returns nothing — which is refused below.
     let found: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM accounts WHERE tenant_id = $1 AND product = 'docket' AND slug = 'default'",
+        "SELECT id FROM (SELECT id, set_config('paridyum.account_id', id::text, true) \
+           FROM accounts WHERE tenant_id = $1 AND product = 'docket' AND slug = 'default') AS a",
     )
     .bind(tenant)
     .fetch_optional(&mut **tx)
@@ -149,12 +176,6 @@ async fn enter(
              instance's people into another's. Provision the account first."
         );
     };
-
-    sqlx::query("SELECT set_config('paridyum.account_id', $1, true)")
-        .bind(account.to_string())
-        .execute(&mut **tx)
-        .await
-        .context("setting the account RLS session variable")?;
 
     Ok(account)
 }
@@ -723,25 +744,15 @@ async fn read_config(
 impl audit::Sink for PgTenantStores {
     fn record(&self, ctx: audit::Context<'_>, event: &audit::Event) -> Result<()> {
         self.handle.block_on(async {
-            // Only the session values this transaction reads. `enter()` is not used: it resolves a
-            // docket account, and an audit row is written for the OPERATION rather than for a silo the
-            // dispatcher may not have reached (see audit::Context).
-            //
-            // NO ACCOUNT AND NO OPERATOR SCOPE, deliberately. `audit_events_append` (migration 0010)
-            // checks `tenant_id = current_tenant()` and nothing else, and this transaction only
-            // inserts — so neither value is read. An earlier version set the account to the nil uuid
-            // and the scope to `true` "so nothing raises": a sentinel standing in for an absent
-            // account is the widening-by-absence GLO-0005 forbids, and if a later statement ever read
-            // them in this transaction, it would read every account's rows. Unset, a future read
-            // CANNOT WIDEN: `current_account()` raises when a policy evaluates it (ADR-0038), and RLS
-            // evaluates it on every row a scan reaches — so a read either raises or, when no row is
-            // reached, returns nothing. It never returns another account's rows.
-            //
-            // Through `request_transaction`, which the live test also uses, so the test reads under
-            // exactly the session this sink writes under.
-            let mut tx = request_transaction(&self.pool, ctx.tenant, ctx.correlation)
-                .await
-                .context("opening the audit transaction")?;
+            // `enter()` is not used: it resolves a docket account, and an audit row is written for the
+            // OPERATION rather than for a silo the dispatcher may not have reached (see
+            // audit::Context). The session is the estate's four values — see audit_transaction for why
+            // four, and why the nil account widens nothing. Through `audit_transaction`, which the
+            // live test also uses, so the test reads under exactly the session this sink writes under.
+            let mut tx =
+                audit_transaction(&self.pool, ctx.tenant, ctx.correlation, ctx.operator_scope)
+                    .await
+                    .context("opening the audit transaction")?;
 
             sqlx::query(audit::INSERT)
                 .bind(ctx.tenant)
@@ -797,31 +808,38 @@ mod tests {
     /// every tenancy migration replayed, as a login role subject to RLS (a superuser bypasses RLS and
     /// would prove nothing).
     ///
-    /// It proves the sink's three claims: the row is written with only the tenant and the correlation
-    /// id in the session; the row's `operator_scope` is the context's value, not a literal; and a read
-    /// under the session the sink sets cannot widen.
+    /// What it proves, each against the real policies:
+    ///   - the sink writes under the four-value session, for BOTH scopes the verifier can produce;
+    ///   - the row's `operator_scope` is the context's value, not a literal;
+    ///   - the nil account widens nothing: with scope false, the sink's session sees no row — while a
+    ///     session naming a real account sees exactly that account's row, so "no row" is a
+    ///     discrimination and not an empty table; with scope true it sees the tenant's rows, which is
+    ///     the operator's grant.
     ///
     /// **SCRATCH ONLY, BY CHECK.** `audit_events` is append-only — a trigger refuses UPDATE and DELETE
-    /// — so a row written here is permanent. The test therefore runs only when `DOCKET_AUDIT_PROBE_DB`
+    /// — so a row written here is permanent. The test therefore runs only when `DOCKET_PROBE_DB`
     /// names the database it connects to AND that name ends in `_probe`; `DOCKET_DATABASE_URL` alone,
     /// which `seed-config.py` also uses for real databases, is never enough. Skipped, it says so on
     /// stderr rather than passing silently.
     #[test]
-    fn the_audit_sink_writes_under_the_append_policy_alone() {
+    // One scenario, read top to bottom: split, its three proofs would each need the scratch-database
+    // setup repeated, and the setup is the part that must not drift between them.
+    #[allow(clippy::too_many_lines)]
+    fn the_audit_sink_writes_under_the_four_value_session() {
         let (Ok(url), Ok(tenant), Ok(scratch)) = (
             std::env::var("DOCKET_DATABASE_URL"),
             std::env::var("DOCKET_TEST_TENANT"),
-            std::env::var("DOCKET_AUDIT_PROBE_DB"),
+            std::env::var("DOCKET_PROBE_DB"),
         ) else {
             eprintln!(
-                "SKIPPED the_audit_sink_writes_under_the_append_policy_alone — run \
+                "SKIPPED the_audit_sink_writes_under_the_four_value_session — run \
                  scripts/probe-audit-writer.sh; this path is invisible to every other test"
             );
             return;
         };
         assert!(
             scratch.ends_with("_probe"),
-            "DOCKET_AUDIT_PROBE_DB must name a *_probe database"
+            "DOCKET_PROBE_DB must name a *_probe database"
         );
         let tenant: Uuid = tenant.parse().expect("DOCKET_TEST_TENANT is a uuid");
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -843,7 +861,6 @@ mod tests {
             runtime.handle().clone(),
             Paths::resolve(dir.path()),
         );
-        let correlation = CorrelationId::mint();
         let event = audit::Event {
             action: "person.read".into(),
             object: "persons".into(),
@@ -852,87 +869,197 @@ mod tests {
             source: Some("203.0.113.9".into()),
             client: Some("probe/1.0".into()),
         };
-        // `false`, deliberately: a sink that bound a literal `true` would still write a row, and
-        // only a value it could not have invented tells the two apart.
-        audit::Sink::record(
-            &sink,
-            audit::Context {
-                tenant,
-                correlation: &correlation,
-                region: "in",
-                operator_scope: false,
-            },
-            &event,
-        )
-        .expect("the row is written with only tenant and correlation in the session");
+        // Both scopes: `true` is what production passes today; `false` is the only value a sink that
+        // bound a literal could not have produced.
+        for scope in [true, false] {
+            let correlation = CorrelationId::mint();
+            let written = audit::Sink::record(
+                &sink,
+                audit::Context {
+                    tenant,
+                    correlation: &correlation,
+                    region: "in",
+                    operator_scope: scope,
+                },
+                &event,
+            );
+            assert!(
+                written.is_ok(),
+                "the sink wrote nothing with operator_scope={scope}: {written:?}"
+            );
 
-        runtime.block_on(async {
-            // Read it back as an operator's console would: tenant, an account, operator scope.
-            let mut tx = pool.begin().await.expect("begin");
-            sqlx::query(OPERATOR_SESSION)
-                .bind(tenant.to_string())
-                .bind(correlation.as_str())
-                .execute(&mut *tx)
-                .await
-                .expect("operator session");
-            sqlx::query("SELECT set_config('paridyum.account_id', $1, true)")
-                .bind(Uuid::new_v4().to_string())
-                .execute(&mut *tx)
-                .await
-                .expect("account");
-            let rows: Vec<(bool,)> =
+            let rows: Vec<(bool,)> = runtime.block_on(async {
+                let mut tx = audit_transaction(&pool, tenant, &correlation, true)
+                    .await
+                    .expect("operator session");
                 sqlx::query_as("SELECT operator_scope FROM audit_events WHERE correlation_id = $1")
                     .bind(correlation.as_str())
                     .fetch_all(&mut *tx)
                     .await
-                    .expect("read back");
+                    .expect("read back")
+            });
             assert_eq!(
                 rows,
-                vec![(false,)],
+                vec![(scope,)],
                 "one row, carrying the context's operator_scope"
             );
-            tx.rollback().await.expect("rollback");
+        }
 
-            // Under the SAME session the sink writes under — the same function builds it — a read
-            // reaches the row just written, evaluates the account predicate, and raises.
-            let mut tx = request_transaction(&pool, tenant, &correlation)
+        runtime.block_on(async {
+            // A row OWNED BY an account, so that "the scope-less session sees nothing" is measured
+            // against something a session could see. Written through the audit session: the append
+            // policy reads the tenant only.
+            let owner = Uuid::new_v4();
+            let marker = CorrelationId::mint();
+            let mut tx = audit_transaction(&pool, tenant, &marker, false)
                 .await
-                .expect("request transaction");
-            let widened = sqlx::query_as::<_, (i64,)>("SELECT count(*) FROM audit_events")
-                .fetch_one(&mut *tx)
-                .await;
+                .expect("audit session");
+            sqlx::query(
+                "INSERT INTO audit_events (tenant_id, correlation_id, actor, action, object, \
+                 outcome, account_id, operator_scope, actor_region) \
+                 VALUES ($1, $2, 'probe', 'person.read', 'persons', 'allowed', $3, false, 'in')",
+            )
+            .bind(tenant)
+            .bind(marker.as_str())
+            .bind(owner)
+            .execute(&mut *tx)
+            .await
+            .expect("an account-owned row");
+            tx.commit().await.expect("commit");
+
+            let count = |account: Uuid, scope: bool| {
+                let pool = pool.clone();
+                let marker = marker.clone();
+                async move {
+                    let mut tx = pool.begin().await.expect("begin");
+                    set_session(&mut tx, tenant, account, scope, &marker)
+                        .await
+                        .expect("session");
+                    let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM audit_events")
+                        .fetch_one(&mut *tx)
+                        .await
+                        .expect("a four-value session reads without raising");
+                    n
+                }
+            };
+            // The sink's OWN session, from the function the sink opens it with, without scope: the
+            // nil account matches nothing. Through `audit_transaction` itself, so a sink session that
+            // ignored its scope argument or named a real account would fail here.
+            let (sink_sees,): (i64,) = {
+                let mut tx = audit_transaction(&pool, tenant, &marker, false)
+                    .await
+                    .expect("the sink's session");
+                sqlx::query_as("SELECT count(*) FROM audit_events")
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("a four-value session reads without raising")
+            };
+            assert_eq!(
+                sink_sees, 0,
+                "the sink's scope-less session read rows it holds no grant for"
+            );
+            // The same through set_session directly, as a cross-check on the nil account itself.
+            assert_eq!(
+                count(NO_ACCOUNT, false).await,
+                0,
+                "the nil account widened a read"
+            );
+            // The owning account without scope: exactly its own row — the policy discriminates.
+            assert_eq!(
+                count(owner, false).await,
+                1,
+                "an account did not see its own row"
+            );
+            // Operator scope: every row in the tenant, which is the grant.
             assert!(
-                widened.is_err(),
-                "a read in the audit session answered: {widened:?}"
+                count(NO_ACCOUNT, true).await >= 3,
+                "operator scope did not see the tenant"
             );
         });
     }
 
-    // Runs only when DOCKET_DATABASE_URL is set (like the pg_store integration tests). A plain
-    // `#[test]`: PgStore block_on's on the handle from THIS thread, outside the runtime.
+    /// The factory against the real schema: a tenant with no docket account is REFUSED — loudly, never
+    /// defaulted (ADR-0104 cost 2) — and a provisioned tenant builds a store that sees nothing of any
+    /// other tenant's. Scratch-only, like the audit test: it seeds `tenants` and `accounts` through
+    /// `DOCKET_ADMIN_DATABASE_URL`, which `scripts/probe-audit-writer.sh` provides.
+    ///
+    /// Written before migration 0012, this test used to build a store for a tenant that had no row at
+    /// all and expect an empty one. Since 0012 that tenant has no docket account and `enter()` refuses
+    /// it, which is the behaviour ADR-0104 asks for — so the test now asserts the refusal instead of
+    /// a success that would have required a fallback. A plain `#[test]`: `PgStore` calls `block_on` on the
+    /// handle from THIS thread, outside the runtime.
     #[test]
-    fn the_factory_builds_a_tenant_scoped_store() {
-        let Ok(url) = std::env::var("DOCKET_DATABASE_URL") else {
+    fn the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one() {
+        let (Ok(url), Ok(admin_url), Ok(scratch)) = (
+            std::env::var("DOCKET_DATABASE_URL"),
+            std::env::var("DOCKET_ADMIN_DATABASE_URL"),
+            std::env::var("DOCKET_PROBE_DB"),
+        ) else {
+            eprintln!(
+                "SKIPPED the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one \
+                 — run scripts/probe-audit-writer.sh"
+            );
             return;
         };
+        assert!(
+            scratch.ends_with("_probe"),
+            "DOCKET_PROBE_DB must name a *_probe database"
+        );
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("runtime");
         let pool = runtime.block_on(pool(&url)).expect("connect");
+        let admin = runtime
+            .block_on(super::pool(&admin_url))
+            .expect("connect (admin)");
+        let (connected,): (String,) = runtime
+            .block_on(sqlx::query_as("SELECT current_database()").fetch_one(&pool))
+            .expect("current_database");
+        assert_eq!(
+            connected, scratch,
+            "connected to a database other than the named scratch one"
+        );
         let dir = tempfile::tempdir().expect("tempdir");
         let factory =
             PgTenantStores::new(pool, runtime.handle().clone(), Paths::resolve(dir.path()));
 
-        // A fresh tenant that never had a row: the factory builds a store bound to it, and a read
-        // returns empty rather than another tenant's data — the store is tenant-scoped.
+        // A tenant with no docket account: refused, and the refusal names what is missing.
+        let unprovisioned = Uuid::new_v4();
+        let Err(refusal) = factory.build(unprovisioned, &CorrelationId::mint()) else {
+            unreachable!("a tenant with no docket account built a store");
+        };
+        assert!(
+            format!("{refusal:#}").contains("has no docket account"),
+            "the refusal did not name the missing account: {refusal:#}"
+        );
+
+        // A provisioned tenant: the store reads empty — nothing of another tenant's — and no config.
         let tenant = Uuid::new_v4();
+        runtime.block_on(async {
+            sqlx::query(
+                "INSERT INTO tenants (id, slug, name, zitadel_org_id, region) \
+                 VALUES ($1, $2, 'Factory test', $3, 'in')",
+            )
+            .bind(tenant)
+            .bind(format!("factory-{tenant}"))
+            .bind(tenant.simple().to_string())
+            .execute(&admin)
+            .await
+            .expect("seed the tenant");
+            sqlx::query(
+                "INSERT INTO accounts (tenant_id, product, slug, display_name) \
+                 VALUES ($1, 'docket', 'default', 'Docket')",
+            )
+            .bind(tenant)
+            .execute(&admin)
+            .await
+            .expect("seed its docket account");
+        });
         let (store, _blobs, config) = factory
             .build(tenant, &CorrelationId::mint())
-            .expect("build a store for the tenant");
+            .expect("build a store for the provisioned tenant");
         assert_eq!(store.slugs().expect("list slugs"), Vec::<String>::new());
-        // A fresh tenant has no config rows, so the factory returns None and the dispatcher would
-        // fall back to the git registry.
         assert!(config.is_none(), "an unseeded tenant has no config");
     }
 }

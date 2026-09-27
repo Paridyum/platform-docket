@@ -6,6 +6,9 @@
 // works across six separate test binaries.
 #![allow(dead_code, unreachable_pub, clippy::expect_used)]
 
+/// Seeding for the Postgres integration suites — see its header for why there is one copy.
+pub mod seed;
+
 use std::path::Path;
 
 /// Copy the real `_TEMPLATE.yaml` into a sandbox, with every `FILL-ME` replaced.

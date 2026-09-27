@@ -1,14 +1,15 @@
 //! docket's records survive a full round trip THROUGH Postgres — the four sealed chains keep their
 //! seal, the mutable person record upserts and reads back, and RLS isolates tenants (ADR-0093,
-//! RFC-0039 D1). Runs only when `DOCKET_DATABASE_URL` points at a database with migration 0006
-//! applied; otherwise it skips, so `cargo test` needs no database. SOP.md has the one-liner that
-//! prepares a throwaway Postgres.
+//! RFC-0039 D1). Runs only when `DOCKET_DATABASE_URL` points at a database with the tenancy migrations
+//! applied; otherwise it says SKIPPED and returns, so `cargo test` needs no database.
+//! `scripts/probe-audit-writer.sh` replays every migration into a scratch database and runs it.
 
 // A test that cannot assert an expected value is not a test — the crate's expect/unwrap denial is
 // exempted here exactly as it is inside the unit-test modules.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 
-use sqlx::PgPool;
+mod common;
+
 use tool_docket::adapters::correlation::CorrelationId;
 use tool_docket::adapters::pg::{self, PgStore};
 use tool_docket::adapters::store::Store;
@@ -99,23 +100,21 @@ fn as_json<T: serde::Serialize>(items: &[T]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The database URL if the test should run, or `None` to skip cleanly.
+/// The database URL if the test should run, or `None` to skip — saying so, because a skipped
+/// integration suite that prints nothing reads exactly like a passing one.
 fn url() -> Option<String> {
-    std::env::var("DOCKET_DATABASE_URL").ok()
+    let url = std::env::var("DOCKET_DATABASE_URL").ok();
+    if url.is_none() {
+        eprintln!(
+            "SKIPPED pg_store — DOCKET_DATABASE_URL not set; scripts/probe-audit-writer.sh runs it"
+        );
+    }
+    url
 }
 
 /// Seed a fresh tenant so each test is isolated and re-runnable against a persistent database.
-async fn fresh_tenant(pool: &PgPool) -> Uuid {
-    let tenant = Uuid::new_v4();
-    sqlx::query("INSERT INTO tenants (id, slug, name, zitadel_org_id) VALUES ($1, $2, $3, $4)")
-        .bind(tenant)
-        .bind(format!("test-{tenant}"))
-        .bind("Integration test")
-        .bind(tenant.simple().to_string())
-        .execute(pool)
-        .await
-        .expect("seed a fresh tenant");
-    tenant
+async fn fresh_tenant(url: &str) -> Uuid {
+    common::seed::seed_tenant(url, "Integration test").await
 }
 
 #[tokio::test]
@@ -124,7 +123,7 @@ async fn register_round_trips_through_postgres_with_the_seal_intact() {
         return;
     };
     let pool = pg::pool(&url).await.expect("connect");
-    let tenant = fresh_tenant(&pool).await;
+    let tenant = fresh_tenant(&url).await;
 
     let mut sealed: Vec<Entry> = Vec::new();
     for i in 1..=3 {
@@ -149,7 +148,7 @@ async fn register_round_trips_through_postgres_with_the_seal_intact() {
         "records unchanged by Postgres"
     );
 
-    let elsewhere = pg::read_register(&pool, fresh_tenant(&pool).await, &cid())
+    let elsewhere = pg::read_register(&pool, fresh_tenant(&url).await, &cid())
         .await
         .expect("read other");
     assert!(elsewhere.is_empty(), "RLS isolates the register by tenant");
@@ -161,7 +160,7 @@ async fn the_identity_chain_round_trips_through_postgres() {
         return;
     };
     let pool = pg::pool(&url).await.expect("connect");
-    let tenant = fresh_tenant(&pool).await;
+    let tenant = fresh_tenant(&url).await;
 
     let mut sealed: Vec<Record> = Vec::new();
     for (i, standing) in [Standing::Active, Standing::Active, Standing::Erased]
@@ -196,7 +195,7 @@ async fn the_event_chain_round_trips_through_postgres() {
         return;
     };
     let pool = pg::pool(&url).await.expect("connect");
-    let tenant = fresh_tenant(&pool).await;
+    let tenant = fresh_tenant(&url).await;
 
     let mut sealed: Vec<Event> = Vec::new();
     for kind in [Kind::Created, Kind::StageChanged, Kind::Separated] {
@@ -222,7 +221,7 @@ async fn the_signature_chain_round_trips_through_postgres() {
         return;
     };
     let pool = pg::pool(&url).await.expect("connect");
-    let tenant = fresh_tenant(&pool).await;
+    let tenant = fresh_tenant(&url).await;
 
     let mut sealed: Vec<Signature> = Vec::new();
     for (serial, method) in [
@@ -247,7 +246,7 @@ async fn the_signature_chain_round_trips_through_postgres() {
     );
     assert_eq!(as_json(&read), as_json(&sealed));
 
-    let elsewhere = pg::read_signatures(&pool, fresh_tenant(&pool).await, &cid())
+    let elsewhere = pg::read_signatures(&pool, fresh_tenant(&url).await, &cid())
         .await
         .expect("read other");
     assert!(elsewhere.is_empty(), "RLS isolates signatures by tenant");
@@ -265,7 +264,7 @@ fn the_pg_store_port_seals_every_chain_and_manages_a_person() {
     let rt = tokio::runtime::Runtime::new().expect("runtime");
     let (pool, tenant) = rt.block_on(async {
         let pool = pg::pool(&url).await.expect("connect");
-        let tenant = fresh_tenant(&pool).await;
+        let tenant = fresh_tenant(&url).await;
         (pool, tenant)
     });
     let store = PgStore::new(pool, tenant, rt.handle().clone(), cid());
@@ -341,7 +340,7 @@ fn concurrent_appends_to_one_chain_do_not_fork_it() {
     let rt = tokio::runtime::Runtime::new().expect("runtime");
     let (pool, tenant) = rt.block_on(async {
         let pool = pg::pool(&url).await.expect("connect");
-        let tenant = fresh_tenant(&pool).await;
+        let tenant = fresh_tenant(&url).await;
         (pool, tenant)
     });
     // Eight threads append to the SAME event chain at once. Without the per-chain advisory lock in
@@ -372,7 +371,7 @@ async fn a_person_upserts_reads_and_lists() {
         return;
     };
     let pool = pg::pool(&url).await.expect("connect");
-    let tenant = fresh_tenant(&pool).await;
+    let tenant = fresh_tenant(&url).await;
 
     let doc = |name: &str| -> Person {
         let value: serde_yaml::Value =
@@ -410,7 +409,7 @@ async fn a_person_upserts_reads_and_lists() {
     assert_eq!(roster.len(), 1, "one person after an upsert, not two");
 
     // RLS: another tenant sees no person
-    let none = pg::read_person(&pool, fresh_tenant(&pool).await, &cid(), "asha-verma")
+    let none = pg::read_person(&pool, fresh_tenant(&url).await, &cid(), "asha-verma")
         .await
         .expect("read other");
     assert!(none.is_none(), "RLS isolates persons by tenant");

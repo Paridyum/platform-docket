@@ -40,15 +40,27 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
-- **The audit writer set a nil-uuid account and `operator_scope = true` that nothing read.**
-  `audit_events_append` (tenancy 0010) checks the tenant only, so the session now carries the
-  tenant and the correlation id and nothing else. A sentinel standing in for an absent account is
-  the widening-by-absence GLO-0005 forbids: with it, a read in that transaction would have seen
-  every account's rows; without it, a read cannot widen (ADR-0038). The row's `operator_scope` is
-  read off the verified token (`VerifiedOperator::operator_scope`) and carried in `audit::Context`
-  instead of a literal. **Proved here** by `the_audit_sink_writes_under_the_append_policy_alone`,
-  run by `scripts/probe-audit-writer.sh` against every tenancy migration as an RLS-bound role — and
-  watched failing with the nil-uuid sentinel, and with a literal `bind(true)`, each planted back in.
+- **Every docket transaction sets all four session values, through one function — and applying
+  tenancy migration 0015 would otherwise have taken docket down.** `enter()` read `accounts` with
+  three values set, under a comment that the lookup was "legal with two of the four". Tenancy 0015
+  adds `accounts_read`, whose predicate calls `current_account()`; measured on a replay of 0001–0016,
+  the three-value lookup raised `paridyum.account_id is not set` on every call — every chain append,
+  every read, every config load. `set_session` now sets tenant, account (the nil `NO_ACCOUNT` for
+  the lookup, then the resolved one), operator scope and correlation id, as tenancy's `Db::begin()`
+  does. **This must be deployed before 0015 is applied.**
+- **Correction to #25:** the audit sink uses the same four values, with `operator_scope` read off
+  the verified token. #25 narrowed that session on the premise that the nil account was a widening
+  sentinel; tenancy documents it as *"not a sentinel that widens anything"*, and two values made the
+  write depend on today's append policy. (The store path's operator scope is still `true` by
+  construction — D-75.)
+- **docket's Postgres integration suites run again.** `tests/pg_store.rs` and `tests/served_api.rs`
+  seeded tenants with no `region` and no docket account, and skipped silently without a database, so
+  they had not run against the current schema since 0011. They now seed correctly through an admin
+  connection, say `SKIPPED` when they skip, and `scripts/probe-audit-writer.sh` runs all ten
+  database tests against every tenancy migration as an RLS-bound role. With the three-value
+  `enter()` planted back, nine of the ten fail — every one that goes through `enter()`; the tenth
+  is the audit sink's, which does not. With the sink's session made to ignore its scope, the audit
+  test fails ("the sink's scope-less session read rows it holds no grant for").
 
 - **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close
   `RUSTSEC-2026-0285` (TLS 1.3 handshake messages accepted at the wrong encryption level) on docket's

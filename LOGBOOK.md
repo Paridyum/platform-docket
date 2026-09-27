@@ -1672,3 +1672,60 @@ connects as a throwaway login role that is a member of it — and the test refus
 database it connected to is the named `*_probe` scratch database, because `audit_events` is
 append-only and a stray row would be permanent. What the proof still cannot see is in D-73.
 
+## 2026-09-27 (later still) — #25's premise was wrong, and the correction
+
+Reviewing the companion change in `platform-tenancy` surfaced that repository's rule — *"Four `SET
+LOCAL`s, always, even when one looks redundant"* — and its `db.rs`, which documents the nil account as
+the value for a request that is not account-scoped and **"not a sentinel that widens anything."** That
+contradicted the reason #25 gave for narrowing the audit session. Checked, and #25 was wrong:
+
+- **The nil account widened nothing.** It matches no row, so access comes from operator scope alone.
+  In the old session a read would have seen every account's audit rows — because the operator
+  holds operator scope over the tenant, which is what that grant means, not because of the nil uuid.
+- **Two values was the more fragile choice, in the one place fragility is invisible.** A future
+  append policy that read the account would have raised on every audit write, and the dispatcher
+  swallows those. Four values is the estate's rule precisely so that a policy change does not break
+  a caller that set fewer.
+
+So the session is four values again. What survives from #25 is the part that was right: operator
+scope is read off the verified token rather than written as a literal, and the live test runs the
+real writer against every migration — now asserting that a session WITHOUT operator scope reads
+nothing, which is the nil account's documented property checked against the real policies. Planted
+a literal `'true'` scope; the test failed with "saw rows it holds no grant for".
+
+**Correction to the line above, from the third review round.** That message belonged to the version
+of the test that existed when the plant was run, which read its "fails closed" check through a
+different path from the sink. The review noticed the check bypassed `audit_transaction`, so a sink
+session that ignored its scope would not have been caught. The check now reads through
+`audit_transaction` itself; re-planted on the final code — the sink's session made to bind `true`
+whatever it is passed — it fails with "the sink's scope-less session read rows it holds no grant
+for". Both plants were re-run on the final code and the numbers above are theirs. An earlier draft
+of this entry said "all ten fail" for the `enter()` plant; it was nine, and the draft was wrong
+because it reported what was expected rather than what was counted.
+
+**The lesson is about which claim to verify.** #25 verified that the narrower session *worked*, and
+it did. It never verified the premise — that the old session widened — against the estate's own
+statement of what the nil account means, which was one repository away.
+
+**And the review of the correction found the outage.** Its first finding: `enter()` still read
+`accounts` with three session values, under a comment that the lookup was legal with two — true when
+written, false since tenancy 0015 added `accounts_read` with `id = current_account() OR
+has_operator_scope()`. Measured on a replay of 0001–0016 as `paridyum_app`: the three-value lookup
+raised `paridyum.account_id is not set` every time. 0015 is pending on the cluster, so **applying it
+before this lands would have broken every docket store call** — and the migration window was the next
+thing on the list. `set_session` is now the one place all four values are set, for `enter()` and the
+sink alike.
+
+Proving it needed the database suites, and they had rotted: `tests/pg_store.rs` and
+`tests/served_api.rs` seeded tenants without `region` (NOT NULL since 0011) or a docket account
+(required since 0012), and skipped without a word when no database was configured, so their rot was
+invisible. Revived — seeding through an admin connection, with the deployment's grants mirrored from
+tenancy's own probe — all ten database tests pass against the full stream. With the three-value
+`enter()` planted back, **nine of the ten** fail — every test that goes through `enter()`; the audit
+sink's does not call it. The factory test's premise (a tenant with no row builds an empty
+store) was itself pre-0012; it now asserts the refusal ADR-0104 asks for.
+
+Skills used: code-review (high, three rounds on #25/#26). Governance retrieved: platform-tenancy
+AGENTS.md (four `SET LOCAL`s), platform-tenancy `db.rs` (`NO_ACCOUNT`), tenancy migrations 0010, 0012,
+0015, ADR-0038, ADR-0044 D1/D4, ADR-0093 §3, ADR-0104 cost 2, GLO-0005.
+
