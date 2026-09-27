@@ -40,6 +40,16 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **The audit writer set a nil-uuid account and `operator_scope = true` that nothing read.**
+  `audit_events_append` (tenancy 0010) checks the tenant only, so the session now carries the
+  tenant and the correlation id and nothing else. A sentinel standing in for an absent account is
+  the widening-by-absence GLO-0005 forbids: with it, a read in that transaction would have seen
+  every account's rows; without it, a read cannot widen (ADR-0038). The row's `operator_scope` is
+  read off the verified token (`VerifiedOperator::operator_scope`) and carried in `audit::Context`
+  instead of a literal. **Proved here** by `the_audit_sink_writes_under_the_append_policy_alone`,
+  run by `scripts/probe-audit-writer.sh` against every tenancy migration as an RLS-bound role — and
+  watched failing with the nil-uuid sentinel, and with a literal `bind(true)`, each planted back in.
+
 - **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close
   `RUSTSEC-2026-0285` (TLS 1.3 handshake messages accepted at the wrong encryption level) on docket's
   live TLS path, and cleared a `.gitleaksignore` self-finding by allowlisting the documented

@@ -166,6 +166,14 @@ pub struct Context<'a> {
     pub correlation: &'a CorrelationId,
     /// The region this instance serves from (RFC-0014).
     pub region: &'a str,
+    /// Whether the caller held operator scope, recorded on the row as a fact about this request.
+    ///
+    /// Carried here, from the dispatcher, rather than written as a literal in the sink: the sink
+    /// cannot know it, and 0010 records the column "never recomputed", so a constant that became
+    /// false one day would falsify history nobody could correct. The dispatcher knows it because it
+    /// holds a `VerifiedOperator`, which `OperatorVerifier::verify` produces only after the
+    /// `operator` role check passes.
+    pub operator_scope: bool,
 }
 
 /// Where an audit row goes, so the dispatcher can write one without holding a pool.

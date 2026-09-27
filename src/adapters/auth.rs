@@ -41,6 +41,11 @@ pub struct VerifiedOperator {
     /// (ADR-0099 / ADR-0082). The RLS context for every store call in the request; one deployment
     /// serves many tenants and this is what keeps them apart.
     pub tenant: Uuid,
+    /// Whether the token carried the `operator` role — read off the verified claims, not assumed.
+    /// `verify` refuses a token without it today, so this is `true` for every value that exists; it
+    /// is a field anyway so that what the audit row records is what was verified, and the day the
+    /// role check is relaxed the value follows the claim instead of a literal elsewhere.
+    pub operator_scope: bool,
 }
 
 /// Validates operator tokens against the control-plane instance's published keys.
@@ -88,6 +93,7 @@ impl OperatorVerifier {
         Ok(VerifiedOperator {
             subject: principal.subject().to_owned(),
             tenant,
+            operator_scope: principal.has_role(OPERATOR_ROLE),
         })
     }
 }

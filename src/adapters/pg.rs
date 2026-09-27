@@ -57,6 +57,48 @@ pub async fn pool(url: &str) -> Result<PgPool> {
         .context("connecting to the docket database")
 }
 
+/// The session values every docket transaction carries, as ONE literal: the tenant and the request's
+/// correlation id (ADR-0038, ADR-0044 D1). `$1` is the tenant, `$2` the correlation id. A macro so the
+/// operator variant below is built FROM it rather than retyping it — a new session value added here
+/// reaches both, and cannot be added to one and missed in the other.
+macro_rules! request_session_sql {
+    () => {
+        "SELECT set_config('paridyum.tenant_id', $1, true), \
+         set_config('paridyum.correlation_id', $2, true)"
+    };
+}
+
+/// The request session — what the audit sink sets, and all it sets (see `Sink::record` below).
+const REQUEST_SESSION: &str = request_session_sql!();
+
+/// [`REQUEST_SESSION`] plus operator scope, in one statement: what `enter()` needs to read
+/// `accounts`. Same parameters.
+const OPERATOR_SESSION: &str = concat!(
+    request_session_sql!(),
+    ", set_config('paridyum.operator_scope', 'true', true)"
+);
+
+/// Begin a transaction carrying the request session and nothing more. The audit sink writes through
+/// this, and its live test reads through it — so the test exercises the session the sink actually
+/// sets, not a copy of it.
+async fn request_transaction(
+    pool: &PgPool,
+    tenant: Uuid,
+    correlation: &CorrelationId,
+) -> Result<Transaction<'static, Postgres>> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("beginning the request transaction")?;
+    sqlx::query(REQUEST_SESSION)
+        .bind(tenant.to_string())
+        .bind(correlation.as_str())
+        .execute(&mut *tx)
+        .await
+        .context("setting the request session values")?;
+    Ok(tx)
+}
+
 /// Enter a tenant's operator context for the life of this transaction, and resolve which docket
 /// instance that context is serving.
 ///
@@ -84,16 +126,12 @@ async fn enter(
     // NOT MINTED HERE, and that is the point of taking it as a parameter. A minted-per-transaction
     // id would turn one `docket issue` into four unrelated ids — the per-hop minting ADR-0044 D1
     // forbids, in the place it would be least visible.
-    sqlx::query(
-        "SELECT set_config('paridyum.tenant_id', $1, true), \
-                set_config('paridyum.operator_scope', 'true', true), \
-                set_config('paridyum.correlation_id', $2, true)",
-    )
-    .bind(tenant.to_string())
-    .bind(correlation.as_str())
-    .execute(&mut **tx)
-    .await
-    .context("setting the tenant RLS session variables")?;
+    sqlx::query(OPERATOR_SESSION)
+        .bind(tenant.to_string())
+        .bind(correlation.as_str())
+        .execute(&mut **tx)
+        .await
+        .context("setting the tenant RLS session variables")?;
 
     let found: Option<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM accounts WHERE tenant_id = $1 AND product = 'docket' AND slug = 'default'",
@@ -685,27 +723,25 @@ async fn read_config(
 impl audit::Sink for PgTenantStores {
     fn record(&self, ctx: audit::Context<'_>, event: &audit::Event) -> Result<()> {
         self.handle.block_on(async {
-            let mut tx = self
-                .pool
-                .begin()
-                .await
-                .context("beginning the audit transaction")?;
-            // The session values `audit_events`'s policies read. `enter()` is not used: it resolves a
+            // Only the session values this transaction reads. `enter()` is not used: it resolves a
             // docket account, and an audit row is written for the OPERATION rather than for a silo the
-            // dispatcher may not have reached (see audit::Context). So the three values are set
-            // directly, with the nil account — `current_account()` raises rather than returning NULL
-            // (ADR-0038), and the write policy reads tenant only.
-            sqlx::query(
-                "SELECT set_config('paridyum.tenant_id', $1, true), \
-                        set_config('paridyum.account_id', '00000000-0000-0000-0000-000000000000', true), \
-                        set_config('paridyum.operator_scope', 'true', true), \
-                        set_config('paridyum.correlation_id', $2, true)",
-            )
-            .bind(ctx.tenant.to_string())
-            .bind(ctx.correlation.as_str())
-            .execute(&mut *tx)
-            .await
-            .context("setting the audit session values")?;
+            // dispatcher may not have reached (see audit::Context).
+            //
+            // NO ACCOUNT AND NO OPERATOR SCOPE, deliberately. `audit_events_append` (migration 0010)
+            // checks `tenant_id = current_tenant()` and nothing else, and this transaction only
+            // inserts — so neither value is read. An earlier version set the account to the nil uuid
+            // and the scope to `true` "so nothing raises": a sentinel standing in for an absent
+            // account is the widening-by-absence GLO-0005 forbids, and if a later statement ever read
+            // them in this transaction, it would read every account's rows. Unset, a future read
+            // CANNOT WIDEN: `current_account()` raises when a policy evaluates it (ADR-0038), and RLS
+            // evaluates it on every row a scan reaches — so a read either raises or, when no row is
+            // reached, returns nothing. It never returns another account's rows.
+            //
+            // Through `request_transaction`, which the live test also uses, so the test reads under
+            // exactly the session this sink writes under.
+            let mut tx = request_transaction(&self.pool, ctx.tenant, ctx.correlation)
+                .await
+                .context("opening the audit transaction")?;
 
             sqlx::query(audit::INSERT)
                 .bind(ctx.tenant)
@@ -716,11 +752,9 @@ impl audit::Sink for PgTenantStores {
                 .bind(event.outcome.as_str())
                 .bind(event.source.as_deref())
                 .bind(event.client.as_deref())
-                // TRUE, and it is a fact about this request rather than a convenience: docket's served
-                // backend refuses any token without the `operator` role (ADR-0092 D1), so every request
-                // that reaches here held operator scope. The day docket serves a non-operator, this
-                // becomes a lie and the compiler will not say so — which is why it is stated here.
-                .bind(true)
+                // From the context, which the dispatcher fills from what it verified — never a literal
+                // here, where the fact is not known (see audit::Context::operator_scope).
+                .bind(ctx.operator_scope)
                 .bind(ctx.region)
                 .execute(&mut *tx)
                 .await
@@ -757,6 +791,122 @@ impl TenantStores for PgTenantStores {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// docket's audit writer against the real `audit_events` policies — docket's own code, not a
+    /// retyped copy of its SQL. `scripts/probe-audit-writer.sh` runs it against a scratch database with
+    /// every tenancy migration replayed, as a login role subject to RLS (a superuser bypasses RLS and
+    /// would prove nothing).
+    ///
+    /// It proves the sink's three claims: the row is written with only the tenant and the correlation
+    /// id in the session; the row's `operator_scope` is the context's value, not a literal; and a read
+    /// under the session the sink sets cannot widen.
+    ///
+    /// **SCRATCH ONLY, BY CHECK.** `audit_events` is append-only — a trigger refuses UPDATE and DELETE
+    /// — so a row written here is permanent. The test therefore runs only when `DOCKET_AUDIT_PROBE_DB`
+    /// names the database it connects to AND that name ends in `_probe`; `DOCKET_DATABASE_URL` alone,
+    /// which `seed-config.py` also uses for real databases, is never enough. Skipped, it says so on
+    /// stderr rather than passing silently.
+    #[test]
+    fn the_audit_sink_writes_under_the_append_policy_alone() {
+        let (Ok(url), Ok(tenant), Ok(scratch)) = (
+            std::env::var("DOCKET_DATABASE_URL"),
+            std::env::var("DOCKET_TEST_TENANT"),
+            std::env::var("DOCKET_AUDIT_PROBE_DB"),
+        ) else {
+            eprintln!(
+                "SKIPPED the_audit_sink_writes_under_the_append_policy_alone — run \
+                 scripts/probe-audit-writer.sh; this path is invisible to every other test"
+            );
+            return;
+        };
+        assert!(
+            scratch.ends_with("_probe"),
+            "DOCKET_AUDIT_PROBE_DB must name a *_probe database"
+        );
+        let tenant: Uuid = tenant.parse().expect("DOCKET_TEST_TENANT is a uuid");
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let pool = runtime.block_on(pool(&url)).expect("connect");
+        let (connected,): (String,) = runtime
+            .block_on(sqlx::query_as("SELECT current_database()").fetch_one(&pool))
+            .expect("current_database");
+        assert_eq!(
+            connected, scratch,
+            "connected to a database other than the named scratch one"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sink = PgTenantStores::new(
+            pool.clone(),
+            runtime.handle().clone(),
+            Paths::resolve(dir.path()),
+        );
+        let correlation = CorrelationId::mint();
+        let event = audit::Event {
+            action: "person.read".into(),
+            object: "persons".into(),
+            outcome: audit::Outcome::Allowed,
+            actor: "probe-subject".into(),
+            source: Some("203.0.113.9".into()),
+            client: Some("probe/1.0".into()),
+        };
+        // `false`, deliberately: a sink that bound a literal `true` would still write a row, and
+        // only a value it could not have invented tells the two apart.
+        audit::Sink::record(
+            &sink,
+            audit::Context {
+                tenant,
+                correlation: &correlation,
+                region: "in",
+                operator_scope: false,
+            },
+            &event,
+        )
+        .expect("the row is written with only tenant and correlation in the session");
+
+        runtime.block_on(async {
+            // Read it back as an operator's console would: tenant, an account, operator scope.
+            let mut tx = pool.begin().await.expect("begin");
+            sqlx::query(OPERATOR_SESSION)
+                .bind(tenant.to_string())
+                .bind(correlation.as_str())
+                .execute(&mut *tx)
+                .await
+                .expect("operator session");
+            sqlx::query("SELECT set_config('paridyum.account_id', $1, true)")
+                .bind(Uuid::new_v4().to_string())
+                .execute(&mut *tx)
+                .await
+                .expect("account");
+            let rows: Vec<(bool,)> =
+                sqlx::query_as("SELECT operator_scope FROM audit_events WHERE correlation_id = $1")
+                    .bind(correlation.as_str())
+                    .fetch_all(&mut *tx)
+                    .await
+                    .expect("read back");
+            assert_eq!(
+                rows,
+                vec![(false,)],
+                "one row, carrying the context's operator_scope"
+            );
+            tx.rollback().await.expect("rollback");
+
+            // Under the SAME session the sink writes under — the same function builds it — a read
+            // reaches the row just written, evaluates the account predicate, and raises.
+            let mut tx = request_transaction(&pool, tenant, &correlation)
+                .await
+                .expect("request transaction");
+            let widened = sqlx::query_as::<_, (i64,)>("SELECT count(*) FROM audit_events")
+                .fetch_one(&mut *tx)
+                .await;
+            assert!(
+                widened.is_err(),
+                "a read in the audit session answered: {widened:?}"
+            );
+        });
+    }
 
     // Runs only when DOCKET_DATABASE_URL is set (like the pg_store integration tests). A plain
     // `#[test]`: PgStore block_on's on the handle from THIS thread, outside the runtime.

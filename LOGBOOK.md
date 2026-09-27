@@ -1632,3 +1632,43 @@ above.
 
 Skills used: none. Governance retrieved: ADR-0110, ADR-0044 D1/D6, ADR-0092 D1, ADR-0093 §3, ADR-0099,
 ADR-0038, RFC-0022 §D5/§D5a, RFC-0014, GLO-0004.
+
+## 2026-09-27 (later) — the audit session sets only what its policy reads, proved here
+
+The audit writer I added this morning set the session account to the nil uuid and operator scope to
+`true` "so nothing raises". Migration 0010's append policy reads the tenant only, and the sink only
+inserts, so neither value was read — and a sentinel standing in for an absent account is what
+GLO-0005 forbids: in that transaction, a read would have seen every account's rows.
+
+**How it was proved, after review said the first proof was the wrong one.** The first proof was a
+case added to `platform-tenancy`'s audit probe. `/code-review high` pointed out that it retyped
+docket's SQL by hand, so it would go on passing after docket's code changed. The proof now lives
+here: `the_audit_sink_writes_under_the_append_policy_alone` calls the real `Sink::record`, reads the
+row back, and asserts that a read in the sink's own session does not widen. It needs a role subject
+to RLS — a superuser bypasses it and proves nothing — so `scripts/probe-audit-writer.sh` replays all
+sixteen tenancy migrations into a scratch database, creates the role BEFORE the replay (so each
+guarded grant takes the live database's branch), seeds a tenant and runs it. It was then run with
+the old sentinel planted back in, and failed — which is what makes the passing run evidence.
+
+**Also from the review:** the row's `operator_scope` was a literal `true` in the sink, the same
+stand-in shape the change removes; it now comes from `audit::Context`, set by the dispatcher, which
+knows it because it holds a `VerifiedOperator`. The session SQL is one pair of constants instead of
+two hand-kept strings. And "a later read raises" was an overclaim — RLS evaluates the predicate only
+on rows a scan reaches — so the comment now says what holds: a read cannot widen.
+
+**Why the dispatcher's silence mattered to the choice of proof.** A failed audit write is logged and
+the response served unchanged (deliberately — the work already happened). That makes this the one
+path where a regression is invisible to every other test, so it is the one path that most needed a
+test of the real code against the real policy.
+
+**Second review round, same day.** It found that the proof was weaker than its description: the
+widening check opened its own transaction from a copied constant, so it did not test the session the
+sink sets; and it recorded `operator_scope = true` and read back `WHERE operator_scope`, so it could
+not tell a bound value from the literal it replaced. Now the sink and the test both go through one
+`request_transaction`, the test records `false` and reads the column back, and `operator_scope` is
+read off the verified token rather than written as a literal anywhere. Both regressions were planted
+and watched failing. The harness also stopped altering the developer's `paridyum_app` role — it
+connects as a throwaway login role that is a member of it — and the test refuses to write unless the
+database it connected to is the named `*_probe` scratch database, because `audit_events` is
+append-only and a stray row would be permanent. What the proof still cannot see is in D-73.
+

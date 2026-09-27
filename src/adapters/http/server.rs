@@ -297,6 +297,9 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                     tenant,
                     correlation: &correlation,
                     region: s.region,
+                    // What the token was verified to carry, from the verifier — not a literal here
+                    // and not one in the sink.
+                    operator_scope: operator.operator_scope,
                 },
                 &event,
             ) {
@@ -510,6 +513,8 @@ mod tests {
     #[derive(Default)]
     struct RecordingSink {
         events: std::sync::Mutex<Vec<(Uuid, String, audit::Event)>>,
+        /// The `operator_scope` each event's context carried, in the same order.
+        scopes: std::sync::Mutex<Vec<bool>>,
     }
 
     impl audit::Sink for RecordingSink {
@@ -519,6 +524,10 @@ mod tests {
                 ctx.correlation.as_str().to_owned(),
                 event.clone(),
             ));
+            self.scopes
+                .lock()
+                .expect("the scopes mutex")
+                .push(ctx.operator_scope);
             Ok(())
         }
     }
@@ -617,6 +626,8 @@ mod tests {
         // The RIGHT-most forwarded entry: the left-most is whatever the client claimed.
         assert_eq!(event.source.as_deref(), Some("203.0.113.9"));
         assert_eq!(event.client.as_deref(), Some("probe/1.0"));
+        // The scope the verifier read off the token, passed through — the operator role was on it.
+        assert_eq!(*sink.scopes.lock().expect("the scopes mutex"), vec![true]);
     }
 
     #[test]

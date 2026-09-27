@@ -1383,3 +1383,29 @@ point.
 The cost is real: a tenant running two dockets gets an audit stream that cannot distinguish which instance
 was read. **Closes when:** the operation carries the resolved account back out of the store — a return
 value, not a lookup, because a second lookup could name a different account than the work used.
+
+## D-73 — The audit writer's live proof is run by hand  (OPEN 2026-09-27)
+
+`the_audit_sink_writes_under_the_append_policy_alone` is the only test of the audit path against the
+real `audit_events` policies, and the dispatcher swallows an audit-write failure by design — so this
+is the one path where a regression is invisible to every other test. It needs Postgres and the
+tenancy migrations, which `scripts/gates.sh` deliberately does not assume ("green here means green
+there": a gate CI cannot run would make this script a superset that CI is not). So it runs by hand,
+through `scripts/probe-audit-writer.sh`, and prints `SKIPPED` on stderr under a plain `cargo test`
+rather than passing silently.
+
+**Closes when:** CI runs it — a Postgres service container and a checkout of `platform-tenancy`'s
+migrations in `rust-ci.yml` — which waits on CI running at all (the Actions allowance, RFC-0053).
+
+**Its one known blind spot, stated so nobody reads more into the green run than it gives:** the test
+reads through `request_transaction`, the same function the sink writes through, so a change to the
+shared session is caught. A change that sets extra values INLINE in `Sink::record`, after that
+function, would not be — nothing outside the sink's own transaction can observe it.
+
+## D-74 — `[Unreleased]` repeats its categories  (OPEN 2026-09-27)
+
+`CHANGELOG.md` has four `### Fixed`, three `### Added` and three `### Changed` under `[Unreleased]`,
+which Keep a Changelog 2.0.0 says appear once per version. Normalised once in #25 and reverted in the
+same PR, because the reshuffle moved ~700 lines and would conflict with every open branch appending
+there. **Closes when:** it is normalised in a change of its own, when no branch has pending entries.
+
