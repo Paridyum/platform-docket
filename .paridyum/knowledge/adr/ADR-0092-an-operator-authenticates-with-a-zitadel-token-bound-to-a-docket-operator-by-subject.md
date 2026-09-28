@@ -16,6 +16,15 @@ enforced_by: []
 
 # ADR-0092 — An operator authenticates with a Zitadel token, bound to a docket operator by opaque subject
 
+> **Dated note, 2026-09-28 — the ids below belong to a control plane that no longer exists.** The
+> `id.paridyum.com` instance, its owner user (`390506086174098663`), the `paridyum-operations` project
+> (`390606436373103770`) and the `console-docket` client (`390606437346247834`) were destroyed with the
+> estate's rebuild from empty (ADR-0118 D3). The decision stands, and the rebuild is its first test:
+> because the binding is by opaque subject, the rebuilt owner is a **new subject**, and
+> `tool-docket`'s `registry/operators.yaml` must be re-bound to it before docket admits anyone. The
+> rebuilt ids are recorded where they are used — infra-kubernetes `zitadel/provision-control.py` and
+> `GO-LIVE.md` — not here.
+
 ## Status
 
 **Accepted**, 2026-09-13. Resolves tool-docket's **D-38** ("the HR platform has no per-operator

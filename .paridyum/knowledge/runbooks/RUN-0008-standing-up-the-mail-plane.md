@@ -168,7 +168,7 @@ Zitadel's **instance** SMTP points at PMG on port 26, and every system email flo
   so Zitadel relays unauthenticated to PMG; the only credential in the plane is the Gmail app password
   on PMG. Interim sender `rohanbatraind@gmail.com` (Gmail rewrites a non-alias sender anyway; becomes
   `noreply@mail.paridyum.com` after Stage 3's alias + DNS).
-- The operator user is declared in `organizations.yaml` and created by `make org-provision`; creating
+- The operator user is declared in `organizations.yaml` and created by `make tenant-provision` (renamed from `org-provision` on 2026-09-28, ADR-0113 D4); creating
   a human with an unverified email and no password puts them in `USER_STATE_INITIAL` and Zitadel sends
   the **init email** — verified live: `client=…[10.1.1.21] → PMG → relay=smtp.gmail.com[…]:587
   status=sent`. The operator clicks the link, sets their password into Bitwarden, logs in with login

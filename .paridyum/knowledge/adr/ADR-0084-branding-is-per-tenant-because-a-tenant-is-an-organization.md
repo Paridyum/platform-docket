@@ -20,6 +20,8 @@ enforced_by: []
 > **Superseded in part, 2026-09-28 — ADR-0113.** "A tenant is an organization" here means **the tenant's Zitadel
 > organization** (ADR-0047 D2), not an Org (GLO-0012). Branding stays per tenant, configured at the
 > portal (ADR-0119 D2).
+>
+> The tool is now `provision-tenant.py`, run as `make tenant-plan` / `make tenant-provision`; `provision-org.py` and the `org-*` targets were renamed on 2026-09-28 (ADR-0113 D4) and no longer exist.
 
 ## Status
 

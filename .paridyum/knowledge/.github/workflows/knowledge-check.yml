@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   knowledge:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, paridyum]   # the estate runner, ADR-0124
     steps:
       # Pinned to a SHA, not a tag: ci.actions_pinned_to_sha (ADR-0010) is an `error`
       # check, and a mutable tag on a third-party action is remote code execution with

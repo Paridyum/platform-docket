@@ -16,6 +16,10 @@ enforced_by: []
 
 # ADR-0099 — docket is a multi-tenant platform
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0114.** Where this ADR extends the `provision-org` path,
+> read `provision-tenant.py` / `make tenant-provision`: the tool was renamed for what it provisions (ADR-0113 D4),
+> and every tenant it provisions now has an owning org (ADR-0114 D4). The decision itself stands.
+
 ## Status
 
 **ACCEPTED** as of 2026-09-15. Extends ADR-0093 (docket served, DB-backed,

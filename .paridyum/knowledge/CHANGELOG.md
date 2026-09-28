@@ -13,6 +13,32 @@ handle — file names may be reorganised, ids never are.
 
 ### Added
 
+- **ADR-0125 — Postgres backups run through the Barman Cloud plugin, and cert-manager issues its
+  certificates** (`accepted` 2026-09-28, the operator: "do it"). CloudNativePG 1.30 warns that native
+  Barman Cloud support is removed in 1.31, and every backup here used it. The plugin (v0.15.0, manifest
+  vendored and digest-checked, images pinned) takes over archiving, base backups and the rehearsal,
+  writing the same archive; cert-manager (v1.21.2) issues the mTLS certificates between the operator
+  and the plugin. Done means proven: archiving through the plugin, a plugin backup, a passing rehearsal.
+
+- **ADR-0124 — CI runs on a self-hosted runner in the estate, and images are still built only by CI**
+  (`accepted` 2026-09-28; the operator directed a self-hosted runner or workstation builds, and this
+  records the runner). Every GitHub-hosted job had stopped starting — *"recent account payments have
+  failed or your spending limit needs to be increased"* — so nothing merged since 2026-09-15 could be
+  released. The runner is a Proxmox guest declared in OpenTofu, `ci-runner-01` at `10.1.1.41`
+  (allocated here as `planned`); it holds no estate credential, is persistent with a clean-up hook
+  rather than ephemeral (an ephemeral runner needs a standing admin token on the machine), and never
+  runs fork pull requests. Building on the workstation lost because it suspends ADR-0021's rule that an
+  image comes only from a green commit.
+
+- **ADR-0123 — the System-API key holds instance lifecycle only in a window opened for one operation**
+  (`accepted` 2026-09-28 by the operator). The key `paridyum-system` had been given a scoped
+  `IAM_OWNER` membership on 2026-09-13 in the belief that it kept its instance lifecycle beside it; an
+  explicit membership list replaces Zitadel's default `SYSTEM_OWNER`, so it had not — measured as a
+  `403` when the rebuild from empty needed an instance. At rest the key now holds only explicit,
+  instance-scoped memberships; `SYSTEM_OWNER` is granted for one operation by a run-time override,
+  and the close is verified by the `403` returning. ADR-0045's T5 credential is off unless an operator
+  turns it on. A router row points at it.
+
 - **The org model — paridyum.in's customer is an org, which owns tenants and holds none of their data**
   (ADR-0113 to ADR-0122, GLO-0012, STD-0023, all `accepted` 2026-09-28 by the operator). The estate
   had three models of who owns a tenant live at once — "operator → tenant → account" in accepted
@@ -123,6 +149,12 @@ handle — file names may be reorganised, ids never are.
   `lib-tenancy` and is not an answer to whether the isolation mechanism should exist twice.
 
 ### Changed
+
+- **ADR-0092 is dated: its ids belong to a control plane that no longer exists.** The owner subject,
+  the operations project and the `console-docket` client it quotes were destroyed with the estate's
+  rebuild from empty (ADR-0118 D3). The decision stands, and the note says what it implies: the rebuilt
+  owner is a new subject, so `tool-docket`'s operator registry must be re-bound before docket admits
+  anyone.
 
 - **ADR-0024, STD-0006, ADR-0049 and ADR-0109 superseded** — by ADR-0115, STD-0023, ADR-0116 and
   ADR-0114. The locked three change only `status` and `superseded_by`; each successor restates what

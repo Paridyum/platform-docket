@@ -22,6 +22,8 @@ enforced_by: []
 > (ADR-0113 D2). The derivation rule stands. **The example ids below** (Paridyum's tenant and its
 > Zitadel organization) **belong to the estate before its 2026-09-28 rebuild from empty** (ADR-0118 D3);
 > the rebuilt tenant has new ones.
+>
+> The tool is now `provision-tenant.py`, run as `make tenant-plan` / `make tenant-provision`; `provision-org.py` and the `org-*` targets were renamed on 2026-09-28 (ADR-0113 D4) and no longer exist.
 
 ## Status
 

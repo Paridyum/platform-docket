@@ -239,6 +239,23 @@ hosts:
     created: 2026-09-12
     updated: 2026-09-12
 
+  # The estate's CI runner (ADR-0124). Its own role group at .4x/104x, clear of the cluster (.1x, .2x)
+  # and mail (.3x). Stable because it is a machine the operator reaches over SSH to install and
+  # register it; it is reachable, so it is recorded (RFC-0037 D6).
+  - address: 10.1.1.41
+    region: 10.1.1.0/24
+    hostname: ci-runner-01
+    vmid: 1041
+    role: ci-runner
+    owner: infra
+    purpose: >-
+      The self-hosted GitHub Actions runner every workflow runs on (ADR-0124), since GitHub-hosted
+      minutes stopped starting on 2026-09-28. Debian 13 with Docker for image builds; 4 vCPU, 6 GiB,
+      48 GiB, within RFC-0023's guest budget. Holds no estate credential.
+    status: active
+    created: 2026-09-28
+    updated: 2026-09-28
+
 # ── Cluster internals ────────────────────────────────────────────────────────────────────────
 #
 # THESE VALUES MUST BE WRITTEN INTO TALOS MACHINE CONFIGURATION. Talos defaults to
