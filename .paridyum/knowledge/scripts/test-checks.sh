@@ -86,6 +86,10 @@ expect_ok "clean schema passes" bash scripts/check-migrations.sh --root "$F/pass
 # exercises the skip path rather than the check — and a check whose only green run is a skip has
 # not been shown to pass anything.
 expect_ok "a correctly regioned tenants table passes" bash scripts/check-migrations.sh --root "$F/pass-region"
+# A consuming repository runs this gate with `--root .`, and its vendored snapshot — fixtures that
+# exist to fail included — sits inside that root. The fixture below plants one under `.paridyum/`;
+# before 2026-09-28 the gate reported it as the repository's own defect, on every commit.
+expect_ok "a vendored snapshot's fixtures are never the repository's migrations" bash scripts/check-migrations.sh --root "$F/pass-vendored-snapshot"
 for c in \
   "fail-undeclared|a table declaring no tenancy category" \
   "fail-account-without-tenant|account_id with no tenant_id" \

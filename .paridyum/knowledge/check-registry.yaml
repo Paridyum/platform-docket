@@ -590,17 +590,20 @@ checks:
 
   - check: db.localized_content_matches_its_tenant_locales
     spec: >
-      Fails when migration SQL — a CHECK, or a function a constraint or trigger calls — tests a jsonb
-      value for a literal locale code with the key-exists operators (`v ? 'en'`, `v ?& array['en',
-      'ar']`) instead of validating against the owning tenant's declared content locales.
+      Fails when one migration's SQL — a CHECK, or a function a constraint or trigger calls — tests a
+      jsonb value for two or more distinct literal locale codes with the key-exists operators
+      (`v ? 'en' AND v ? 'ar'`, `v ?& array['en', 'ar']`) instead of validating against the owning
+      tenant's declared content locales.
     owner: check-migrations.sh
     blocks: [ADR-0122]
     declared: 2026-09-28
     notes: >
       Migrations 0007 and 0016 encoded Paridyum's tenant's languages as every tenant's. The estate
-      is rebuilt from empty (ADR-0118), so both are corrected in place rather than allowlisted. It
-      reads SQL text, not meaning: a two- or three-letter jsonb key that is not a locale is reported
-      too, and a literal list built some other way passes; review is the defence at both edges.
+      is rebuilt from empty (ADR-0118), so both are corrected in place rather than allowlisted. TWO OR
+      MORE DISTINCT CODES, because a single code cannot be told from an ordinary key: platform-tenancy's
+      0008 tests `config ? 'id'`, and `id` is also the Indonesian subtag. The cost: a schema that
+      hard-codes exactly one locale passes, as does a list built some other way. Review is the defence
+      at both edges.
 
   - check: db.money_amounts_are_integral
     spec: >

@@ -5,6 +5,9 @@
 # Vendored knowledge snapshots must never appear in the canonical repo (ADR-0001).
 # Guards against a sync running in the wrong direction.
 .paridyum/
+# ...except the one fixture that plants a vendored snapshot on purpose: check-migrations.sh must
+# ignore it, and a fixture git cannot see proves nothing (test-checks.sh, pass-vendored-snapshot).
+!tests/fixtures/migrations/pass-vendored-snapshot/.paridyum/
 
 # forge scratch output
 .forge/

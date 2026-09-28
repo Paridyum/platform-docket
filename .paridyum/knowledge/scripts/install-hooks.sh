@@ -54,6 +54,14 @@ else
   K="\$R"
 fi
 
+# THE TWO GATES BELOW REFUSE TO INSPECT THEIR OWN VENDORED SNAPSHOT (knowledge#16). Run from
+# .paridyum/knowledge/ with no --root they used to inspect the snapshot and report n/a for almost
+# everything, which reads as a pass; now they exit 2. So a CONSUMING repository passes itself as
+# the root. The knowledge repository must NOT: there the default root already is the repository,
+# and --root switches off check-migrations.sh's exclusion of its deliberately broken fixtures.
+# Found 2026-09-28, when refreshing the snapshot blocked every commit in five repositories.
+if [[ "\$K" != "\$R" ]]; then ROOT_ARG=(--root "\$R"); else ROOT_ARG=(); fi
+
 "\$K/scripts/check-commits.sh" --staged || exit 1
 "\$K/scripts/check-knowledge.sh" --staged || exit 1
 # NOT REDIRECTED TO /dev/null, AND THAT IS THE POINT (ADR-0059). Every gate here exits 0 on a
@@ -61,12 +69,12 @@ fi
 # whose severity each artifact argued for on the premise that someone reads them.
 # repo.plugin_snapshot_matches_head reported the installed plugin as twelve days stale, by name
 # and with the remedy, into this exact redirect — and RFC-0027 research capture had never run.
-"\$K/scripts/check-repo.sh" || exit 1
+"\$K/scripts/check-repo.sh" "\${ROOT_ARG[@]}" || exit 1
 
 # check-migrations.sh inspects this repository's own migrations directory, and
 # check-changelog.sh must validate the CHANGELOG of the repository being committed
 # to — never the snapshot's copy of the knowledge base's changelog.
-"\$K/scripts/check-migrations.sh" || exit 1
+"\$K/scripts/check-migrations.sh" "\${ROOT_ARG[@]}" || exit 1
 "\$K/templates/infra-ci/scripts/check-changelog.sh" "\$R/CHANGELOG.md" || exit 1
 # Was: \`command -v gitleaks >/dev/null && { gitleaks protect --staged ... }\` — which
 # silently skipped the scan on any machine without gitleaks installed, and used a

@@ -1443,6 +1443,23 @@ handle — file names may be reorganised, ids never are.
 
 ### Fixed
 
+- **A consuming repository could not commit once its knowledge snapshot was refreshed.** knowledge#16
+  made `check-repo.sh` and `check-migrations.sh` refuse to inspect their own vendored snapshot, and
+  the pre-commit hook `install-hooks.sh` generates called both with no `--root` — so in every
+  repository with the hook installed, refreshing `.paridyum/knowledge/` blocked every commit. Found
+  on 2026-09-28 in five repositories at once. The hook now passes `--root` wherever the gates are
+  vendored, and not in this repository, where `--root` would switch off the fixture exclusion.
+- **`db.localized_content_matches_its_tenant_locales` read a JSON key called `id` as a locale.**
+  platform-tenancy's 0008 tests `config ? 'id'`, and `id` is also the Indonesian subtag, so a single
+  code cannot be told from an ordinary key. The check now reports a migration only for two or more
+  distinct codes — the SET of locales ADR-0122 D4 refuses — and the `pass` fixture plants a lone
+  `? 'id'` to prove it. The cost, stated in the registry: a schema hard-coding exactly one locale passes.
+- **`check-migrations.sh --root .` scanned the vendored snapshot's own failing fixtures.** Once a
+  consuming repository passes itself as the root, `.paridyum/knowledge/tests/fixtures/migrations/fail-*`
+  is inside the scan, and eleven errors that were not the repository's failed the commit.
+  `infra-ci`'s `rust-ci` step makes the same call. A vendored snapshot is now always excluded; a
+  new fixture plants a failing one under `.paridyum/` and must pass.
+
 - **RFC-0022 §D5a gains path 8.** Scoping pgaudit off Zitadel's own polling — without which its
   records would be rotated away — leaves a Zitadel-credential holder's reads and writes of identity
   data unaudited. Recorded as a path, with its measurement and the root cause that would remove it.

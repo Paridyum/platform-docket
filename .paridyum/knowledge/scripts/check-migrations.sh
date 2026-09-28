@@ -111,8 +111,15 @@ wrn() { printf '%s!%s %s\n'  "$YLW" "$RST" "$1"; WARNS=$((WARNS+1)); }
 # root found them and failed — in CI and in the pre-commit hook, on every commit. Caught by
 # running the gate rather than by reading it, which is the whole argument for test-checks.sh.
 # `--root` deliberately does NOT apply the exclusion, because that is how the suite reaches them.
-PRUNE=()
-[[ "$SCAN" == "$ROOT" ]] && PRUNE=(-not -path '*/tests/fixtures/*')
+#
+# A VENDORED SNAPSHOT IS NEVER THIS REPOSITORY'S MIGRATIONS, whatever the root. A consuming
+# repository calls this with `--root .` (knowledge#16 made the vendored copy refuse to inspect
+# itself), and its own `.paridyum/knowledge/tests/fixtures/migrations/fail-*` are then INSIDE the
+# scan — deliberately broken fixtures reported as the repository's defects, on every run. Found
+# 2026-09-28, when the pre-commit hook began passing `--root` and the first commit it judged failed
+# on eleven errors, none of them the repository's. infra-ci's `rust-ci` step has the same call.
+PRUNE=(-not -path '*/.paridyum/*')
+[[ "$SCAN" == "$ROOT" ]] && PRUNE+=(-not -path '*/tests/fixtures/*')
 mapfile -t MIGRATIONS < <(find "$SCAN" -path '*/migrations/*.sql' -type f -not -path '*/.git/*' "${PRUNE[@]}" 2>/dev/null | sort)
 
 if [[ ${#MIGRATIONS[@]} -eq 0 ]]; then
@@ -447,13 +454,19 @@ done
 # --- db.localized_content_matches_its_tenant_locales ------------------------
 # ADR-0122 D4. `v ? 'en' AND v ? 'ar'` — in a CHECK, or in a helper a CHECK or trigger calls, as
 # 0007 and 0016 had it — writes one tenant's languages into every tenant's schema. Completeness is
-# checked against the owning tenant's declared content locales instead. Reads SQL text: a two- or
-# three-letter jsonb key that is not a locale is reported too, which is the right side to err on.
+# checked against the owning tenant's declared content locales instead.
+#
+# A SET, NOT A KEY. The check reports a migration only when it tests TWO OR MORE DISTINCT locale-shaped
+# codes. `config ? 'id'` is a JSON key called "id" — and `id` is also the Indonesian subtag — so a
+# single code cannot be told from an ordinary key; platform-tenancy's 0008 was the false positive that
+# showed it. The cost is stated in the registry: a schema that hard-codes exactly one locale passes.
 for f in "${MIGRATIONS[@]}"; do
   rel="${f#"$SCAN"/}"
-  hits="$(sed 's/--.*$//' "$f" | tr '\n' ' ' \
-    | grep -oiE "\?[&|]?[[:space:]]*(array[[:space:]]*\[)?[[:space:]]*'[a-z]{2,3}(-[a-z0-9]{2,8})*'" | head -3 | tr '\n' ' ')"
-  [[ -n "$hits" ]] && err "$rel tests a jsonb value for literal locale codes (${hits% }) — one tenant's languages written as every tenant's. Validate against the owning tenant's declared content locales, in a row trigger (ADR-0122 D4)"
+  codes="$(sed 's/--.*$//' "$f" | tr '\n' ' ' \
+    | grep -oiE "\?[&|]?[[:space:]]*(array[[:space:]]*\[)?[[:space:]]*'[a-z]{2,3}(-[a-z0-9]{2,8})*'" \
+    | grep -oiE "'[a-z]{2,3}(-[a-z0-9]{2,8})*'" | tr -d "'" | tr '[:upper:]' '[:lower:]' | sort -u)"
+  n="$(grep -c . <<<"$codes")"
+  (( n >= 2 )) && err "$rel tests a jsonb value for a literal locale set ($(tr '\n' ' ' <<<"$codes" | sed 's/ $//')) — one tenant's languages written as every tenant's. Validate against the owning tenant's declared content locales, in a row trigger (ADR-0122 D4)"
 done
 
 # --- db.tables_are_plural_snake_case ----------------------------------------

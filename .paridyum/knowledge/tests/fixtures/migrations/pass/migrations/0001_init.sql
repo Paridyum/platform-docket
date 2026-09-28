@@ -57,6 +57,9 @@ CREATE TABLE tenant_settings (
     currency          char(3) NOT NULL,
     created_at        timestamptz NOT NULL
 );
+-- A jsonb key that happens to be a language subtag is not a locale set: `config ? 'id'` must pass
+-- db.localized_content_matches_its_tenant_locales, which reports two or more distinct codes only.
+ALTER TABLE tenant_settings ADD COLUMN config jsonb NOT NULL CHECK (config ? 'id');
 ALTER TABLE tenant_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_settings FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_settings_tenant ON tenant_settings
