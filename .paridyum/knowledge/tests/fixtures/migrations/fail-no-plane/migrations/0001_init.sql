@@ -5,9 +5,9 @@
 -- paridyum:scope platform
 -- paridyum:plane control
 CREATE TABLE regions (
-    id          uuid PRIMARY KEY,
-    code        text NOT NULL,
-    created_at  timestamptz NOT NULL
+    id          uuid PRIMARY KEY,  -- internal
+    code        text NOT NULL,  -- internal
+    created_at  timestamptz NOT NULL  -- internal
 );
 
 -- paridyum:scope tenant

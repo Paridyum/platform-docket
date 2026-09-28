@@ -16,6 +16,9 @@ enforced_by: []
 
 # GLO-0009 — Fleet manager
 
+> **Superseded in part, 2026-09-28 — ADR-0113.** This entry quotes the name GLO-0007 retired as the lesson it
+> teaches. The term stays retired (ADR-0113 D5); nothing here revives it.
+
 ## Definition
 
 **The fleet manager is the system that provisions and manages fleets of physical and virtual

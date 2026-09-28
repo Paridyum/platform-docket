@@ -17,6 +17,10 @@ enforced_by: []
 
 # ADR-0091 — A single-org instance brands its default; a multi-tenant instance keeps a vendor-stripped default
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0119.** The single-org instance this ADR brands is the **staff
+> instance**. Each region's **portal instance** holds one directory, which mirrors no org and no
+> tenant (ADR-0113 D2), and each tenant signs in on its own domain (ADR-0119 D2).
+
 ## Status
 
 **Accepted**, 2026-09-13. **Refines ADR-0084** for the two-instance world that ADR-0090 / RFC-0012 D2

@@ -1,5 +1,13 @@
 # Paridyum — Tasks
 
+> **Superseded in part, 2026-09-28 — ADR-0113 to ADR-0122.** Where a task names the party above a tenant the
+> **operator** — "the operator → tenant → account hierarchy", `OperatorMember` — read **org** and
+> **org member** (GLO-0012, ADR-0114). Where a task puts the control plane inside tenant zero, read
+> ADR-0118: the portal at paridyum.in is the platform's own surface, and tenant zero is Paridyum's
+> tenant only. Signup, `max_tenants` and `<tenant>.paridyum.com` are replaced by RFC-0056, ADR-0114
+> D5 and ADR-0121 (see PLAN-TENANT-FLOW). The estate's databases and identity are rebuilt from empty
+> once these land; a task that names a live id or row describes the estate before that.
+
 Companion to [`ROADMAP.md`](ROADMAP.md). Written 2026-08-15.
 
 Every task states **what**, **why it blocks**, and **done when** — because a task without a
@@ -97,18 +105,18 @@ confirmation that no catalogue product ever needs to store a card number.
 **Done when:** an RFC or ADR states the path with dated citations, and BET-0007 trigger clause 3 can
 be evaluated.
 
-### T-0.11 ⛔ Accept or reject RFC-0022
+### T-0.11 Accept or reject RFC-0022 — **accepted 2026-09-27**, D5 published as partial (§D5a); **D2a's check still undeclared**
 RFC-0022 designs the entire defence for BET-0005 cost 1. **Open question 1 was answered on
 2026-08-15** — C-0006 non-commodity item 4 is narrowed: aggregate data may improve the runtime and
 set product defaults, and may never inform where Paridyum competes. Four boundary options
 (vertical, territorial, sunset, retail-price handicap) were considered and rejected as
 physical-franchise mechanics that do not transfer to a white-label digital business.
-**Still open:** questions 2–5, of which 2 (can operator access actually be logged under ADR-0024's
-shared database) decides whether D5 is a guarantee or a partial one — and a partial one must be
-described as partial.
+**Question 2 answered 2026-09-27 by §D5a** (partial — the paths to a tenant's data measured, one logged,
+pgaudit configured for three more, and a path 8 opened by the scoping that makes pgaudit work). **Still open:** questions 3–5.
 **Blocks:** the first franchised tenant — D1, D2 and D5 are worth a fraction if made after the fact.
 **Done when:** RFC-0022 is `accepted` or `rejected`, and D2a's check is declared in
-`check-registry.yaml` under ADR-0014.
+`check-registry.yaml` under ADR-0014. **The first half is met; the second is not** — RFC-0022 still
+carries `enforced_by: []` and no D2a check exists, so this task stays open for it.
 
 ### ~~T-0.13 Answer RFC-0025 open question 1 — build or assemble the fleet manager~~ — **decided 2026-08-18**
 **Build it, in Rust.** The operator was shown the scope cost — a fleet manager with an API, quotas,
@@ -855,6 +863,34 @@ commit before the work it justifies.
 first, regardless of how small it is. Two items are lossy — an unwritten audit history cannot be
 reconstructed, and a region never recorded cannot be recovered — and they are both cheap today.
 
+> ### ⛔ READ THIS BEFORE TRUSTING ANY GREEN CHECK — CI IS OFF, AND THE CAUSE IS NOW KNOWN
+>
+> **Diagnosed 2026-09-26. The organisation's included GitHub Actions allowance is exhausted.**
+> `gh api "/orgs/Paridyum/settings/billing/usage?year=2026&month=9"` reports `Actions Linux` at
+> exactly **`2000.0` minutes** with `netAmount: 0.0` — the whole GitHub Free allowance consumed,
+> nothing billed past it. `2000.0` to one decimal is a ceiling, not a coincidence.
+>
+> **The last day with recorded usage is 2026-09-20** (641 minutes). So CI stopped four days before
+> anyone noticed, and the "12:34 UTC on 2026-09-24" recorded elsewhere is when a person read a run
+> page. Every run since fails in ~4–16 seconds with **zero steps and no logs** — jobs are created
+> from the reusable workflow and then never start.
+>
+> **What this means for you, right now:**
+>
+> - **No pull request merged since 2026-09-20 has been gate-validated.** Run the gates locally and say
+>   so: `check-knowledge.sh`, `check-repo.sh --root "$PWD"`, `check-migrations.sh --root "$PWD"`,
+>   plus the stack's own `cargo test` / `npm run test`.
+> - **`check-repo.sh` and `check-migrations.sh` need `--root "$PWD"`.** Run from a repository without
+>   it, they resolve their own vendored `.paridyum/knowledge` directory and report a cheerful `n/a`.
+>   That is how eleven real errors sat unseen in `platform-tenancy`.
+> - **A red X on a PR is not a finding about your change.** Read the run: zero steps means the runner
+>   never started.
+>
+> **Three ways out, and only the operator can pick.** (a) It resets on **2026-10-01** — free, and
+> leaves the estate as fragile. (b) Attach a payment method and set a spending limit — money.
+> (c) **RFC-0053** (self-hosted runners consume no included minutes), which is also T-G.21 below.
+> The evidence and the full argument are in RFC-0053's Problem section.
+
 ---
 
 ### Wave 0 — decisions, before code
@@ -933,7 +969,16 @@ ADR-0024 stands unsuperseded.
 
 *Nothing here deploys anything. Everything here gets worse if deferred.*
 
-#### T-G.1 A cache key carries the tenant ⏱
+#### ~~T-G.1 A cache key carries the tenant~~ — **done 2026-09-27, merged as web-hiring#5**
+
+> **2026-09-27.** Routes moved to `/[lang]/tenants/[tenant]/careers`; the proxy rewrites the public
+> path to carry the tenant its own resolver returns. The work arrived with its internal-namespace
+> refusal disabled (`if (false && …)`) and an arbitrary tenant id in the URL rendering, because Next
+> 16.2.12 runs the proxy a second time on its own rewrite. The control is now segment equality
+> against the resolver, repeated in every page. Six review rounds, each measured on a production
+> build; they also found that **production had shown "no open roles" regardless of what was
+> published** (the chart never set the tenant), and that the branch had silently lost ISR until
+> `dynamic = "error"`. **Not yet deployed** — needs a new image.
 `careers/page.tsx` sets `revalidate = 60`. Next.js ISR keys on pathname, not `Host`, so the commit
 that makes the app multi-tenant serves one tenant's postings to another — with RLS forced, the policy
 correct, and the query never running. ANTI-0009 has existed as prose with no owner since it was
@@ -942,7 +987,7 @@ written; `web.cache_key_carries_tenancy` is now declared.
 **Done when:** the resolved tenant is in the route, not a `cacheTag`, and the check fails a build that
 omits it. Implements RFC-0048 slice 1.
 
-#### T-G.2 One correlation id, one append-only audit stream ⏱
+#### T-G.2 One correlation id, one append-only audit stream ⏱ — **built 2026-09-26; blocked on applying 0010**
 ADR-0041 D3: a shared correlation id must exist *"from the first request"* because it spans Zitadel's
 event log and our own records, and *"retrofitting one across two systems means reconstructing history
 that was never written."* Every request written so far has none.
@@ -962,6 +1007,84 @@ they end. Implements RFC-0045 slice 1.
 > against it; once accepted, `audit_events` is a same-shaped migration to 0011/0013 and genuinely
 > small, and `grants`'s shape becomes the RFC's to fix during that acceptance, not this task's to
 > guess.
+>
+> **✔ THE APP LAYER IS DONE 2026-09-26, and the schema half turned out to be written already.**
+> RFC-0045 is `accepted`. Migration **0010** already carries `audit_events` with §D2's exact column
+> list *and* `operator_grants` with §D3's who/to-whom/when/how-it-ends — so the half this note called
+> unguessable had been written and was merely unapplied, having merged *after* 0011–0013 were applied.
+>
+> The fourth `SET LOCAL` now exists in all three places in the estate that open a Postgres
+> transaction:
+>
+> | Where | What carries it |
+> | --- | --- |
+> | `platform-tenancy` | `src/correlation.rs` + `Db::begin()`; an axum extractor, infallible by design |
+> | `@paridyum/auth` (`lib-auth-typescript` **0.2.0**) | `correlationIdFrom(headers)` + `withSessionContext`; `correlationId` is a **required** field |
+> | `tool-docket` | `src/adapters/correlation.rs` + `enter()`; threaded from the edge, never minted inside |
+>
+> **The contract, in one line each, because these are the parts that were easy to get wrong:**
+> ADR-0044 D1 wants the id generated once at the edge and *propagated unchanged*, so only a
+> `traceparent`'s **trace id** is taken — never its parent id, which changes per hop — and minting is
+> a fallback that **reports itself**. A caller-supplied `X-Correlation-Id` is validated to a narrow
+> shape and **discarded rather than truncated** when it fails, because it lands in
+> `audit_events.correlation_id` and in every log line, and a truncated id joins to nothing while
+> looking like it should. For docket the CLI *is* the edge, so it mints **once per invocation**:
+> per-transaction minting would give one `docket issue` four unrelated ids.
+>
+> **✔ AND THE STREAM HAS A WRITER, 2026-09-26.** `platform-tenancy/src/audit.rs` records
+> `GET /v1/releases`: the allowed read **inside the same transaction as the read**, so the record and
+> the access commit together; the **denial in its own transaction**, so it survives the thing that did
+> not happen. A failed audit write fails the request — an unrecorded access is the defect the stream
+> prevents — except for a denial, where the 403 still returns and the failure is logged, because
+> turning a boundary decision into a 502 would hide it.
+>
+> **The probe found the control ADR-0044 D4 had already named and 0010 did not have.**
+> `scripts/probe-audit-stream.py` asserts UPDATE and DELETE are refused; both were **accepted** on the
+> first run, because the `FOR SELECT`/`FOR INSERT` policies mean an `UPDATE` matches no rows, changes
+> nothing **and returns success** — the row trigger never fires. A caller rewriting the audit trail got
+> `UPDATE 0` and no error, which is indistinguishable from a rewrite that worked. D4 says the primary
+> control is the **grant**, not the trigger; 0010 now carries all three.
+>
+> **0010 was also four columns short of ADR-0044 D6's stated minimum** — the account, the source, the
+> client, and **the outcome including denials** — because it transcribed RFC-0045 §D2 literally and
+> §D2's list is the shorter of the two. Corrected in place, legally: REQ-0008 binds an *applied*
+> migration and 0010 is `pending`.
+>
+> **What is still owed:**
+>
+> 1. **`0010` is unapplied**, and a failed audit write fails the request — so platform-tenancy must
+>    not be deployed against the current database before it lands. An ordering, not a caveat.
+> 1b. **And the volume is sized for a database with no audit stream.** ADR-0110 decision 7, measured
+>    2026-09-27: **362 bytes per row** including all three indexes, against a **4 GiB** data volume —
+>    ~11.9 million rows would fill it with nothing else in the database, and the stream is **never
+>    pruned** (RFC-0045 §D4 keeps it longer than the data it describes). At 100,000 requests a day that
+>    is three million rows in a month. Resize before a surface serves real traffic; the added latency
+>    (~2 ms, an upper bound measured through `psql`) is not the constraint.
+> 2. **docket writes no audit event** (tool-docket `DECISION-DEBT.md` D-72). Its four sealed chains are
+>    what a document *is*, not who touched it: a read of a person record leaves no trace and a refused
+>    write leaves less. **Blocked on `ADR-0110` (`proposed` 2026-09-26)**, and blocked on a decision
+>    rather than on effort: docket is a CLI *and* a served API, so `docket check` audited per query
+>    writes tens of rows where the same work served over HTTP writes one. ADR-0044 D6 fixes what a record
+>    contains and is silent on how many one action produces. ADR-0110 proposes *one event per operation a
+>    caller requested* — which is what `platform-tenancy` already does, so the ADR transcribes a
+>    precedent rather than imposing a rule.
+> 3. **Two classes of event cannot be recorded at all**, because `audit_events.tenant_id` is NOT NULL:
+>    a refusal before a tenant resolves, and a control-plane read of the registry, which belongs to no
+>    single tenancy. Both stay log lines. A placeholder tenant would attribute an action to a tenancy
+>    that had nothing to do with it.
+> 4. **`web-hiring`'s own copy of the session helper still sets three values** (recorded in
+>    `lib-auth-typescript`'s `DECISION-DEBT.md`), so a request entering there carries no id.
+>
+> **One open question this surfaced, and it is RFC-0022's:** `GET /v1/tenants/{id}` is about exactly one
+> tenancy, so it *could* be recorded in that tenant's stream — and RFC-0022 D5 commits to exactly that
+> (*"if a Paridyum operator touches a tenant's data, that tenant sees it, by default and not on
+> request"*). RFC-0022 was `proposed` when this was written (accepted 2026-09-27), so implementing it would have settled in code what the RFC exists to
+> settle. Not done.
+>
+> **The parsing rules now exist in three implementations**, priced and recorded in tool-docket's
+> `DECISION-DEBT.md` D-71 with the trigger that extracts them — a fourth Rust copy, or any change
+> that must be made twice. `paridyum-auth` was rejected as the home because it is the estate's *auth*
+> crate and a correlation id is observability.
 
 #### T-G.3 `region` on `tenants`, immutable ⏱
 ADR-0039 step 1 already says *"insert tenant row (with `region`)"* and ADR-0041 D3 calls it
@@ -997,6 +1120,35 @@ refuses a move. `db.region_is_chosen_at_provisioning_and_immutable` passes. Impl
 >    entirely, `status` included. 0012/0013 are now back to **exactly the bytes applied**, and the
 >    corrections live in **`0014_the_inner_boundary_the_retrofit_left_out.sql`**, not yet applied.
 >
+> **✔ AND THE BOUNDARY 0014 CREATES IS NOW PROVEN, 2026-09-26 — locally, not on the cluster.**
+> `prove-isolation.py`'s proofs **6 and 7** had reported SKIPPED since the day they were written, because
+> they are guarded on 0014 being applied. So the one boundary 0014 exists to create was the one boundary
+> nothing had exercised.
+>
+> `platform-tenancy/scripts/probe-isolation-locally.sh` replays the whole stream into a scratch database
+> — where 0014, 0015 and 0016 *are* present — and runs the same seven proofs. **All seven pass, zero
+> skipped, for the first time anywhere.** The docket account boundary and the account-bounded release
+> history are proven to work rather than written and hoped for.
+>
+> **It proves the policies, not the cluster, and says so on SUCCESS**: what it rules out is a policy that
+> was wrong, and what it cannot rule out is one that was never applied. **Applying 0010, 0014, 0015 and
+> 0016 is still the step that makes the live boundary real.**
+>
+> **⛔ ORDER, measured 2026-09-27/28: the pending batch must not be applied until docket is redeployed.**
+> The docket RUNNING on the cluster is the image of 2026-09-15 (Helm revision 3). It predates the
+> account work: it sets two session values, so its writes have failed since 0012 (applied 2026-09-24),
+> and — measured on a replay as `paridyum_app` — **0014 alone makes its reads raise**
+> `paridyum.account_id is not set`. 0015 would then break the next version too: its `accounts_read`
+> makes a three-value `enter()` raise on every call. `migrate.py apply` takes no target, so none of
+> 0010, 0014, 0015, 0016 can go ahead of the others.
+>
+> **The order, each step proven:** (1) insert Paridyum's `product='docket', slug='default'` account row
+> — with an explicit v7 id, because `accounts.id` has no default until 0014 (ADR-0078's own exception);
+> (2) deploy tool-docket `main` (#26 sets all four session values) — proven against the live schema
+> 0001–0009 + 0011–0013 by tool-docket#27: store 8/8, served 1/1; (3) apply the batch, minutes after
+> (2): until 0010 lands, the new image's audit writes fail and are logged (no regression — the running
+> image writes none). Step (2) needs an image, which needs CI minutes or a `write:packages` credential.
+>
 > **Verify before the next `apply`:** `SELECT seq, sha256 FROM paridyum._migrations WHERE seq IN
 > ('0012','0013')` should read `0012` = `04c4b4f9c15be4adf318f497cfcf5e091c635938897691c6fff3fc142bc00786`,
 > `0013` = `40ca59e5b3fa3055257b2a2df77f237f953ccc04f21f607e4b312f9480eeeb85`. 0013's bytes were
@@ -1020,18 +1172,73 @@ trusting its text is a task that needs its **done-when** executed periodically r
 **Original:** *"Three errors stand on every run…"* — **Done when:** `check-knowledge.sh` reports
 zero errors.
 
-#### T-G.5 Repair the `operator` ambiguity → 
+#### ~~T-G.5 Repair the `operator` ambiguity~~ — **done 2026-09-26** → `ADR-0109` + four corrections
 GLO-0001 says an operator *"is our customer"* and owns 1..N tenants; GLO-0004's tree and BET-0005's
 table both put **Paridyum** at that level. Harmless while one party provisions everything, and every
 design above inherits it. `operator_id` is declared in the glossary and present in no migration.
 **Done when:** one reading is chosen, the losing artifacts are corrected or superseded, and the column
 either appears in a migration or stops being claimed. → produces a glossary correction.
 
-#### T-G.6 Declare `product:` on the web manifests
+> **Answered 2026-09-26 by ADR-0109 (`proposed`).** The two readings are GLO-0001's commercial
+> party (spans *tenants*) and GLO-0005's runtime grant (spans *accounts within one tenant*), and
+> BET-0005 uses both eleven lines apart. The runtime reading wins because it is implemented in
+> **twelve applied — therefore immutable — migrations**, in `lib-auth`'s published API and in
+> tool-docket, while `operator_id` appears in **no migration at all**. The commercial party is
+> deliberately left unnamed: it is ADR-0024 D9's deferred level, and D9's own rule is *"Not 'we can
+> imagine one.'"* Closes when ADR-0109 is accepted and GLO-0001/GLO-0004/BET-0002/BET-0005 carry
+> the correction.
+>
+> **✔ CLOSED 2026-09-26.** ADR-0109 is `accepted`, and the corrections landed:
+>
+> - **GLO-0001** now defines the runtime grant, and its title changed with it. It carries a dated
+>   *Correction* section rather than being superseded (D2): what was wrong was the word, not the
+>   structural claim that a paying party may hold several tenants. `operator_id` is **removed** — it
+>   was declared there and exists in no migration and no code, which is ADR-0014's defect class
+>   applied to a column. `enforced_by` now names `db.operator_scope_is_an_explicit_grant`, so the
+>   definition has a check behind it instead of being prose.
+> - **GLO-0004's tree drew four levels while the entry's own title says two.** The drawing was the
+>   odd one out: `operator` is not a level, it is a grant held *over* a tenant, so it now sits beside
+>   the tree rather than above `tenant`, and Paridyum is labelled the platform. Three sentences that
+>   said "the operator" meaning the tenant were corrected with it.
+> - **BET-0005 used both readings eleven lines apart** — `| Operator | Paridyum |` in its table, and
+>   "operator scope is a grant" in its costs. The row is now **Platform**, and the
+>   `operator-as-tenant` tag became `paridyum-as-tenant`: a tag is a search term, and one carrying
+>   the ambiguity is how the ambiguity keeps being found and copied.
+> - **BET-0002 needed no change, and that is a finding rather than an omission.** D5 lists it, and
+>   the word `operator` does not appear in it at all. Its pricing sentence — "per running business" —
+>   is exactly the commercial fact D2 preserves, already expressed without the term. Recorded so
+>   nobody reopens this task hunting for the edit.
+>
+> **Still deliberately unnamed:** the paying party above a tenant. ADR-0024 D9 admits it only on *"a
+> real third level with a paying customer behind it — **not 'we can imagine one'**"*, and D9 is
+> `locked`. Documents that need the concept write the phrase out.
+>
+> **One leftover, outside D5's list:** RFC-0022's title — *"the operator competes with its tenants"* —
+> still uses the old sense. It is `proposed`, so it is noted in BET-0005's Related section rather than
+> edited in passing.
+
+#### ~~T-G.6 Declare `product:` on the web manifests~~ — **done 2026-09-27**: `web-hiring` declares `product: [hiring]` (web-hiring#6); RFC-0048 open question 2 marked answered
 `web-admin` declares `product: [identity]`; `web-hiring` and `web-paridyum` declare none, and under
 ADR-0050 an absent value means *every* product.
 **Done when:** both manifests declare a product and `knowledge.product_slugs_resolve` passes.
 Implements RFC-0048 slice 2.
+
+> **Checked 2026-09-26.** `web-paridyum` **declares `product: [paridyum]`** and did when this task was
+> last read — so half of it has been done for some time and the line above is out of date, which is
+> the ADR-0035 failure this file keeps rediscovering: a count in prose is a snapshot.
+>
+> **`web-hiring` is the remaining half, and the reason its manifest gives no longer holds.** The
+> comment there says *"no such slug is registered in product-registry.yaml… and registering one is a
+> commercial decision the operator owns"*. **`hiring` is registered** — `product-registry.yaml` line
+> 235, `kind: capability`, `stage: building`, added 2026-09-20 for `seed-releases.py`. So
+> `knowledge.product_slugs_resolve` would pass on `product: [hiring]` today, and the decision the
+> comment defers has already been taken.
+>
+> **Not edited here, deliberately:** `web-hiring` has substantial uncommitted work in flight (T-G.1
+> and T-G.12 — the cache key, and routes moving to `/tenants/[tenant]/careers`), and that repository's
+> checkpoint hook commits everything with `git add -A`. A one-line manifest edit from a second session
+> would land inside someone else's pull request. **Whoever holds web-hiring: this is two lines —
+> `product: [hiring]`, and delete the comment that says you cannot.**
 
 #### ~~T-G.7 Off-host backup with a stated RPO, and one rehearsed restore~~ — **done 2026-09-24**
 
@@ -1171,19 +1378,81 @@ Tenants → Releases → version, placement, state, health. `/dashboard` stays a
 **Done when:** Paridyum appears in `/dashboard` as one tenant among N, listing its landing, careers, docket,
 admin and `app`. Implements RFC-0049 slice 2.
 
-#### T-G.10 The placement resolver, inert
+#### T-G.10 The placement resolver, inert — **⛔ blocked on T-G.12 (T-G.1 done 2026-09-27), not on a decision**
 `poolFor(tenantId)` replaces the module-level `pool()`. At C0 it returns the one pool that exists, so
 the change is behaviourally inert — and it is the seam every later containment rung needs.
 **Done when:** no request path constructs a pool directly, and an unresolvable tenant raises rather
 than falling back to a default. Implements RFC-0045 slice 3.
 
-#### T-G.11 The landing content schema → 
+> **Checked 2026-09-26: RFC-0045 is now `accepted`, so the artifact blocker is gone — and there is
+> exactly one place in the estate that constructs a pool.** `grep -rl 'new Pool'` across every web,
+> console and library `src/` returns one file: **`web-hiring/src/lib/db.ts`**. Every other surface
+> reads through a BFF or through `@paridyum/auth`'s session helper.
+>
+> That makes this task small — and it lands in the middle of another session's work. `web-hiring`
+> currently has nine modified files including `src/lib/auth/context.ts`, which holds a **second**
+> copy of the session helper and its own `pool()` call, plus an untracked `src/lib/tenancy/`. T-G.1
+> and T-G.12 are being done there now.
+>
+> **Deliberately not started.** Two sessions editing `context.ts` is precisely what cost an afternoon
+> on 2026-09-24, and that repository's checkpoint hook commits everything with `git add -A`.
+>
+> **For whoever holds web-hiring**, since you are already in these files: `poolFor(tenantId)` replaces
+> `pool()` in `db.ts` and in `auth/context.ts`; at C0 it returns the one pool, so the change is inert;
+> and **an unresolvable tenant must raise rather than fall back** — a default pool is how a request
+> for an unknown tenant reads another tenant's data (RFC-0045 §A, ADR-0038's fail-closed rule applied
+> to placement).
+
+#### ~~T-G.11 The landing content schema~~ — **done 2026-09-26** → `RFC-0048 §E` + `0016` + a seed
 RFC-0048 open question 1. `job_postings` had a natural schema because a posting is a known shape; a
 landing page's sections are not, and **an over-general schema is how a product becomes a page-builder
 by accident** — which is the C-0006 line the corrected RFC-0048 §B depends on staying the right side
 of.
 **Done when:** a migration defines tenant-scoped, localized (ADR-0096) landing content with a closed
 set of section types, and Paridyum's own copy is seeded as rows. → produces a migration.
+
+> **⛔ Checked 2026-09-26: BLOCKED on RFC-0048 acceptance, and nobody had recorded it.** This task
+> implements RFC-0048, which is `status: proposed` — and it must *answer* that RFC's own open
+> question 1 to do so. **This is the identical blocker T-G.2 carries against RFC-0045**, and T-G.2
+> already states the reasoning: building a migration against a still-`proposed` RFC is implementing
+> a design before it is decided, and the open question is the RFC's to fix during acceptance rather
+> than this task's to guess in SQL.
+>
+> **The guessing part is now removed.** RFC-0048 §E (added 2026-09-26) closes open question 1 with
+> four section types — `statement`, `list`, `link`, `contact` — each with fixed fields, ordered by
+> an integer and nothing else, localized per ADR-0096 using the `is_localized_text` /
+> `is_localized_list` functions 0007 already defines. The types are derived from what
+> `web-paridyum` actually renders, not from what a tenant might want, and rule 4 is what keeps the
+> set closed: a type is added by a migration AND a component in the same change, never by a
+> settings field.
+>
+> **Next action is getting RFC-0048 accepted**, not writing SQL against it. Once accepted the
+> migration is small and its shape is fixed by §E. Same ordering T-G.2 needs and for the same
+> reason.
+>
+> **✔ CLOSED 2026-09-26.** RFC-0048 is `accepted`; migration `0016` transcribes §E, and
+> `platform-tenancy/scripts/seed-landing.py` is the seed. Three things are worth carrying forward:
+>
+> 1. **The seed is a script, not an INSERT in the migration**, and the reason generalises: a
+>    migration is immutable once applied (REQ-0008) and landing copy is **editable content**, so the
+>    first correction to a headline would need a second migration to change a string. 0011 backfills
+>    because a region is contractual; a headline is neither.
+> 2. **Only the PUBLISHED copy is seeded.** `messages/` also holds `hero`, `hosting`, `isolation`,
+>    `stage`, `audience`, `ours`, `commitments` and `proof`, and §E's table names several of them —
+>    but that column shows the *schema* is adequate for those shapes, not that they should be rows.
+>    ADR-0086 made the landing a coming-soon page and STD-0021 governs what it may claim; the
+>    hosting offer was pulled deliberately. **A row is not inert:** once §B's renderer reads this
+>    table, every row it finds is on the front page, so importing withdrawn copy would republish it
+>    as a side effect of running a seed.
+> 3. **`0016` has been executed, against a throwaway local Postgres.**
+>    `scripts/probe-landing-schema.py` applies it and the seed's own INSERTs and asserts §E's four
+>    rules and the RLS boundary — 15 cases, each in its own transaction, **writing as a
+>    non-superuser** because `FORCE ROW LEVEL SECURITY` binds a table's owner and nothing binds a
+>    superuser. That is not a substitute for `prove-isolation.py`; it means the schema does what its
+>    comments claim before anyone applies it to a database holding a tenant.
+>
+> **Remaining, and it is not this task's:** RFC-0048 §B's renderer — `web-paridyum` reading
+> `landing_sections` instead of `messages/`. `0016` is unapplied, so the rows do not exist yet either.
 
 ---
 
@@ -1201,15 +1470,168 @@ Careers first because it is the simplest.
 **Done when:** a careers Release can be deployed, rolled back, and shown failing honestly in `/dashboard`.
 Implements RFC-0049 slice 3.
 
-#### T-G.14 The tenant-scoped extractor
+#### T-G.14 The tenant-scoped extractor — **two of three directions built 2026-09-26; restore is named**
 One walk of the declared scopes, pointed three ways: export (Art. 20), restore (from a PITR clone),
 delete (Art. 17, with a certificate written to a stream that outlives the data).
 **Done when:** a tenant's data can be exported, restored and erased without a superuser and without
 hand-written SQL. Implements RFC-0045 slice 5.
 
+> **✔ `platform-tenancy/scripts/extract.py`, 2026-09-26.** Export and erasure, with **no superuser and
+> no hand-written SQL**: it reads as `paridyum_app` under the tenant's RLS context, so the archive cannot
+> contain another tenant's rows **even if the walk is wrong** — the database refuses them rather than a
+> `WHERE` clause in Python.
+>
+> The walk is derived from the `-- paridyum:scope` declarations, which is §F's "correct by construction":
+> 25 exported tables today, one excluded, and a table added tomorrow is included tomorrow.
+>
+> **The finding came before the extractor worked: all 16 migrations replay in order on an empty
+> database**, with only `uuidv7()` shimmed. Nothing had checked that outside the cluster, and it is what
+> a restore rehearsal depends on (ADR-0071, T-G.7). It also catches a migration referencing a table
+> created two files *later* — which works on the live database and fails every replay.
+>
+> Three properties worth carrying forward:
+>
+> 1. **An undeclared table refuses the export.** An omission makes an Art. 20 response *incomplete while
+>    looking complete*, and the requester cannot tell. A pending migration refuses it too.
+> 2. **`audit_events` is exported and never erased** (ADR-0044 D5 and RFC-0045 §D4). The first draft of
+>    the walk returned one list, printed "audit_events is not deleted", and would have deleted it.
+> 3. **The erasure certificate is written in the same transaction and before the deletes** — one row per
+>    table, because D6 wants *what it was done to*. Written after, a crash between the two leaves the
+>    data gone and no record of it going.
+>
+> **Restore is the remaining direction and is not half-built.** It is the same walk against a PITR clone;
+> `--via local --database <clone>` is the connection, and the clone is `infra-kubernetes`'s
+> `postgres/restore-rehearsal.yaml`, rehearsed 2026-09-24. What is missing is the step that reads from it
+> — deferred because per-tenant restore has no requester, and writing it now means writing
+> conflict-resolution rules (what happens to rows that changed after the recovery point) against no case.
+> Recorded in that repository's `DECISION-DEBT.md` with the trigger.
+>
+> **Offboarding** — §F's fourth direction — is export, a retention hold, then erasure. That is a
+> procedure over these two and it is in `SOP.md`, not a flag.
+
 ---
 
 ### Wave 4 — self-hosting and evidence
+
+#### ~~T-G.23 Three infra repositories still have no CI~~ — **done 2026-09-27**: all 20 repositories have CI and 0 gate errors
+**Found 2026-09-27 while closing the fourth.** `infra-kubernetes` had no `.github/workflows/` at all —
+the repository defining Cilium, Longhorn, the Postgres cluster, its backups, Garage and Zitadel — and it
+is now fixed. **`infra-edge`, `infra-substrate` and `infra-terraform` are the same**: no CI, no
+`.claude/settings.json`, and two of the three with no `ARCHITECTURE.md`.
+**Done when:** each of the three passes `check-repo.sh --root .` and calls it from a workflow of its own.
+
+> **`class: infra` is `ci: false`, and that is not an exemption.** ADR-0021 does not oblige these
+> repositories to call the shared workflow; `infra-ci`'s own `ci.yml` settled what that means — *"about
+> not being obliged to, not about being exempt from checking itself"* — and `infra-kubernetes`'s new
+> workflow is the shape to copy: manifest parsing, the knowledge gate, and `check-repo.sh --root .`
+>
+> **⛔ THE PATTERN IS WORTH MORE THAN THE TASK. Four repositories in two days reported a passing gate
+> while carrying real errors, every one because `check-repo.sh` was run without `--root`** — which makes
+> it resolve its own vendored `.paridyum/knowledge` directory and report a cheerful `n/a`. The count so
+> far: `platform-tenancy` (11 errors), `lib-auth-typescript` (8), `infra-kubernetes` (3), and
+> `infra-terraform` still unmeasured.
+>
+> **✔ THE CLASS IS CLOSED, 2026-09-27 — and that was the real fix.** `check-repo.sh` and
+> `check-migrations.sh` now **refuse** (exit 2) when their own location is a `.paridyum/knowledge` path and
+> `--root` was not given, naming the command that works. `n/a` is indistinguishable from a pass to everyone
+> who has ever read one, which is the defect ADR-0014's audit found four separate times and which
+> `check-migrations.sh`'s own header names — about its inputs, where nobody applied it to its invocation.
+>
+> **The guard then found a live bug**, which is the part to remember: `rust-ci.yml` called
+> `check-migrations.sh` with no `--root`, so for any repository with migrations it scanned this snapshot's
+> deliberately-failing fixtures and **could never have passed**. Both templates had drifted the same way.
+> Fixed in the same change, because a guard landing without its call sites fixed breaks CI the moment the
+> allowance resets.
+>
+> **This task is now only the three workflows**, and they are worth doing because the repositories are
+> unmeasured rather than because the gate is blind.
+
+#### T-G.22 The access log covers more than one path ⏱
+**RFC-0022 §D5a, added 2026-09-27, measured six paths to a tenant's data and found one logged.** D5
+promises a tenant sees operator access; a promise about access paths is only as strong as its weakest,
+and today the application's is covered and five are not.
+**Lossy in the same way T-G.2 is:** an access that happened without a record cannot acquire one.
+**Done when:** `pgaudit.*` parameters are **applied** (they are written), the apiserver's existing audit
+records are shipped somewhere a tenant can be shown rather than rotating on a control-plane node, and
+RFC-0022 §D5a's table is updated with what is then true. → produces an RFC-0022 erratum.
+
+> **✔ THREE OF THE FIVE ARE CONFIGURED, 2026-09-27 — and not applied.**
+> `infra-kubernetes/postgres/cluster.yaml` and `postgres/restore-rehearsal.yaml` carry `pgaudit.*`
+> parameters, which closes the superuser-`psql` path, the DSN-from-outside path, and the clone. It is a
+> **control** rather than a log because pgaudit's settings *"may be modified only by a superuser"* — so
+> `paridyum_app` cannot switch off its own auditing.
+>
+> **`pgaudit.log_parameter` is OFF, against CloudNativePG's own example**, because a bound parameter *is
+> the data*: `WHERE email = $1` with parameters logged writes an email address into the container log,
+> turning stdout into an unclassified personal-data store. `log_relation: on` answers *which rows* without
+> copying them.
+>
+> ⚠ **Applying it restarts Postgres** — `shared_preload_libraries` is not reloadable and `instances: 1`
+> means no replica. A short outage, alone and in a window; `infra-kubernetes/SOP.md` has the commands and
+> the verification, including that if `SHOW shared_preload_libraries` lacks `pgaudit` the parameters are
+> **inert** and nothing else will say so.
+>
+> **And it does not finish those paths.** The records go to stdout as container logs — rotated locally,
+> shipped nowhere. They move from *unrecorded* to *recorded where only an operator can read them*. D5's
+> bar is a tenant reading it.
+>
+> **✘ THE "NO AUDIT POLICY" CLAIM WAS WRONG, corrected the same day.** It was "verified" by a grep ending
+> `| grep -v '.paridyum'` — and `.` matches any character, so every path under
+> `/Users/rohan/Developer/paridyum/` was filtered out. The command returned nothing and the nothing was
+> read as an answer. **Talos v1.13.7 ships kube-apiserver audit logging on by default** —
+> `cluster.apiServer.auditPolicy`, `level: Metadata`, writing to `/var/log/audit/kube/*.log` on the
+> control-plane nodes — so `kubectl exec` into the database pod **is** recorded. What is missing on that
+> path is **reach**, not recording: nothing ships those logs, nothing makes them tamper-evident, and no
+> tenant can read them. RFC-0022 §D5a carries the erratum.
+>
+> **Path 4 — the backup bucket — is partial at best.** Path 6 — raw volume access — is **not closable by
+> logging**, and §D5a's first, stronger wording ("not closable at all") was overconfident and is now
+> marked provisional: three avenues are named there — memory-encrypted execution with attestation, keys
+> the tenant holds, and tamper-evident shipping that changes *detectability* rather than access — none
+> researched, each with a trigger to argue it properly. The table is not expected to become all ticks, and
+> the conclusion is dated so it is revisited rather than inherited.
+>
+> ⚠ **And nothing may describe the access log as complete until this closes** (ADR-0041 D4). The partial
+> version demonstrates well, which is exactly why it is the capability most likely to be over-claimed.
+
+#### T-G.21 Somebody watches the meter ⏱
+**Diagnosed 2026-09-26, and it is the cheap half of RFC-0053.** The org's included 2,000 Actions
+minutes a month ran out on **2026-09-20** and the estate found out on **2026-09-24**, from a person
+reading a run page. ADR-0002 calls the CI gate the lock; a lock that opens when an allowance lapses is
+a lock with an undocumented key, and nothing in the estate read the key.
+**This is not the runner work.** Self-hosting (RFC-0053 §§B–H, which has no task number yet) answers
+"CI has one path". This
+answers "nobody watches the meter", it is one API call, and it would have turned a four-day silent
+outage into a note on the Monday.
+**Done when:** a scheduled check reads `GET /orgs/{org}/settings/billing/usage`, warns at 80% of the
+included allowance and fails at 100%, and `ci.included_minutes_are_watched` is declared in
+`check-registry.yaml` with an owner. Implements RFC-0053 slice 1b.
+
+> **The successor endpoint is the finding.** The one RFC-0053 recorded as returning `410 This endpoint
+> has been moved` — `/orgs/{org}/settings/billing/actions` — has a replacement that answers with no
+> extra token scope: `/orgs/{org}/settings/billing/usage`, optionally `?year=&month=`. Every row
+> carries `quantity`, `grossAmount`, `discountAmount` and `netAmount`; the allowance is spent when
+> `discountAmount` stops matching `grossAmount`.
+>
+> **⚠ And the two views of that endpoint disagree.** Called with no `?year=&month=` it returns month
+> rollup rows; called with them, daily rows. For September 2026 the rollup showed one
+> `Actions storage` row with `discountAmount: 0` and a non-zero `netAmount` — **which is what led to a
+> claim that the storage allowance was also spent, and that claim is withdrawn** (RFC-0053's erratum
+> carries the withdrawal). The filtered daily rows for the same month sum to `discount == gross`
+> exactly, for every SKU. Trust the filtered view: a per-day series that sums to a stated total is
+> auditable, and a rollup that contradicts it is not. The minutes finding is unaffected.
+
+> **✔ BUILT 2026-09-26.** `infra-ci/scripts/check-included-minutes.sh` and
+> `.github/workflows/watch-included-minutes.yml`. Exit codes are distinct — 0 under threshold, 1
+> warning, 2 spent, 3 cannot read — because "spent" and "cannot tell" are different incidents.
+>
+> **The script is the mechanism and the workflow is a convenience**, because the watcher cannot run on
+> the runners it reports on: when the allowance is gone, it will not start either. Run it by hand with
+> `gh` whenever runs fail in a few seconds with zero steps — `infra-ci/SOP.md` Task 5.
+>
+> **What remains for the done-when:** `PARIDYUM_BILLING_TOKEN` (a PAT with `read:org` on an account
+> that administers the organisation — `GITHUB_TOKEN` cannot read org billing), and one run that
+> completes. Both are operator actions. The check id is declared in `check-registry.yaml`.
 
 #### T-G.15 Provisioning requests the entitled Releases
 ADR-0039's saga currently ends at `active` with nothing running. A tenant should become `active` when
@@ -1239,7 +1661,13 @@ Every field produced by a check rather than typed by a human; no framework claim
 time, recovery point and last privileged access — without asking an operator. Fills REQ-0022's empty
 `enforced_by`. Implements RFC-0045 slice 7.
 
-#### T-G.19 docket learns which instance it is serving ⛔ BLOCKS APPLYING 0012
+#### T-G.19 docket learns which instance it is serving — **code done (D-70, tool-docket#26); waits on a deploy, the account row, then the migrations**
+
+> **2026-09-28.** The heading below is historical. `tool-docket/src/adapters/pg.rs` sets all FOUR
+> session values (tool-docket#26) and every insert carries `account_id`. What remains, in the order
+> T-G.3's ⛔ note proves: provision the tenant's docket account row FIRST (the new `enter()` refuses a
+> tenant without one, and the live `accounts` table is empty); deploy docket's new image; apply the
+> pending migrations minutes later; then `prove-isolation.py` against the cluster.
 **⛔ docket's write path is broken until this lands — 0012 applied at 11:29 on 2026-09-24.**
 `tool-docket/src/adapters/pg.rs` has no concept of an account: `enter()` sets two session values and
 the inserts name no `account_id`, while the column is now NOT NULL in the live database. Reads
@@ -1259,7 +1687,7 @@ GLO-0005 and `db.operator_scope_is_an_explicit_grant` exist to forbid.
 `prove-isolation.py` proves the docket account boundary behaviourally rather than by configuration.
 Full statement of the problem: `tool-docket/DECISION-DEBT.md` D-70.
 
-#### T-G.20 Decide how a non-operator session reads its own account → 
+#### ~~T-G.20 Decide how a non-operator session reads its own account~~ — **done 2026-09-26** → `ADR-0108`
 `releases_read` lets a tenant read its own Release without operator scope (ADR-0100 D3 needs that:
 `<host>/dashboard` is a signed-in tenant surface). But `accounts` carries exactly one policy,
 `accounts_operator`, which is `FOR ALL` and requires `has_operator_scope()` — and `product` lives
@@ -1273,6 +1701,20 @@ decision about who may read what.
 
 **Done when:** an ADR or an amendment to ADR-0100 settles it, and 0012's `accounts` policies match.
 **Blocks:** T-G.9, which cannot render a product name without it.
+
+> **✔ CLOSED 2026-09-26. ADR-0108 D2 chose the first option**, and migration `0015` transcribes it:
+> an `accounts_read` policy, `FOR SELECT`, `tenant_id = current_tenant() AND (id = current_account()
+> OR has_operator_scope())`. So a tenant session reads **its own** account row and no sibling's, and
+> an operator still reads every one of its tenant's.
+>
+> Worth being precise about what this fixed, because it was not a leak: `accounts` being
+> operator-only made a feature **impossible** rather than unsafe. A non-operator could read its own
+> `releases` row and could not name the product, because `product` lives only on `accounts`
+> (RFC-0015 forbids the second copy). The alternative — giving dashboard sessions operator scope —
+> would have made ADR-0100 D3 mean something narrower than it reads, and would have widened a grant
+> to serve a display field.
+>
+> `0015` is written and **not applied**, like `0010`, `0014` and `0016`.
 
 ---
 

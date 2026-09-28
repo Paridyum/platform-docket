@@ -17,6 +17,10 @@ enforced_by: []
 
 # ADR-0104 — A product instance is an account, and instances are addressed by path
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0120.** **Accepted cost 4 (per-instance grants) is resolved by
+> ADR-0120 D6** (`account_members`). An account is for a unit **inside** one business; a client
+> company is never an account in its provider's tenant (RFC-0055 D2).
+
 ## Status
 
 **ACCEPTED** as of 2026-09-20 by the operator. **Supersedes ADR-0102**, which was accepted earlier

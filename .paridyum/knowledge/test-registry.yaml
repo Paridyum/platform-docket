@@ -554,7 +554,7 @@ test_types:
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
     checks: [test.tenant_isolation_suite_covers_owned_tables]
-    governed_by: [STD-0009, ADR-0024]
+    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["16.12"]
@@ -576,7 +576,7 @@ test_types:
       including the case where the policy filters reads correctly and permits the write.
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
-    governed_by: [STD-0009, ADR-0024]
+    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115]
     frameworks:
       ssdf: ["PW.8.2"]
       csf: ["PR.AA", "PR.DS"]
@@ -599,7 +599,7 @@ test_types:
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
     checks: [test.operator_scope_denial_is_asserted]
-    governed_by: [STD-0009, ADR-0024, GLO-0005]
+    governed_by: [STD-0009, ADR-0024, GLO-0005, ADR-0115, ADR-0120]
     frameworks:
       ssdf: ["PW.8.2", "PW.9.1"]
       cis: ["6.8", "16.12"]
@@ -625,7 +625,7 @@ test_types:
     evidence: junit.xml, coverage of the role x resource matrix
     applies_to: ["svc-*", "platform-*"]
     checks: [test.authorization_matrix_has_no_untested_cell]
-    governed_by: [STD-0009]
+    governed_by: [STD-0009, ADR-0114, ADR-0116, ADR-0118, ADR-0119, ADR-0120]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["6.8", "16.12"]
@@ -648,7 +648,7 @@ test_types:
       invalidated at logout.
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
-    governed_by: [STD-0009]
+    governed_by: [STD-0009, ADR-0116, ADR-0117, ADR-0119]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["6.3", "16.12"]
@@ -673,7 +673,7 @@ test_types:
       somebody remembered to pass.
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
-    governed_by: [STD-0009]
+    governed_by: [STD-0009, ADR-0117, ADR-0120]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["16.12"]
@@ -1309,7 +1309,7 @@ test_types:
     evidence: axe-style JSON report
     stacks: [typescript]
     applies_to: ["web-*", "mobile-*"]
-    governed_by: [REQ-0009]
+    governed_by: [REQ-0009, ADR-0122]
     frameworks:
       ssdf: ["PW.8.2"]
     declared: 2026-08-08
@@ -1502,7 +1502,7 @@ test_types:
     stacks: [rust]
     applies_to: ["platform-*", "svc-*"]
     checks: [openapi.enum_values_are_identifiers, openapi.error_responses_declare_a_code, domain.events_carry_no_rendered_text]
-    governed_by: [ADR-0032, STD-0010]
+    governed_by: [ADR-0032, STD-0010, ADR-0122]
     declared: 2026-08-08
     notes: >
       The counterpart to TST-0051, and the two are deliberately not merged. TST-0051 is
@@ -1529,7 +1529,7 @@ test_types:
     evidence: junit.xml
     stacks: [rust]
     applies_to: ["platform-*", "svc-*"]
-    governed_by: [ADR-0034]
+    governed_by: [ADR-0034, ADR-0122]
     declared: 2026-08-08
     notes: >
       ADR-0034's three most important rules — the resolution order, the reader-renders-but-

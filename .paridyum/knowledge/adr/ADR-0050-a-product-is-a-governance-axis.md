@@ -219,3 +219,13 @@ recorded here in the same words so the two are recognisably one problem.
 - RFC-0005 — commercial strategy as knowledge; the argument against a sibling repository
 - RFC-0015, ADR-0040 — why the registry does not list repositories
 - BET-0004, BET-0005 — the catalogue, and operating what is franchised
+
+## Amendment — 2026-09-27
+
+**The default for a new product's `kind` is `catalogue`, with `capability` as an argued
+exception — added by ADR-0112.** This decision did not change: it says which axis a product is
+declared on and what each kind owes. ADR-0112 supplies the default this one left open, closes the
+exception to two grounds (a runtime primitive, or no end-customer business possible), and requires
+every `capability` entry to name its ground — checked by
+`product.capability_names_its_exception`. Read the two together; a future reader of this ADR alone
+would otherwise reconstruct the per-case judgement that produced the drift ADR-0112 exists to end.

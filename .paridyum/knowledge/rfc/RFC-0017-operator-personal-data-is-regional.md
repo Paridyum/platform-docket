@@ -16,6 +16,11 @@ enforced_by: []
 
 # RFC-0017 — An operator's personal data lives in the operator's region
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0117, ADR-0119.** This RFC's **operators** — the customers
+> whose people live in their own region — are **orgs** and their **members** (GLO-0012). Its split is
+> adopted: staff in the staff instance, org members in a portal instance in the org's region
+> (ADR-0117 D5, ADR-0119 D1), and a personless org registry in the control plane (ADR-0117 D3).
+
 ## Status
 
 **PROPOSED** as of 2026-08-11. Feedback deadline **2026-09-10**.

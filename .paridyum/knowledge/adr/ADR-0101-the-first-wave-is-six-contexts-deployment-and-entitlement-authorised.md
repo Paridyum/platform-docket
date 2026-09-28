@@ -29,6 +29,13 @@ enforced_by:
 
 # ADR-0101 — The first wave is six bounded contexts, and deployment and entitlement are authorised
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0114.** Where this ADR names the party above a tenant the
+> **operator** — its hierarchy with the operator on top, the `Operator` entity, *"three per
+> operator"* — read **org** (GLO-0012): the customer of paridyum.in, which owns tenants and holds
+> none of their data. `platform-tenancy` owns the org registry and the org scope (ADR-0114,
+> ADR-0115), and `max_tenants` is three **per org** (ADR-0114 D5). *Operator* now means only breadth
+> across the accounts of one tenant (GLO-0001). The text below is unchanged.
+
 ## Status
 
 **ACCEPTED** as of 2026-09-20 by the operator. **Supersedes ADR-0042**, which was `accepted` and

@@ -3,7 +3,7 @@
 -- paridyum:scope platform
 -- paridyum:plane control
 CREATE TABLE locales (
-    id          uuid PRIMARY KEY,
-    locale      char(2) NOT NULL,
-    created_at  timestamptz NOT NULL
+    id          uuid PRIMARY KEY,  -- internal
+    locale      char(2) NOT NULL,  -- internal
+    created_at  timestamptz NOT NULL  -- internal
 );

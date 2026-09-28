@@ -106,7 +106,17 @@ for c in \
   "fail-region-default|a DEFAULTed region — a jurisdiction acquired by accident (ADR-0041 D3)" \
   "fail-region-unconstrained|a region constrained to nothing, so a typo is a jurisdiction (ADR-0041 D3)" \
   "fail-region-not-in-registry|a region constraint disagreeing with region-registry.yaml (ADR-0035)" \
-  "fail-region-not-immutable|a region with no trigger refusing an UPDATE (ADR-0041 D3)"
+  "fail-region-not-immutable|a region with no trigger refusing an UPDATE (ADR-0041 D3)" \
+  "fail-org-without-org-id|an org-scoped table with no org_id (ADR-0115 D1)" \
+  "fail-org-with-tenant-id|an org-scoped table carrying tenant_id (ADR-0115 D2)" \
+  "fail-org-in-control-plane|an org's own rows declared into the control plane (ADR-0117 D3)" \
+  "fail-org-policy-without-predicate|an org table whose policy names no org (ADR-0115 D3)" \
+  "fail-org-column-on-business-data|business data naming its owner org — the third silo (ADR-0115 D9)" \
+  "fail-platform-with-org-id|a platform table carrying a discriminator's name (STD-0023 rule 1)" \
+  "fail-pii-in-control-plane|a pii column in the control plane (ADR-0117 D3)" \
+  "fail-unclassified-in-control-plane|an unclassified control-plane column (ADR-0117 D3)" \
+  "fail-literal-locale|one tenant's languages written as every tenant's (ADR-0122 D4)" \
+  "fail-tenant-locale-fields-missing|a tenant registry with no declared locales (ADR-0122 D4)"
 do
   d="${c%%|*}"; label="${c#*|}"
   expect_caught "$label" bash scripts/check-migrations.sh --root "$F/$d"
@@ -536,6 +546,18 @@ chmod +x "$HR/plugins/paridyum-platform/hooks/checkpoint-session.sh"
 # change, not on commit distance — the first version of this check warned on any gap, which fires
 # on every commit that does not touch the plugin, and a check that fires constantly gets disabled.
 SP="$TMP/pin"; cp -R . "$SP" >/dev/null 2>&1
+# ITS OWN REPOSITORY, ALWAYS, before anything commits in it. `cp -R .` copies `.git` as it finds it,
+# and in a git WORKTREE `.git` is a file pointing at the real repository — so this case once committed
+# "feat: change a hook" onto the branch being tested, sweeping in every uncommitted change, and the
+# next push published it. A fresh repository with the copied tree as its first commit is what the
+# case needs (a HEAD~1 before the harness change) and cannot reach anything outside $TMP.
+rm -rf "$SP/.git"
+# A remote too, as every real checkout has: check-repo.sh errors on a repository with none (ADR-0025),
+# and that error is not what this case tests. The URL is never contacted.
+( cd "$SP" && git init -q -b main . && git remote add origin https://example.invalid/knowledge.git \
+    && git add -A \
+    && git -c user.email=t@t.t -c user.name=T -c commit.gpgsign=false \
+         commit -q --no-verify -m "fixture: the checkout as copied" ) >/dev/null 2>&1
 SH="$TMP/stalehome"; mkdir -p "$SH/.claude/plugins"
 printf '{"paridyum":{}}' > "$SH/.claude/plugins/known_marketplaces.json"
 (
@@ -876,6 +898,14 @@ expect_warns "numeric claims about registry-computed things are listed" \
   "numeric claim" bash scripts/check-knowledge.sh
 kplant "supersession recorded on only one side"      adr/ADR-0023-tenancy-is-row-level-in-one-database.md \
   "superseded_by: ADR-0024" "superseded_by: null"
+# knowledge.retired_terms_absent (ADR-0113 D5). The first plant is the defect itself: a retired
+# phrase in a live artifact that carries no dated note. The second removes the list, and must fail
+# rather than scan for nothing and print a tick — ABSENT IS NOT PASS, as the count baseline has it.
+kplant "a retired phrase in an unnoted artifact (ADR-0113)" glossary/GLO-0011-environment.md \
+  "## Definition" "## Definition — as held by the platform tenant"
+kplant "the retired-terms list removed from ADR-0113" \
+  adr/ADR-0113-org-tenant-and-account-are-three-words-for-three-levels-and-the-vendors-organization-is-named-as-the-vendors.md \
+  "      terms: [" "      x_terms: ["
 
 # knowledge.framework_ids_resolve (ADR-0028). A framework mapping is the easiest thing in this
 # repository to fabricate — PW.4.1 and PW.4.2 are indistinguishable to a reviewer, and a wrong id
@@ -981,7 +1011,8 @@ kwarn "a registered framework with no mapping and no reason (warn)" "no control 
 # ADR-0030 §3: a locked artifact CANNOT gain a verified_by entry, so a hard failure here would be
 # permanent with no legal remedy.
 kwarn "an artifact naming a type that does not name it back (warn)" "governed_by omits" \
-  test-registry.yaml "    governed_by: [STD-0009, ADR-0024]" "    governed_by: [ADR-0024]"
+  test-registry.yaml "    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]" \
+  "    governed_by: [ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]"
 # The other direction. C-0001 is `accepted` — mutable and not deferred — so it is exactly the case
 # the excuse list does NOT cover, which is what makes it a usable fixture.
 kwarn "a type claiming a mutable artifact that stays silent (warn)" "verified_by omits them" \
@@ -1170,8 +1201,27 @@ else
   bad "SessionStart stays silent in a directory with no connection to this repository" "$(sc_out -u PARIDYUM_KNOWLEDGE_ROOT | head -3)"
 fi
 
+# Ages in the ledger. The hook used to compute "now minus created", which straddled a second and
+# floored to a day short, and showed "?" for anything created today. Three proposed fixtures, created
+# today, 46 days ago and in the future; ids built at runtime for the reason given above.
+day_ago() { date -v-"$1"d +%Y-%m-%d 2>/dev/null || date -d "$1 days ago" +%Y-%m-%d; }
+day_ahead() { date -v+"$1"d +%Y-%m-%d 2>/dev/null || date -d "$1 days" +%Y-%m-%d; }
+for spec in "9101:$(day_ago 0)" "9102:$(day_ago 46)" "9103:$(day_ahead 3)"; do
+  n="${spec%%:*}"; created="${spec#*:}"; aid="RFC-$(printf '%04d' "$n")"
+  printf -- '---\nid: %s\ntitle: Age fixture %s\ntype: rfc\nstatus: proposed\ncreated: %s\n---\n\n# %s\n' \
+    "$aid" "$n" "$created" "$aid" > "$wr/rfc/$aid-age-fixture.md"
+done
 # Reconciliation. Uncited fetches reach the ledger; cited and surfaced ones do not.
 printf '{"cwd":"%s","session_id":"fixture0-aaaa","transcript_path":"/nonexistent"}' "$wr" | bash "$SHOOK" >/dev/null 2>&1
+for spec in "9101:0d" "9102:46d" "9103:?"; do
+  n="${spec%%:*}"; want="${spec#*:}"; aid="RFC-$(printf '%04d' "$n")"
+  line="$(grep -F "**$aid**" "$wr/DECISION-DEBT.md" 2>/dev/null)"
+  if [[ "$line" == *"for $want —"* ]]; then
+    ok "the ledger ages $aid as $want"
+  else
+    bad "the ledger ages $aid as $want" "${line:-no ledger line for $aid}"
+  fi
+done
 if grep -q 'never-cited' "$wr/DECISION-DEBT.md" 2>/dev/null; then
   ok "a page read and never cited is filed as an open loop"
 else

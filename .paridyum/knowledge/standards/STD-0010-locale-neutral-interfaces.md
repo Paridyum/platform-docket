@@ -52,6 +52,11 @@ enforced_by:
 
 # STD-0010 — Locale-neutral interfaces
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0122.** §1's tenant fields are implemented as one
+> tenant-scoped, regional `tenant_settings` row — `supported_locales`, `content_locale`, `locale`,
+> `timezone`, `currency`, none defaulted (ADR-0122 D4). Portal-side, the org's defaults seed a new
+> tenant once (ADR-0122 D5).
+
 ## Status
 
 **ACCEPTED** as of 2026-08-08. Four checks implemented in `check-migrations.sh` and proven

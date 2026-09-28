@@ -330,6 +330,28 @@ checks:
     frameworks:
       ssdf: ["PO.4.1"]
 
+  - check: ci.included_minutes_are_watched
+    spec: >
+      Fails when the organisation's consumed GitHub Actions allowance for the
+      current month is at or above 100% of what is included, and warns at 80%.
+      Read from `GET /orgs/{org}/settings/billing/usage`: the allowance is spent
+      when a row's `discountAmount` stops matching its `grossAmount`.
+    owner: infra-ci
+    blocks: [ADR-0002, RFC-0053]
+    declared: 2026-09-26
+    frameworks:
+      csf: ["ID.AM", "DE.CM"]
+    notes: >
+      Declared the day the outage it would have caught was diagnosed. The
+      organisation's included 2,000 minutes ran out on 2026-09-20 and the estate
+      found out on 2026-09-24, from a person reading a run page — four days in
+      which every merge went in with no gate and a red X that said nothing about
+      the change. ADR-0002 calls the CI gate the lock; this reads the key.
+      Deliberately NOT owned by check-org.sh: it must run on a schedule rather
+      than per pull request, because the failure it catches happens between
+      commits, and it cannot run on the runners it is reporting on being unable
+      to start. RFC-0053 slice 1b, and the cheap half of that RFC.
+
   - check: ci.no_actions_rs_actions
     spec: >
       Fails when any workflow step uses an action under the `actions-rs/`
@@ -486,7 +508,7 @@ checks:
       and the repository's manifest names no control framework, or names one for which
       no evidence artifact exists.
     owner: check-migrations.sh
-    blocks: [ADR-0041, ANTI-0007, STD-0006]
+    blocks: [ADR-0041, ANTI-0007, STD-0006, STD-0023]
     declared: 2026-08-07
     frameworks:
       ssdf: ["PO.1.2", "PO.4.2"]
@@ -511,7 +533,7 @@ checks:
       or when a query predicate filters on `account_id` without also constraining `tenant_id`.
     owner: check-migrations.sh
     partial: true
-    blocks: [ADR-0024]
+    blocks: [ADR-0024, ADR-0115]
     declared: 2026-08-07
     frameworks:
       cis: ["3.3"]
@@ -527,6 +549,24 @@ checks:
       that the schema half ships first and the query half depends on how the data layer is
       built. Declaring both in one id rather than two keeps the rule whole, and the partial
       implementation must be recorded as `partial: true` rather than reported as complete.
+
+  - check: db.audit_events_are_operation_shaped
+    spec: >
+      Fails when a distinct `action` value in `audit_events` does not resolve to an
+      operation name the owning service declares. An audit stream whose rows are
+      query-shaped records what the implementation did rather than what a caller asked
+      for, and two services disagreeing about what one row means make the stream
+      unqueryable across the estate.
+    owner: tool-forge
+    blocks: [ADR-0110, ADR-0044]
+    declared: 2026-09-26
+    frameworks:
+      csf: ["DE.AE", "PR.PS"]
+    notes: >
+      Declared with ADR-0110 and unimplementable until there are rows to check: nothing
+      writes audit_events against an applied database yet, because migration 0010 is
+      pending. Named here rather than left in prose, because a check named in prose with
+      no registry entry is the defect ADR-0014 exists to end.
 
   - check: db.locale_columns_are_bcp47_text
     spec: >
@@ -547,6 +587,20 @@ checks:
       RECOMMENDED BUFFER SIZE, not a maximum — the ABNF imposes no upper bound and extension or
       private-use subtags legitimately exceed it, so `varchar(35)` passes this check and can still
       truncate a legal tag. `text` is the rule; the threshold only decides what is loud.
+
+  - check: db.localized_content_matches_its_tenant_locales
+    spec: >
+      Fails when migration SQL — a CHECK, or a function a constraint or trigger calls — tests a jsonb
+      value for a literal locale code with the key-exists operators (`v ? 'en'`, `v ?& array['en',
+      'ar']`) instead of validating against the owning tenant's declared content locales.
+    owner: check-migrations.sh
+    blocks: [ADR-0122]
+    declared: 2026-09-28
+    notes: >
+      Migrations 0007 and 0016 encoded Paridyum's tenant's languages as every tenant's. The estate
+      is rebuilt from empty (ADR-0118), so both are corrected in place rather than allowlisted. It
+      reads SQL text, not meaning: a two- or three-letter jsonb key that is not a locale is reported
+      too, and a literal list built some other way passes; review is the defence at both edges.
 
   - check: db.money_amounts_are_integral
     spec: >
@@ -596,13 +650,43 @@ checks:
       "ASCII only", it is no encoding at all, so it accepts every insert and corrupts on the
       first comparison.
 
+  - check: db.no_org_discriminator_on_business_data
+    spec: >
+      Fails when a table declared tenant- or account-scoped carries a column whose name refers to an
+      org — `org_id`, `owner_org_id`, or any name matching `(^|_)org(_|$)` other than a
+      vendor-qualified `zitadel_org*` — or when such a table's policy names `current_org()`.
+    owner: check-migrations.sh
+    blocks: [ADR-0114, ADR-0115]
+    declared: 2026-09-28
+    notes: >
+      ADR-0115 D9's signed reading made mechanical: the org is not a third silo because business data
+      carries no column naming it. The org's ownership of a tenant is `tenants.owner_org_id`, on the
+      platform-scoped registry, which this check deliberately does not inspect. This is the one check
+      that would notice the reading becoming false.
+
+  - check: db.no_personal_data_in_the_control_plane
+    spec: >
+      Fails when a table declared `-- paridyum:plane control` has a column classified `pii` or
+      `confidential` by its trailing classification comment, or a column with no classification
+      comment at all.
+    owner: check-migrations.sh
+    blocks: [ADR-0117, STD-0023]
+    declared: 2026-09-28
+    notes: >
+      RFC-0014 cost 2 names the hazard in its own words: "a pii column landing in the control plane
+      instead of a region is a residency breach that every check reports as green." Both inputs are
+      already in the migration — the plane directive and the per-column class — so this is decidable
+      statically. An unclassified column is refused because absence is the permission-by-default
+      shape GLO-0005 forbids, one level over. It cannot see a column classified `internal` that
+      really holds a name; classification is the author's claim.
+
   - check: db.no_tenant_id_from_client_input
     spec: >
       Fails when a `tenant_id` or `account_id` value reaching a query originates from a request
       body, query string, path segment or client-supplied header rather than from the verified
       session context.
     owner: tool-forge
-    blocks: [ADR-0023, ADR-0024, ADR-0038]
+    blocks: [ADR-0023, ADR-0024, ADR-0038, ADR-0115]
     declared: 2026-08-07
     frameworks:
       ssdf: ["PW.5.1"]
@@ -625,7 +709,7 @@ checks:
       derived from a missing, null, empty or wildcard `account_id` rather than from an explicit
       positive claim in the verified session.
     owner: check-migrations.sh
-    blocks: [ADR-0024]
+    blocks: [ADR-0024, ADR-0108, ADR-0115, ADR-0120, GLO-0001]
     declared: 2026-08-07
     frameworks:
       cis: ["6.8"]
@@ -644,6 +728,18 @@ checks:
       representation is what makes the leak possible.
       Same argument shape as ADR-0023's ENABLE-versus-FORCE and as the guard-locked-decisions.sh
       hole ADR-0022 found: a default that grants is a guard narrower than it looks.
+
+  - check: db.org_scoped_tables_are_regional
+    spec: >
+      Fails when a table declared `-- paridyum:scope org` is also declared
+      `-- paridyum:plane control`.
+    owner: check-migrations.sh
+    blocks: [ADR-0115, ADR-0117]
+    declared: 2026-09-28
+    notes: >
+      An org's own rows are its people — members, invitations, names — and RFC-0017 keeps a
+      customer's people in the customer's region. The org's personless registry row is
+      platform-scoped and control-plane, and passes.
 
   - check: db.region_is_chosen_at_provisioning_and_immutable
     spec: >
@@ -683,11 +779,12 @@ checks:
 
   - check: db.row_level_security_enabled_on_tenant_tables
     spec: >
-      Fails when a table declaring a `tenant_id` column does not have ROW LEVEL SECURITY
-      enabled and FORCED, has no policy referencing the session tenant variable, or — on a table
-      also declaring `account_id` — has no second predicate constraining the account.
+      Fails when an org-, tenant- or account-scoped table does not both ENABLE and FORCE row-level
+      security, or has no policy, or has no policy constraining its category's discriminators —
+      `org_id` for an org table, `tenant_id` for a tenant table, `tenant_id` and `account_id` for an
+      account table.
     owner: check-migrations.sh
-    blocks: [ADR-0023, ADR-0024, ADR-0045]
+    blocks: [ADR-0023, ADR-0024, ADR-0045, ADR-0115]
     declared: 2026-08-07
     frameworks:
       cis: ["3.3", "6.8"]
@@ -739,7 +836,7 @@ checks:
       Fails when a CREATE TABLE in a migration declares neither `control` nor `regional` as
       its plane, via a `-- paridyum:plane` line comment immediately above it.
     owner: check-migrations.sh
-    blocks: [RFC-0014]
+    blocks: [RFC-0014, ADR-0115, STD-0023]
     declared: 2026-08-11
     frameworks:
       cis: ["3.1"]
@@ -757,12 +854,25 @@ checks:
       a table with no plane directive and watching the gate reject it, per CLAUDE.md's rule that
       a green check is unproven until it has been seen to fail.
 
+  - check: db.tenant_declares_its_locale_fields
+    spec: >
+      Fails when migrations create a `tenants` table but no `tenant_settings` table carrying
+      `supported_locales`, `content_locale`, `locale`, `timezone` and `currency`, each NOT NULL and
+      none with a DEFAULT.
+    owner: check-migrations.sh
+    blocks: [ADR-0122]
+    declared: 2026-09-28
+    notes: >
+      A DEFAULT is refused for the reason migration 0011 refuses one for `region`: a default here is
+      a permanent declaration nobody made (ADR-0034 D2). Keyed on the presence of `tenants`, exactly
+      as the region checks are, so a repository that does not define tenants is not asked.
+
   - check: db.tenant_scoped_tables_are_regional
     spec: >
       Fails when a table declared tenant-scoped or account-scoped is also declared
       `control` plane.
     owner: check-migrations.sh
-    blocks: [RFC-0014]
+    blocks: [RFC-0014, ADR-0115]
     declared: 2026-08-11
     frameworks:
       cis: ["3.1"]
@@ -779,11 +889,13 @@ checks:
 
   - check: db.tenant_scoped_tables_declare_tenancy
     spec: >
-      Fails when a CREATE TABLE in a migration does not declare exactly one of the three
-      categories ADR-0024 defines — platform-owned via the migration's explicit allowlist,
-      tenant-scoped via `tenant_id`, or account-scoped via `tenant_id` and `account_id`.
+      Fails when a CREATE TABLE in a migration does not declare exactly one of the four categories
+      ADR-0115 defines — `platform` (none of `org_id`, `tenant_id`, `account_id`), `org` (`org_id`,
+      and neither `tenant_id` nor `account_id`), `tenant` (`tenant_id`, no `org_id` or `account_id`),
+      or `account` (`tenant_id` and `account_id`, no `org_id`) — or when its columns contradict the
+      category it declares.
     owner: check-migrations.sh
-    blocks: [ADR-0023, ADR-0024, STD-0006]
+    blocks: [ADR-0023, ADR-0024, STD-0006, ADR-0115, STD-0023]
     declared: 2026-08-07
     frameworks:
       cis: ["3.1"]
@@ -1340,7 +1452,7 @@ checks:
       Fails when a repository whose class is `deployable: true` carries no declaration in
       `manifest.yaml` of the tenant-facing interface through which its capability is bought.
     owner: tool-forge
-    blocks: [ADR-0049]
+    blocks: [ADR-0049, ADR-0116]
     declared: 2026-08-17
     notes: >
       C-0008's second half — no runtime capability exists that only Paridyum could consume.
@@ -1392,10 +1504,12 @@ checks:
 
   - check: domain.no_tenantless_request_path
     spec: >
-      Fails when a handler in a deployable repository reaches a data access or a domain
-      operation without a `tenant_id` derived from the verified session per ADR-0038.
+      Fails when a request path in a platform-*, svc-* or catalogue product resolves none of
+      ADR-0116's three contexts from the verified session — a tenant, an org, or the platform
+      context for a staff-instance subject — or resolves more than one, or takes the context from a
+      request parameter.
     owner: tool-forge
-    blocks: [ADR-0049]
+    blocks: [ADR-0049, ADR-0116, ADR-0118]
     declared: 2026-08-17
     notes: >
       ADR-0049 decision 1. THE HARDEST OF THE THREE TO BUILD and the one most worth building:
@@ -1413,7 +1527,7 @@ checks:
       Fails when the tenant Paridyum operates under holds a capability grant that is not
       published and available to any other tenant on the same terms.
     owner: tool-forge
-    blocks: [ADR-0049]
+    blocks: [ADR-0049, ADR-0114, ADR-0116, ADR-0118]
     declared: 2026-08-17
     notes: >
       ADR-0049 decision 2, and the check a prospective franchisee would actually ask to see.
@@ -1425,6 +1539,19 @@ checks:
       boundary declined, this and RFC-0022's access log are the whole mitigation — so this is
       the check whose absence is most expensive, and the one most likely to pass while
       enforcing nothing if it is written to confirm rather than to reject.
+
+  - check: domain.platform_context_reads_only_platform_tables
+    spec: >
+      Fails when a request path serving a staff-instance subject in ADR-0116's platform context
+      reads or writes an org-, tenant- or account-scoped table, or sets an org or tenant session
+      value on its own authority rather than from a grant.
+    owner: tool-forge
+    blocks: [ADR-0116]
+    declared: 2026-09-28
+    notes: >
+      The database already refuses such a read — the accessors raise when their setting is unset —
+      so the defect this catches is the code that asks, and the workaround somebody writes when the
+      database says no during an incident.
 
   - check: domain.saga_steps_declare_compensation
     spec: >
@@ -1447,6 +1574,20 @@ checks:
       yet, which is why the owner is tool-forge rather than a bash gate.
 
   # --- editor.* -------------------------------------------------------------
+  - check: edge.tenant_has_exactly_one_canonical_host
+    spec: >
+      Fails when the generated routing table maps more than one hostname to the same tenant as a
+      serving origin rather than one canonical host plus permanent redirects, or when a tenant's
+      default `<slug>.<app zone>` host is not a redirect once that tenant has an active own domain.
+    owner: tool-forge
+    blocks: [ADR-0121]
+    declared: 2026-09-28
+    notes: >
+      A new `edge.` namespace, for the repository that generates the routing table (infra-edge). The
+      rule is already the routing table's, in prose; it needs a check the day hosts stop being
+      written by hand, which is the day the saga first mints one. Owned by tool-forge until
+      infra-edge implements it, so it counts as unimplemented, honestly.
+
   - check: editor.vscode_settings_committed
     spec: >
       Fails when .vscode/settings.json is absent from a Rust repository, or is
@@ -2148,6 +2289,22 @@ checks:
       corrected by hand. It is prose in a non-artifact file with no frontmatter to key on, and
       ADR-0022 cost 1 already records CLAUDE.md as deliberately unchecked.
 
+  - check: knowledge.retired_terms_absent
+    spec: >
+      Fails when a scanned knowledge file contains a phrase on ADR-0113's `args.terms` list and
+      carries no dated note — a blockquote line beginning `> **Superseded in part, <date>` that
+      names ADR-0113. Superseded artifacts, the artifacts in `args.exempt`, CHANGELOG.md, the
+      generated DECISION-DEBT.md, research logs and test fixtures are not scanned.
+    owner: check-knowledge.sh
+    blocks: [ADR-0113]
+    declared: 2026-09-28
+    notes: >
+      Built because the stale models were live on 2026-09-28: an agent reading the estate met
+      "operator → tenant → account", "home region" and, in a draft, an org stored as an account of a
+      tenant that ran the portal. The check refuses phrases, not ideas, and a file-level note waives
+      it for that file — so a new use of a retired phrase in an already-noted file passes. That is the
+      price of correcting accepted artifacts with notes rather than rewrites (ADR-0113 D7).
+
   - check: knowledge.review_dates_not_overdue
     spec: >
       Fails when an artifact carries a `review_date` earlier than the current date, for a
@@ -2634,6 +2791,26 @@ checks:
       Whichever is implemented in tool-forge first should treat the other as the narrower case.
 
   # --- release.* ------------------------------------------------------------
+  - check: product.capability_names_its_exception
+    spec: >
+      Fails when a product with `kind: capability` in product-registry.yaml cites neither an
+      ADR-0112 exception ground (a runtime primitive, or no end-customer business is possible)
+      nor a re-review owed under ADR-0112 decision 4.
+    owner: tool-forge
+    blocks: [ADR-0112]
+    declared: 2026-09-27
+    notes: >
+      ADR-0112 makes `catalogue` the default and `capability` an argued exception; this is the
+      citation half of that rule — the entry must say which it is and why, where retrieval finds
+      it. Reported at `warn` in its `enforced_by` entry, because a citation can lag a review and
+      a guard that fires red on an honest in-progress re-review trains people to silence it.
+      IT DELIBERATELY DOES NOT CHECK THE TRUTH OF THE GROUND. Whether "no end-customer business
+      is possible" is true is judgement, and a check approximating judgement with a wordlist is
+      the false confidence ADR-0002 exists to prevent — the call STD-0017's status section
+      already makes about account naming. The six capability entries carry their grounds as of
+      2026-09-27 (ADR-0112 decision 4), so this check passes from the day it is built; if it
+      ever warns, an entry was added without its ground.
+
   - check: product.sequencing_respects_second_vertical_rule
     spec: >
       Fails when more than one product of `kind: catalogue` in product-registry.yaml is at
@@ -3124,6 +3301,22 @@ checks:
       on a developer machine — never in CI on a fresh clone. `warn` for that
       reason. scripts/install-hooks.sh is what makes it pass.
 
+  - check: repo.retired_org_identifiers_absent
+    spec: >
+      Fails when a Paridyum-authored source file uses an identifier on ADR-0113's `args.retired`
+      list — the names that used a bare org/organization for a tenant's Zitadel organization.
+      Ignores vendored snapshots (`.paridyum/knowledge/`), generated output, lockfiles, and Zitadel's
+      own API paths and field names.
+    owner: tool-forge
+    blocks: [ADR-0113, GLO-0012]
+    declared: 2026-09-28
+    notes: >
+      A name check, not a meaning check: it stops the retired names returning and cannot see a fresh
+      identifier that borrows a bare `org` for the vendor object. `warn` while ADR-0113's staged
+      rename runs, `error` from its stage 3. The two fenced governance positions — `scope: [org]` and
+      the `org.*` namespace — are frontmatter and check-id syntax, outside this check by
+      construction.
+
   - check: repo.scripts_are_lf_only
     spec: >
       Fails when a tracked .sh, .bash or .zsh file contains a CR byte.
@@ -3545,6 +3738,34 @@ checks:
       breadth granted by a dropped field, a null lookup, a middleware ordering mistake — so
       a suite asserting only that an operator CAN see every account passes identically
       against the implementation the rule forbids.
+
+  - check: test.org_membership_confers_no_business_access
+    spec: >
+      Fails when platform-tenancy, or any tenant-facing service, lacks the negative test: a member
+      of the org that owns a tenant, holding no per-tenant grant, is refused inside that tenant —
+      zero rows read, every write refused.
+    owner: tool-forge
+    blocks: [ADR-0114, ADR-0120]
+    declared: 2026-09-28
+    notes: >
+      GLO-0005's absence-as-grant hazard one level up. "Owns the tenant" read as "may act in the
+      tenant" is the easiest shortcut in the org model, and it fails open. The denial is the
+      assertion (STD-0009).
+
+  - check: test.role_is_honoured_only_in_its_granting_organization
+    spec: >
+      Fails when either auth library lacks the negative test: a verified token whose `operator` role
+      the roles claim records as granted in Zitadel organization C, with `resource_owner` B, confers
+      no role in B and no tenant context in C; or when that test passes against a planted reversion
+      of the fix.
+    owner: tool-forge
+    blocks: [ADR-0119]
+    declared: 2026-09-28
+    notes: >
+      The escalation in the 2026-09-27 research brief, F-H: `roles_from_claims` (lib-auth-rust) and
+      `Object.keys(rolesClaim)` (lib-auth-typescript) keep role names and drop the organization each
+      was granted in, while the tenant comes from `resource_owner`. Latent while nothing creates a
+      cross-organization assignment; declared so it is closed before anything does.
 
   - check: test.static_analysis_runs_on_pull_request
     spec: >

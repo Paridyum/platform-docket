@@ -349,4 +349,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Repository hygiene
-        run: bash .paridyum/knowledge/scripts/check-repo.sh
+        # `--root .` IS NOT OPTIONAL. Without it the script inspects the vendored snapshot it lives
+        # in rather than this repository, and reports `n/a` for almost everything — which reads
+        # exactly like a pass. The live `infra-ci` workflow already passed it; this template had
+        # drifted behind, so a repository scaffolded from it would have inherited the blind spot.
+        run: bash .paridyum/knowledge/scripts/check-repo.sh --root .

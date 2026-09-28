@@ -2,11 +2,11 @@
 id: STD-0006
 title: Migration conventions — how a table declares its tenancy and its data class
 type: standard
-status: locked
+status: superseded
 created: 2026-08-07
 locked_at: 2026-08-07
 supersedes: null
-superseded_by: null
+superseded_by: STD-0023
 scope: [org, platform, service]
 applies_to: ["platform-*", "svc-*"]
 tags: [migrations, sql, tenancy, postgres, rls, data-classification]

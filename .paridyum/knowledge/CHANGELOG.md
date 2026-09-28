@@ -11,8 +11,95 @@ handle — file names may be reorganised, ids never are.
 
 ## [Unreleased]
 
-
 ### Added
+
+- **The org model — paridyum.in's customer is an org, which owns tenants and holds none of their data**
+  (ADR-0113 to ADR-0122, GLO-0012, STD-0023, all `accepted` 2026-09-28 by the operator). The estate
+  had three models of who owns a tenant live at once — "operator → tenant → account" in accepted
+  artifacts, tenant zero holding the control plane, and a draft storing the org as an account of a
+  tenant that ran the portal — and the operator's instruction was that org and tenant must never be
+  mixed. The set:
+  - **GLO-0012 — Org**, and **ADR-0113 — one word per level**: org, tenant, account, member, operator,
+    staff, the portal, the console. The vendor's object is `zitadel_org`; `scope: [org]`, the `org.*`
+    checks and "the operator" as the decider are fenced older meanings. The code rename is staged.
+  - **ADR-0114 — the org is first-class**: its own `org` scope and `paridyum.current_org()`, a
+    personless registry row, members and roles, `max_tenants` and billing per org, ownership as
+    `tenants.owner_org_id`. Supersedes ADR-0109, whose D3 had left this party unmodelled.
+  - **ADR-0115 — four scopes, one schema per plane's database** (supersedes ADR-0024, restated in
+    full). Business data still carries exactly `tenant_id` and `account_id`; the operator **signed**
+    the reading that the org is not ADR-0024 D9's deferred third silo. Resolves RFC-0014 D3 and D4.
+  - **STD-0023 — migration directives** (supersedes STD-0006): `-- paridyum:scope
+    platform|org|tenant|account`, and `-- paridyum:plane` and `-- paridyum:rescope` ratified at last.
+  - **ADR-0116 — every request resolves an org or a tenant** (supersedes ADR-0049): the tenant context
+    everywhere, the org context at the portal, and a platform context for staff that the database
+    confines to the personless skeleton.
+  - **ADR-0117** (an org has a region; one credential per person in one region; five crossings),
+    **ADR-0118** (paridyum.in is the platform's own surface; tenant zero is Paridyum's tenant only;
+    genesis written down), **ADR-0119** (identity by plane; a role counts only in the Zitadel
+    organization that granted it), **ADR-0120** (every reach into a tenant or an org is a grant it sees
+    and revokes — owners, providers and Paridyum alike), **ADR-0121** (one canonical host per tenant;
+    a public-suffix app zone), **ADR-0122** (software locales vs content locales; completeness per
+    tenant, in a row trigger).
+- **RFC-0056 (signup), RFC-0057 (apps a tenant offers its customers), RFC-0058 (store accounts)** —
+  `proposed`. Every user flow from joining to transferring a tenant; nothing provisioned before an
+  address is proven; a person's install is an account and a company is never one; each tenant
+  publishes under its own store accounts, with Paridyum a grantee.
+- **Eleven check ids, six of them implemented and watched failing the day they were declared.**
+  `knowledge.retired_terms_absent` (`check-knowledge.sh`) refuses the retired phrases in any unnoted
+  knowledge file. `check-migrations.sh` gains `db.org_scoped_tables_are_regional`,
+  `db.no_org_discriminator_on_business_data`, `db.no_personal_data_in_the_control_plane`,
+  `db.localized_content_matches_its_tenant_locales` and `db.tenant_declares_its_locale_fields`, with
+  ten fixtures that each fail for exactly one reason. Run first against the unchanged gate, those
+  fixtures showed it **rejecting a correct org table** and **missing six defects outright**.
+- **Two research records in `docs/`** — the 2026-09-27 review brief on RFC-0055 and the 2026-09-28
+  org, regions and locales research — each under a dated note saying which of its proposals landed.
+
+- **RFC-0054 — media custody is a product: a metadata-only service, and the tenants' own devices as
+  workers** (accepted). Shoot media gets one archive grammar, an ASC MHL chain of custody, and a
+  ranked set of destination adapters — the account's own Sync.com or any S3-compatible store — with
+  configuration in the portal and the destination secret on the station. The operator's requirement
+  that it *"work for independent users, with Paridyum as the first tenant"* is what makes it a
+  product under C-0008 and ADR-0049 rather than an operator tool, and the operator chose the
+  **`catalogue`** route: reel is registered at `proposed`, **C-0006 anti-goal 6 gates entry to
+  `building`** until hosting has a renewed paying customer, and the design work is deliberately not
+  gated with it.
+
+- **REQ-0023 — camera media is copied, hashed, manifested and reconciled before a card that holds it
+  is cleared** (accepted). The obligations half of the same split, independent of the design per
+  ADR-0018: read-only sources, hash-on-read with a manifest, a card cleared only against two
+  governed places, and a pipeline that can always answer what still depends on it.
+
+- **MKT-0005 — media custody for small production businesses** (accepted): the external,
+  non-tenant-derived evidence selecting the market `reel` is registered against — the population
+  and its paying head (a 5,095-creator survey; 67% earn under USD 10k), proven spend (OffShoot and
+  ShotPut at ~USD 169–249 per licence), documented loss (71% have lost data), and the gap visible
+  from both sides (Sync's own slowness and silent skips; offload tools that stop at the disk or the
+  bucket). Bounds stated rather than discovered later.
+
+- **ADR-0111 — a distributed agent is a class, and a station authenticates as a Native client by
+  device authorization** (accepted). Adds the `agent-` repository class — registry entry and the
+  generated enums landing in the same change — because ADR-0070 gives a `tool-` no OIDC client
+  while RFC-0054's station is an internet-facing distributed client; pairing is RFC 8628 device
+  authorization, so no secret ships with the binary. ADR-0070 carries a dated amendment note.
+
+- **ADR-0112 — a product is a catalogue by default, and a capability is an argued exception**
+  (accepted). `capability` becomes the door that must be argued: two grounds only — a runtime
+  primitive, or no end-customer business possible — and each `capability` entry now names its
+  ground (`product.capability_names_its_exception`, declared and unbuilt). docket and hiring are
+  named for the re-review the rule implies; entitlement, identity, routing and tenancy record
+  ground (a); the registry header and ADR-0050 both point at the new default. "Absolutely hard"
+  is defined as impossible, never inconvenient.
+
+- **RFC-0055 — using, serving and operating are separate flows, and a client company is its own
+  tenant** (`proposed`). Separates the five verbs one word was carrying — *use*, *divide*, *serve*,
+  *sell the business*, *rent the platform* — places route 1 (service-first, tenants inside) where it
+  actually lives (RFC-0047's gated stamp, never a product-level flow), and locates the operator's
+  **business store** as a section of the portal over a product's `franchised` stage — Paridyum's own
+  playbooks, explicitly not a marketplace (C-0006). **Revised before it reached `main`:** its first
+  text served a client company as an account inside the provider's tenant, which the 2026-09-27 review
+  brief showed is final for docket at the first record and wrong under DPDP; a client company is now
+  its own tenant, reached by a grant it can see and revoke (ADR-0120). RFC-0044 carries a
+  qualification note because its `to sell docket` language was the jank.
 
 - **ADR-0107 — a shared library's repository name carries its stack, and the artifact it publishes
   does not.** **Accepted 2026-09-24.** Closes the half of RFC-0004's shared-package question that
@@ -36,6 +123,23 @@ handle — file names may be reorganised, ids never are.
   `lib-tenancy` and is not an answer to whether the isolation mechanism should exist twice.
 
 ### Changed
+
+- **ADR-0024, STD-0006, ADR-0049 and ADR-0109 superseded** — by ADR-0115, STD-0023, ADR-0116 and
+  ADR-0114. The locked three change only `status` and `superseded_by`; each successor restates what
+  still holds, so no reader needs the superseded text.
+- **Thirty-seven files carry a dated "Superseded in part, 2026-09-28" note** rather than a rewrite
+  (ADR-0113 D7): every file that said "operator → tenant → account", used the retired name for the
+  control region, put the control plane inside tenant zero, served a client company as an account,
+  or fixed one estate-wide locale set. GLO-0004's tree is redrawn with the org as owner above the
+  silos; PLAN-TENANT-FLOW's C1, C2, C3 and D8 are re-scoped to RFC-0056, ADR-0114 and ADR-0121.
+- **REQ-0009 and REQ-0019 move to `accepted`** — both triggers had fired (ADR-0122 D9).
+- **`CLAUDE.md`** routes "build a runtime capability" to ADR-0116 and "write a migration" to STD-0023
+  and ADR-0115, and gains a row for the words org, tenant, account, operator and business.
+- **`check-registry.yaml`** — the tenancy, RLS and request-path specs are widened to four scopes and
+  three contexts, and every check the new artifacts cite lists them in `blocks`.
+- **`check-migrations.sh` no longer folds a column's trailing class comment into its type.** The last
+  column of a table has no comma to stop the capture, so `created_at timestamptz NOT NULL -- internal`
+  was recorded with `-- internal` inside its type.
 
 - **C-0007 narrowed, in place, for the multi-stack library case (ADR-0107).** One subsection added
   to *Repositories*, one clause to the crate-name rule. `accepted` rather than `locked`, so the
@@ -763,7 +867,619 @@ handle — file names may be reorganised, ids never are.
   pre-commit generator — a tracked-file property, unlike ADR-0007's machine-state warnings, so CI
   can run it. Two fixture cases, one per site.
 
+- **The install documented by archify's own README is declined.** `npx skills add tt-a1i/archify -g`
+  delegates the clone to a third-party CLI at no pinned revision — an unpinned dependency fetching an
+  unpinned dependency. The pin is a commit sha because the package is `"private": true` and not on
+  npm, and because its newest tag (`v2.9.0`) does not correspond to the shipped version
+  (`2.17.0-dev.1`): there is no release tag that names the code anyone would run.
+
+
+- **`run_gate` captures gate output instead of discarding it.** Warnings go into the checkpoint
+  commit message beside the gate results, and onto stderr while the operator is looking. Failing
+  gates now record what failed, so `git log --grep 'FAIL'` stops being a list of checkpoints with
+  no diagnosis.
+- **The generated pre-commit hook no longer redirects `check-repo.sh`, `check-migrations.sh` or
+  `check-changelog.sh` to `/dev/null`.**
+- **`session-context.sh` reports research capture as armed only when `log-web-sources.sh` is
+  present in the INSTALLED plugin**, not when `PARIDYUM_KNOWLEDGE_ROOT` is set. The old form would
+  have announced capture as armed on 2026-08-31 while nothing was capturing — an assurance derived
+  from configuration, which is the conflation ADR-0007's own note names.
+- **`paridyum-platform` version `0.1.0` → `0.2.0`.** The cache is keyed by version, and `0.1.0`
+  had covered at least three distinct hook sets. ADR-0059 decision 4.
+
+- **The evidence ledger — RFC-0034 step 5.** `append-evidence.py` appends STD-0014 envelopes
+  to a hash-chained, append-only `YYYY-MM.jsonl`; `verify-evidence.py` walks it and reports
+  chain faults with a remedy, not just a diagnosis; `collect-evidence.py` pulls envelopes from
+  the organisation's CI runs; `collect-evidence.yml` runs that twice daily.
+
+  **Pull, not push**, for REQ-0001's reason: org-level Actions secrets do not work for private
+  repositories on Free, so a push design needs one write credential per repository — growing
+  with the estate, failing invisibly, and letting any repository forge another's results. This
+  needs one read-only credential in one place, and no repository can write to the ledger at all.
+
+  **The digest rule is written down**, because RFC-0034 §4 did not state it and an ambiguous
+  digest makes verification impossible later: `entry_sha256` is SHA-256 over the canonical
+  JSON of the entry with the `entry_sha256` key *removed*, keys sorted, compact separators,
+  UTF-8, non-ASCII unescaped — the same encoding `tool-docket`'s `chain.rs` already produces,
+  so the two ledgers hash the same data to the same digest.
+
+  **Identity is the envelope's own canonical bytes**, not a composite of run id and attempt.
+  The composite cannot identify a `local` envelope at all, because STD-0014 forbids `run`
+  there — so it would degrade to no key exactly where duplicates are most likely, a person
+  running a command twice.
+
+  Tamper-evidence proven on a real ledger rather than a fixture: one byte changed inside a
+  line, `verify` names the line, the recomputed digest and the claimed one, and refuses; an
+  append onto the broken chain is refused; restoring the byte returns the file bit-identical
+  and appends resume.
+
+- **`verify-evidence.py` runs in `infra-ci`'s own CI**, not only in the collector before it
+  commits. The collector proves what it wrote; this proves nobody rewrote anything since,
+  which is the property an append-only record exists for and is worthless if only the writer
+  checks it.
+
+- **`junit-to-envelope.py` — the shared converter STD-0014 requires,** with a 67-case suite
+  wired into `test-checks.sh` so it runs in the blocking tier rather than being remembered.
+  One implementation for every stack: JUnit in, envelope out. It validates what it writes,
+  against the schema *and* the cross-field rules the schema cannot carry, and refuses rather
+  than substituting when JUnit omits `timestamp` or `time` — which this repository's own gate
+  suite does.
+
+  Its most valuable cases prove a claim this repository makes about itself. They corrupt an
+  envelope between build and write, assert the vendored validator **passes** all three, and
+  assert the converter refuses them anyway. So "an envelope satisfying the schema is not
+  thereby valid" is demonstrated rather than asserted.
+
+- **`report-test-coverage.sh` — which declared test types actually run, and how much of the
+  answer is inference.** RFC-0034 rollout step 1, which needs no decision from the RFC. It
+  discovers repositories rather than listing them, resolves each caller's `uses:` against the
+  local reusable workflow so the pipeline can be read, and binds the caller's `with:` inputs so
+  literal gates evaluate.
+
+  **Every row carries a confidence and prints its basis.** `declared` (the pipeline names the
+  TST- id), `direct` (the step list and literal gates settle it), `HEURISTIC` (states the
+  inference and the tool list it searched), or `cannot determine` — which is used when nothing
+  was probed, never collapsed into "not found". It is a *report*, not a check: it exits 0
+  whatever it finds, and its header says why.
+
+  Findings worth acting on, each verified against the repositories:
+  - **`TST-0003 integration` is `required`, tier `pr`, and runs nowhere.** Both Rust callers
+    pass `integration: false` explicitly, neither has a `tests/it/`, and `console-docket`
+    declares no integration script.
+  - **`TST-0013 mutation` is declared and never fires** — the job exists, gated on the nightly
+    tier, and nothing in the estate passes that tier or schedules it.
+  - **`console-docket`'s Playwright harness exists and no CI job invokes it** — already known
+    and recorded there, now visible from the estate level.
+  - **`infra-ci` runs no secret scan on its own code** while shipping the secret-scan job to
+    every other repository.
+  - **`TST-0061 boundary-conformance` rests on one of its three declared checks;** the other two
+    are implemented nowhere.
+
+  And the number that most supports RFC-0034: of the declared types, exactly **one** row is
+  `declared` by a pipeline, because the whole estate names a TST- id in one place. Most types
+  can only be answered by annotating a job with its id, which is what RFC-0034 §1 proposes —
+  every annotation added moves a row from heuristic or unknown to declared.
+
+- **STD-0014 — the test evidence envelope**, and `test-envelope.schema.json` as its machine
+  contract. Implements RFC-0034 §2. JUnit XML is what every stack already emits and is
+  anonymous about everything that matters: repository, commit, tier, which declared test type
+  it implements, and whether a workflow or a laptop produced it. The envelope carries those
+  and wraps the JUnit rather than replacing it, so Rust, TypeScript, Python and anything after
+  them are read by one consumer.
+
+  **`provenance` is the field that earns its place.** `local` exists because
+  `console-docket`'s Playwright suite covers the write path and cannot run in CI — no runner
+  has a typesetter — so rejecting local runs would keep the estate's most valuable suite
+  invisible. Accepting them unlabelled would make the evidence untrustworthy. So a `local`
+  envelope may never satisfy a gate, may never be the sole reason a `required` type reports as
+  running, and is displayed as what it is wherever a number derived from it appears.
+
+  **Two rules the schema cannot enforce are named in the standard rather than assumed.**
+  Verified by mutating a real envelope from a live CI run: eight of ten corruptions are
+  rejected, and the two that are not are both cross-field — `totals` summing to `tests`, which
+  JSON Schema cannot express at any version because it has no arithmetic, and the
+  `provenance`-conditional fields, which the schema expresses with `allOf`/`if`/`then` and the
+  vendored validator declines to implement while saying so out loud. The consequence is a
+  rule: a producer validates against the schema *and* checks those two by hand, because an
+  envelope that satisfies the schema is not thereby valid.
+
+- **`artifacts` on a test type** in `test-registry.schema.json` — the machine-readable
+  counterpart to `evidence`. `evidence` stays prose and is never parsed: it holds sentences
+  like `"junit.xml, trace and video artifacts"` and `"capacity model with the measurements
+  behind it"`, and a collector reading them would make that English load-bearing, which
+  ANTI-0008 forbids by name. Optional, because a type producing nothing collectable — a manual
+  review, a drill — should be able to say so rather than be guessed at.
+
+- **RFC-0034 — test evidence is attributed to a declared type, collected by pull, and read
+  from one place.** `test-registry.yaml` declares a catalogue of test types and nothing can
+  say which of them run: evidence is per-repository, expires at 90 days, and no workflow
+  declares which declared type it implements, so the mapping is a guess. `console-docket`'s
+  Playwright suite covers the write path and runs on a laptop, so its evidence exists
+  nowhere. REQ-0006 §6 asks for CI pass rate and flake rate and neither is obtainable.
+
+  Two constraints did the deciding. **ANTI-0008 forbids the obvious implementation:**
+  `evidence` is prose written for a person — `"junit.xml, trace and video artifacts"` — so a
+  collector that parsed it would make that English load-bearing. A separate machine-readable
+  `artifacts` field is proposed and the prose is left untouched. And **REQ-0001's finding
+  chose pull over push:** org-level Actions secrets do not work for private repositories on
+  Free, so a push design needs one hand-set write credential per repository, growing with the
+  estate, failing silently when one goes stale, and letting any repository forge any other's
+  results. Pull needs one read-only credential in one place.
+
+  Sequenced so the credential decision comes last: an inventory report, then the envelope
+  standard, then emission in the reusable workflows, then a dashboard that reads live state
+  with the operator's own `gh` credentials and no stored secret at all, and only then the
+  ledger. Six alternatives are recorded, including a third-party service (rejected on
+  REQ-0012's exitability test, the same test that rejected Terraform) and doing nothing
+  (survivable at this size, and rejected because nobody reads the workflows so nobody knows).
+
+  Open questions are left open, including the one that gates the last step: whether a
+  read-only organisation-wide CI token falls under REQ-0001, which is titled *runtime* secret
+  management. That is not an agent's call.
+
+- **`nextjs-ci.yml` — the reusable TypeScript/Next.js CI workflow.** ADR-0021 requires CI
+  to be a reusable workflow per stack, called by every class declaring `ci: true`. Only
+  `rust-ci.yml` existed, so the `console` class ADR-0055 added had no CI to call and its
+  gates were enforced by nothing. Five jobs: `gates` (lint, typecheck, build in one job —
+  they share an install, and splitting them triples the install to save nothing),
+  `supply-chain`, `secrets`, `changelog`, `governance`. It deliberately runs **no tests**:
+  RFC-0003 selects Vitest and Playwright, no caller has either, and a test job that passes
+  on an empty suite reports coverage of nothing.
+
+  pnpm is installed with `npm install -g pnpm@11 --ignore-scripts` rather than via
+  `corepack` (no longer bundled with Node, absent in 25.x) or `pnpm/action-setup` (one more
+  third-party action to pin and trust with the job token, for one command). Scripts come
+  from the caller's vendored snapshot for the reason `rust-ci.yml` records: the default
+  `GITHUB_TOKEN` can only read the calling repository.
+
+- **`check-pnpm-builds.sh` — fail when a dependency ships a build script nobody reviewed.**
+  pnpm's own `strictDepBuilds: true` is meant to do this and is unusable in a repository
+  with even one reviewed-and-refused package: the refusal itself trips it, so *every*
+  install exits non-zero, fresh and satisfied alike, taking every `pnpm exec` and CI step
+  with it. The documented escape hatches do not work — an `allowBuilds` entry of `false`
+  does not silence it on pnpm 11.22.0, and the pnpm 10 key `ignoredBuiltDependencies` is no
+  longer read. So callers set `strictDepBuilds: false` and recover the signal here, by
+  asserting that `pnpm ignored-builds` reports nothing under *Automatically ignored* while
+  leaving reviewed refusals silent. Verified in both directions: it passes with a reviewed
+  refusal present and fails, naming the package, when that review is removed.
+
+
+- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
+  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
+  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
+  each execute both tiers — identified by STD-0001's file layout rather than by separate
+  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
+  does **not** claim TST-0003: integration runs in its own step, gated on
+  `inputs.integration`, and that gate is off for every current caller.
+
+  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
+  inference into a declared fact.
+
+- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
+  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
+  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
+  `kind` is required now — the registry's job is to say what a type produces, and where it
+  lands is the producing job's business. Putting a repository's directory layout into a
+  locked org-scope registry was the mistake.
+
+- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
+
+- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
+  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
+  new `console-` repository rather than a new class.
+- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
+  is what the secret grants, not where it lives. A credential a *running service* needs is in
+  scope; one that reads only what its holder can already read, used by CI, is not. Written into
+  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
+  every time. It explicitly does not make such a token free — it is still one secret set by hand
+  in one repository, which is the drift REQ-0001 describes, bounded at one.
+- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
+  first console served HR and the wording leaned on that example enough that a testing dashboard
+  for engineers read as though it needed a different class. The test in the ADR already settled
+  it — the class turns on reachability, and nothing in that test mentions who the operator is.
+  Splitting on job title would mean a second class describing the same shape.
+
+- **RUN-0001 now provisions `tofu` rather than `terraform`, and gains `sops`, `age` and
+  `talosctl`.** ADR-0052 decided OpenTofu and declined the Terraform binary — Terraform has
+  shipped under BUSL since v1.6 and fails REQ-0012's exitability test, the same test that made
+  RFC-0025 reject Sidero Omni. The runbook was the decision's last unclosed edge: it was still
+  installing the binary the organisation had decided against, and a workstation provisioned
+  correctly ended up with the wrong tool. The three tools added are the ones Phase 2b's substrate
+  tasks call and the runbook did not install. **ADR-0020's `terraform/` directory and the
+  `terraform.fmt_and_validate` check id are unchanged** — ADR-0052 decision 2 keeps both, because
+  the identifier is vocabulary and `tofu fmt`/`tofu validate` are the operations it names.
+  The `kubectl` and `helm` rows also now cite ADR-0020 rather than superseded ADR-0003.
+
+
+- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
+  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
+  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
+  each execute both tiers — identified by STD-0001's file layout rather than by separate
+  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
+  does **not** claim TST-0003: integration runs in its own step, gated on
+  `inputs.integration`, and that gate is off for every current caller.
+
+  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
+  inference into a declared fact.
+
+- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
+  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
+  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
+  `kind` is required now — the registry's job is to say what a type produces, and where it
+  lands is the producing job's business. Putting a repository's directory layout into a
+  locked org-scope registry was the mistake.
+
+- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
+
+- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
+  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
+  new `console-` repository rather than a new class.
+- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
+  is what the secret grants, not where it lives. A credential a *running service* needs is in
+  scope; one that reads only what its holder can already read, used by CI, is not. Written into
+  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
+  every time. It explicitly does not make such a token free — it is still one secret set by hand
+  in one repository, which is the drift REQ-0001 describes, bounded at one.
+- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
+  first console served HR and the wording leaned on that example enough that a testing dashboard
+  for engineers read as though it needed a different class. The test in the ADR already settled
+  it — the class turns on reachability, and nothing in that test mentions who the operator is.
+  Splitting on job title would mean a second class describing the same shape.
+
+- **REQ-0006, REQ-0007, REQ-0012, REQ-0015 and REQ-0016 move `deferred` → `accepted`.** Their
+  triggers had fired and nobody noticed, because **nothing detects a fired trigger**:
+  `knowledge.deferred_requirements_have_triggers` checks a trigger is *present*, and the only
+  time-aware check hardcodes the assumption that triggers have not fired. Detection is a human
+  reading eighteen files. Each trigger now records what fired it, in REQ-0002's format.
+  - **REQ-0007** — RFC-0003 and RFC-0008 were both written from fetched external sources, one of
+    them correcting a CVE id inside a binding artifact. The requirement's own deferral rationale
+    said item 4 *"needs an agent consuming external content, which today it does not"* — false as
+    written.
+  - **REQ-0015** — its trigger fires at *design*, not deployment, deliberately. RFC-0008 §1
+    designs Server Actions as publicly callable, unauthenticated-by-default endpoints and cites a
+    CVSS 10.0. The threat model it now owes is also the second opinion RFC-0009 Q1 asks for, so
+    they are one piece of work.
+  - **REQ-0016** — `templates/rust-service/manifest.yaml` declared `slo: 99.9 / 250`, which *is*
+    the trigger. Worse, it would have auto-fired on service #1 with those numbers copied —
+    "numbers derived from taste", the exact failure the requirement exists to prevent. **The block
+    is now commented out of the scaffold**, so the numbers must be chosen rather than inherited.
+  - **REQ-0006** — STD-0007 reporting `n/a` on four commits over 1,000 lines is clause 1
+    verbatim: a bypass invisible in the next run. **REQ-0012** — GitHub has held the entire source
+    of truth since ADR-0004; the deferral answered only the "customer data" half of its own trigger.
+
+
+- **The enforcement backlog now measures enforcement.** `knowledge.no_unenforced_locked_artifacts`
+  tested `enforced_by: []` and nothing else, so it answered *"was a check named"* and the gate
+  printed *"every locked artifact names an enforcing check"* — while ten locked artifacts,
+  STD-0009 (tenant isolation) among them, had every named check owned by `tool-forge`, which does
+  not exist. The gate now resolves each id against the registry and prints three numbers instead
+  of one: **43 locked, 33 with a live check, 10 enforced by nothing that runs today**, with the
+  ten named. Still informational — turning it red today would fail on ten artifacts at once and
+  teach people to ignore it, which is how a control becomes decoration.
+- **ADR-0033 and GLO-0006 are now `locked`.** They lock ahead of ADR-0032, ADR-0034 and STD-0010
+  on a deliberate line: **an external standard already froze their content.** ISO 4217 fixes minor
+  units and three-letter currency codes; BCP 47 and IANA fix the four locale fields. Neither is
+  ours to get wrong, both carry checks that run and have been watched rejecting planted defects,
+  and holding them buys nothing.
+  The other three stay `accepted` because they encode designs **we invented** — the `code`/`params`
+  error envelope, the six-level resolution chain — that nothing has yet consumed. `locked` means
+  "must not be contradicted, not even temporarily", so locking before first contact would block the
+  first service that finds the envelope wrong until a supersession lands.
+  **The hold is recorded in DECISION-DEBT.md rather than left to memory**, and that is not
+  bookkeeping: `knowledge.no_stale_proposed_artifacts` covers `proposed` only, there is no
+  stale-`accepted` equivalent, and an ADR cannot carry a `trigger` — the schema restricts it to
+  requirements and bets. Without the ledger entry the hold would have been indistinguishable from
+  neglect, which is ADR-0011's entire subject.
+- **The ADR-0025 checkpoint hook no longer records verdicts it cannot support.** An end-to-end
+  read of `checkpoint-session.sh` found six defects beyond the concurrency one RFC-0011 opens
+  on, two of them serious:
+  - **An absent gate counted as `green`.** `run_gate` appended `absent` and incremented nothing,
+    and the verdict only left `green` when a gate *failed* — so a checkpoint that ran zero gates
+    reported success. This is the principle `check-migrations.sh` states about its own empty
+    input, violated inside the component that writes the history: *"n/a is not a pass."*
+  - **A commit made with no secret scan was indistinguishable from one that passed it.** The
+    absence went to stderr and nothing entered the commit body. C-0004 makes a credential in
+    history unrecoverable, so that record has to survive.
+  - **The gates ran before `git add -A`**, so the verdict provably predated the committed
+    content. Staging now happens first: a peer writing afterwards can change what the gates
+    read, but no longer what was committed.
+  - **The `index.lock` pre-flight sat a whole gate pipeline away from the write it guarded.**
+    Moved next to it. Still not a mutex — git's locking is still the real guard — but the
+    window is milliseconds rather than seconds.
+  - **C-0003 was enforced nowhere for checkpoint commits**: `--no-verify` skips the pre-commit
+    hook that runs `check-commits.sh`, and CI marks it `continue-on-error` on push. Now a
+    recorded gate.
+  - **The one positive detection of a concurrent session was discarded.** The hook reads only
+    its *own* `session_id` and cannot enumerate peers, so the `index.lock` loser is the only
+    component that ever knows a peer exists. It now leaves a breadcrumb, and the next checkpoint
+    records `unverified (shared tree)` and cites RFC-0011.
+  - `session:` became `checkpointed-by:` — the trailer now claims what happened rather than who
+    authored it. Nothing parsed it, and ADR-0025 does not mandate it by name.
+
+  None of this contradicts ADR-0025: failing gates still do not block, the hook still exits 0,
+  and secrets remain the only blocker. These make the record honest, which is what the ADR wants.
+- **The checkpoint hook's verdict logic has tests for the first time** — ten cases, driven with
+  synthetic payloads against throwaway repositories the way ADR-0007 requires of a hook. Its
+  registration and its bulk guard were already covered, which is exactly why the gap survived:
+  a component with six passing cases reads as tested. Partial coverage that reads as full is the
+  ADR-0014 defect class pointed at a test suite instead of a check.
+- **Thirty-three factual errors corrected in the internationalisation set before it was locked**,
+  found by auditing every countable claim and cross-reference against the artifact it cites. The
+  most serious: **ADR-0032, ANTI-0008 and STD-0010 contradicted locked C-0005** by using dotted
+  lowercase event type names (`todo.assigned`), where C-0005 requires `<Subject><PastTenseVerb>`
+  in PascalCase and `manifest.schema.json` enforces `^[A-Z][A-Za-z0-9]*$` in three places —
+  the exact drift RFC-0010 already lists. Also: ADR-0034 cited C-0006 and BET-0003 as supporting
+  a "white-label direction" when C-0006 lists that framing among the ones that are *actively
+  wrong*, and claimed an operator "reads across tenants" when GLO-0005 states there is no scope
+  that spans tenants; ADR-0033 put a `SUM()` overflow argument on a single value seven orders of
+  magnitude inside `bigint`, and attributed `financial-record` to ANTI-0007 with an "often" that
+  would have led readers to classify ordinary invoice tables and hard-fail the migration gate;
+  STD-0010 prescribed storing a future appointment as an instant plus a zone, which is backwards
+  — the instant is the thing that does not move — and counted a ZWJ family emoji as three code
+  points where it is five.
+  **This is the case for `new-decision` §5b.** Had these been created `locked` as originally
+  written, a contradiction of a locked constitution would have frozen into an immutable artifact,
+  fixable only by supersession.
+- **`db.money_columns_declare_currency` now enforces the half it declared.** Its registry spec
+  said *"Fails when… the monetary column does not use the mandatory `_minor` suffix"*; the gate
+  emitted a warning and no fixture planted the defect, so by this repository's own rule the check
+  was partial while not being marked partial. It is now an error with a fixture that proves it.
+- **The `pass` migration fixture was carrying the defect ADR-0033 forbids.** `invoices.amount
+  bigint`, no currency column anywhere on the table, sitting in the directory whose name asserts
+  it is correct — and CLAUDE.md's warning applies exactly: *do not pattern match off a
+  neighbouring file and assume it is correct*. Now `amount_minor` + `currency`, with a
+  `tenant_settings` table added so GLO-0006's four fields have a worked example that the gate
+  actually exercises.
+- **REQ-0009 gains a section naming what it does not cover**, rather than being superseded or
+  split. Its trigger and its eleven items are unchanged; the new section records that its title
+  scoped it to the view layer and points at the five artifacts covering the rest. RFC-0003 cites
+  it, so splitting it would have created dangling references for no gain.
+- CLAUDE.md's glossary line no longer states a count. It said "five entries" and there are now
+  six — the fourth time a hand-maintained number in this repository has gone stale, and the
+  reason README.md already refuses to state one.
+
+- **Five `test.*` checks moved off `tool-forge` the week they were declared** — 71 awaiting it
+  became 66, with nothing built in Rust. `test.testing_md_declares_untested_surface`,
+  `test.tiers_are_declared_in_ci`, `test.flaky_tests_are_quarantined_with_an_owner` and
+  `test.default_profile_does_not_retry` are now implemented in `check-repo.sh`;
+  `test.static_analysis_runs_on_pull_request` is `infra-ci`. **Three are `partial: true`** —
+  `tiers_are_declared_in_ci`, `flaky_tests_are_quarantined_with_an_owner` and
+  `static_analysis_runs_on_pull_request` — because each verifies a readable file and not the
+  runtime half of its own spec. A count that folds partial into implemented is how two checks
+  were previously reported as done while checking less than their names claimed.
+  This is the third time the repository has caught itself declaring `owner: tool-forge` for a
+  check that reads files in a checkout. Two of the five had *already been implemented* — inline
+  in `rust-ci.yml` — while still declared as awaiting a binary nobody has written.
+- **`rust-ci.yml` gains a `governance` job.** The shared workflow every Rust repository will call
+  ran **neither** the knowledge gate nor the repository gate, which means it violated
+  `repo.ci_runs_knowledge_check` — an `error` check declared against every class — while
+  reimplementing one slice of STD-0002 inline. It now runs both from the vendored snapshot
+  (ADR-0001), and fails loudly rather than skipping when that snapshot is absent.
+  The inline TESTING.md block added the same day was removed: one rule, one implementation.
+
+- **`scripts/test-checks.sh` publishes `junit.xml`**, uploaded by CI on every run including a red
+  one. This suite is the repository's blocking tier and wrote only to stdout, so the repository
+  failed its own `test.evidence_is_published_for_blocking_tiers` — recorded honestly in TESTING.md
+  rather than excused, and now closed. A failing case carries its stderr as the failure message,
+  which is the half that makes the artifact worth keeping; the failure path is proven by a
+  deliberately failing case rather than assumed. Gitignored, because the ADR-0025 hook stages
+  everything.
+  What this does **not** fix is retention: artifacts expire, and the durable record remains the
+  commit message the checkpoint hook writes. TESTING.md now states which of the two answers "did
+  it pass" and which answers "which case".
+
+
+- **RFC-0003 and RFC-0008 re-verified against primary sources before decision.** Every version
+  and severity figure in them had been written from memory; two were wrong and two open
+  questions turned out to be already answered.
+  - **`CVE-2025-66478` corrected to `CVE-2025-55182` ("React2Shell", CVSS 10.0).** The id both
+    RFCs cited is the Next.js downstream advisory and was **rejected by NVD as a duplicate** —
+    a scanner keyed on it alone matches nothing. More importantly the root cause is **React's
+    RSC Flight protocol, not Next.js**, so *any* RSC renderer is affected. Different blast
+    radius, which is the reason the correction matters rather than pedantry.
+  - **Pin TypeScript 6.0, not 7.** TS 7.0 (2026-07-08, Go-native, 8–12× faster) ships with **no
+    public compiler API**, `typescript-eslint`'s type-aware rules are built against that API,
+    and ESLint's own repositories are blocked on it. The fast compiler costs every type-aware
+    lint rule — which is the entire reason ESLint was chosen over a syntactic linter. Stable
+    API expected in 7.1, ~October 2026. "Use the latest TypeScript" is the obvious instruction
+    and it is wrong here, which is exactly what a generated `package.json` would get wrong.
+  - **Shai-Hulud resurfaced 2026-08-04**, four days before this was written: the CHAINDROP worm
+    hit 1,300+ package versions across ~2B monthly downloads, including **`flat-cache` and
+    `file-entry-cache` — ESLint's own caching dependencies.** The compromise was inside the
+    toolchain being proposed, in the week it was being decided.
+  - **Open question 5 (quarantine window: CI or lockfile?) is void** — pnpm 11 enforces it at
+    *resolution*, a third option the question did not contain. `minimumReleaseAge: 1440` and
+    `blockExoticSubdeps: true` are now defaults; `trustPolicy: no-downgrade` is the one worth
+    adopting explicitly. A draft named `minimumReleaseAgeStrict`, which appears in secondary
+    write-ups but **not in pnpm's own docs** — dropped rather than repeated, since an
+    unverified setting name produces config that silently does nothing.
+  - **CVE-2025-29927** (middleware auth bypass via `x-middleware-subrequest`, CVSS 9.1) added
+    to RFC-0008. Patched long before current versions; retained because the design lesson
+    outlives the patch and makes "every Server Action authorises itself" a rule with evidence
+    rather than a convention.
+  - **Vitest cannot render async Server Components**, so Playwright is load-bearing rather than
+    preferred, and STD-0001's Rust-shaped test pyramid cannot be satisfied as written by a
+    `web-*` repository. Flagged for decision instead of discovered as a failing coverage gate.
+- **REQ-0014 narrowed by npm's own timeline.** Classic tokens were **permanently revoked
+  2026-02-03**; OIDC trusted publishing mints short-lived CI credentials and generates
+  provenance attestations automatically. For `library`/`sdk` there is nothing to design, only
+  something to switch on — and it removes a REQ-0001 dependency, since there is no publish
+  token left to hold.
+- **The plugin is now installed, so layer 1 and the Stop hooks are live for the first time.** A
+  `hooks` block was added to `.claude/settings.json` as a fallback, measured at four Stop hooks per
+  response with two redundant, and removed — ADR-0027 decision 2 keeps the authorisation without the
+  cost.
+- **`test-checks.sh` no longer runs in the ADR-0025 Stop hook.** An audit measured it at **90
+  seconds** — it invokes `check-knowledge.sh` once per planted defect — and the hook fires on every
+  response, so every interaction cost ~96s against a 120s timeout: one slow addition away from the
+  hook being killed mid-commit, the one failure ADR-0025 cannot tolerate. The split is not only
+  speed. **The hook exists for durability; proving the gates still reject what they claim is
+  verification**, and that belongs where latency is invisible. Hook: ~96s → **8.3s**.
+- **`check-knowledge.sh`: 5795ms → 2482ms.** Two causes. The cross-reference check ran a full-repo
+  `grep` for *every unique id* — 79 of them — where one pass with an awk group-by gives the same
+  mapping. And the frontmatter reader forked an awk per field per file, ~1100 times.
+- **shellcheck now runs in CI**, gated at `error` severity — 0 across every tracked script. `bash -n`
+  is a parser, not a linter: it accepted an unguarded `cd`, a dead assignment and a case pattern
+  shadowing a later one, all three of which were present in the gate scripts and none of which it
+  reported. The remaining `warning`-level findings are SC2088/SC1083 false positives inside display
+  strings in `bootstrap.sh`, where a literal tilde is intended.
+- `knowledge.orphan_check_declarations` **now accounts for immutable artifacts.** A `locked` or
+  `superseded` artifact cannot cite a check — adding `enforced_by` is a content change the
+  immutability rule forbids — yet ADR-0014's whole model is that the gate hardens over time, so a
+  check written for an already-locked decision is the *normal* path. Comparing `blocks` against
+  citers alone produced a permanent warning with no legal way to silence it, which is how a gate
+  teaches people to ignore it. Surfaced by writing the check above for the already-locked ADR-0026.
+- **The hand-maintained locked-decisions table is gone from CLAUDE.md** — 33 lines, and the fifth
+  instance of a list-in-prose this repository has been caught by. Four rows had been added to it in
+  a single day, and it was *strictly worse* than what already existed: `session-context.sh` emits
+  the same list at SessionStart **filtered by repository class**, so the table showed an agent in a
+  `web-*` repo a set of Rust ADRs that do not bind it.
+- Six CLAUDE.md sections were duplicating artifacts that already existed — STD-0004, STD-0007,
+  C-0006, `bets/`, and the `new-decision` / `design-change` skills. Replaced by routes. The
+  artifact-registry and `bet` rules **moved into the `new-decision` skill** rather than being
+  deleted: content went to its home.
+- `MAX_CLAUDE_LINES` lowered 250 → 150. A budget at twice the actual size constrains nothing, and
+  250 was sized for the manual.
+
+- **Twenty checks moved off `tool-forge` without a line of Rust being written.** They were
+  declared `owner: tool-forge` and none of them needed Rust — they read files in a checkout,
+  which the bash gates already did. So 79 checks were waiting on one dependency while roughly
+  twenty were waiting on nothing. Implemented: **44 → 64 of 123.** Two are marked
+  `partial: true` honestly: `db.account_scoped_tables_carry_tenant_id` implements the schema half
+  and not the query half, and `db.tables_are_plural_snake_case` cannot decide pluralisation
+  lexically.
+- The remaining 59 are **not** reachable by effort. 24 need a Rust repository, 20 need any
+  repository, 7 need a migration, 6 need a CI workflow — and no repository of any class exists
+  yet. Implementing them would mean code that runs against nothing and returns success, which is
+  exactly what ADR-0008 forbids and what the 2026-08-06 audit found four times over.
+- `check-repo.sh` and `check-migrations.sh` run in CI and in the pre-commit hook;
+  `test-checks.sh` runs in CI only, because a pre-commit hook that takes seconds is one people
+  bypass with `--no-verify`.
+
+- **ADR-0022 is now `locked`.** It landed `accepted` on its own terms — *"locking early would
+  freeze a shape whose second use has not tested it"* — and `glossary` was that second use.
+- **RFC-0003 narrowed to the TypeScript stack**, with its React Server Components trust boundary
+  and Kubernetes self-hosting findings moved to RFC-0008 unchanged. Its `scope` was also wrong in
+  both directions: it named `platform`, `service` and `spec`, none of which TypeScript binds, and
+  omitted `web` and `mobile`, which it does. Written before those classes existed.
+- **RFC-0004 resolved by C-0005.** It was still `proposed` with `resolved_by: null` while
+  `class-registry.yaml` existed, C-0005 was `locked` and named the registry in its own title, and
+  ten classes had been declared through the mechanism. The artifact had landed and its RFC was
+  never closed — the same shape of unmaintained drift as a stale count in a header.
+- The three tenancy checks inherited from ADR-0023 had their specs widened to two levels and now
+  name both ADR-0023 and ADR-0024 in `blocks`. A superseded artifact keeps its `enforced_by`,
+  since only `status`, `superseded_by` and `locked_at` may move in a supersession, so `blocks`
+  lists **accumulate** across supersessions rather than transferring.
+- C-0006's not-commodity list, REQ-0013 and ANTI-0007 all annotated for nested tenancy. Export now
+  describes two products; a breach at the inner boundary exposes people who never chose to trust
+  either us or the operator.
+
+- The artifact type list is no longer hardcoded. It was duplicated at **fifteen** sites —
+  five in `knowledge.schema.json`, four in `check-knowledge.sh`, one each in
+  `check-registry.yaml`, `check-registry.schema.json`, `guard-locked-decisions.sh` and
+  `capture-open-loops.sh`, and the layout blocks in `README.md` and `CLAUDE.md` — of which
+  fourteen failed silently when missed. A directory absent from `ART_DIRS` was not scanned at
+  all: no error, no warning, an entire artifact class unenforced while the gate printed
+  `Knowledge check passed`. Ten sites are now generated from `artifact-registry.yaml`, three
+  stay hardcoded for stated reasons and are compared by the gate, and the two prose blocks
+  are deliberately neither. Fourth application of the move ADR-0014, ADR-0015 and C-0005 each
+  made before it.
+- **BET-0001 now states that it is a beachhead, not a destination**, and C-0006 anti-goal 6
+  now says explicitly that it constrains sequencing rather than ambition. Many markets is the
+  intended end state — C-0001's Vision is multi-market by definition. Without this, BET-0001
+  read as a permanent choice, and an agent retrieving "who is this for" would have designed a
+  runtime fitted to one segment. That reaches BET-0003 as a new cost: the contract may not
+  assume one operator per business, one business per paying account, the presence or absence
+  of the business's own end users, or a subscription-shaped money flow. Design for breadth,
+  sell to one segment.
+- `knowledge.frontmatter_valid`'s spec no longer enumerates directories. It had listed seven
+  while the gate scanned eight, omitting `requirements/` — a spec narrower than the check it
+  described, in the direction that understates coverage.
+- The per-owner and declared/implemented counts were removed from `check-registry.yaml`'s
+  header. Measured while adding these entries, they were wrong in five places — 11 and 3
+  against actual 14 and 4, and totals of 111/36 against 113/40. Nobody had introduced an
+  error; the numbers were not maintained. Third time, and `README.md` already records the
+  lesson: the gate prints every count live, so the figure is one command away.
+
+- The `scope` and `class` enums, and the prefix-to-scope map, are now generated from
+  `class-registry.yaml` rather than maintained in four places. ADR-0015 flagged that
+  duplication as a hazard; it is gone.
+- **ADR-0018 locked**, citing ADR-0008 rather than superseding it. The ADR-0008 question
+  was researched rather than argued: ISO/IEC/IEEE 29148 defines a well-formed requirement
+  as *implementation free*, *singular* and *traceable* — three characteristics an ADR
+  cannot carry — and established ADR practice names "treating ADRs as the universal
+  documentation format" as a failure mode. ADR-0008 rejected `LAW-` because it duplicated
+  C-0001 and C-0004; `REQ-` duplicates nothing. The same research reversed the plan to
+  leave it proposed for months: RFC and ADR lifecycles differ deliberately, and an ADR
+  "should not remain in draft indefinitely" — least of all one twelve artifacts depend on.
+- **RFC-0002** given a feedback deadline of 2026-09-07, and its stale claims corrected. It
+  said `anti-patterns/` was empty and two REQs existed, directly above a table recording
+  that six ANTI artifacts had shipped.
+- **REQ-0006** gains two items from a skeptical audit — enforcement must be declared by an
+  artifact, and trigger clustering must be sequenced. Three controls were found enforcing
+  with no declaring artifact, and three requirements were found sharing one activation
+  moment.
+- Accessibility and i18n, vendor governance and compliance were previously left unrecorded
+  on the grounds that they govern nothing that exists. That reasoning was wrong: ADR-0008's
+  empty-scaffolding argument is about directories advertising coverage, and a deferred
+  requirement with a trigger asserts the opposite. Recording costs context now; not
+  recording costs rediscovering it cold.
+- **ADR-0015 locked.** Held at `proposed` for a day, which earned its keep — an audit found
+  it made two checks unsatisfiable at the source, and that was fixed before locking.
+- `repo.no_dangling_decision_references` now names every file citing a dangling id, not
+  just the first. Reporting only one made a widely-cited typo look like a single
+  occurrence.
+- `README.md` no longer contradicts itself. It claimed no lock was mechanically enforced
+  three lines above a statement that 36 checks are. The hand-maintained table of locked
+  artifacts listed 8 of 24 and is replaced by a count and a command, because it went stale
+  within a week of being written.
+- `session-context.sh` now surfaces carried-over open loops from the ledger.
+- **RFC-0001** resolved and closed by ADR-0009.
+- **ADR-0002** superseded by ADR-0014. Points 1, 2, 3 and 5 carry forward unchanged;
+  only point 4's treatment of an unknown check id is replaced.
+- `guard-locked-decisions.sh` escalates edits to enforcement hooks, plugin manifests and
+  gate scripts to `ask`, extending C-0004's enumeration to the machinery itself.
+- `README.md` and `CLAUDE.md` state the ADR-0014 resolution rules.
+
 ### Fixed
+
+- **RFC-0022 §D5a gains path 8.** Scoping pgaudit off Zitadel's own polling — without which its
+  records would be rotated away — leaves a Zitadel-credential holder's reads and writes of identity
+  data unaudited. Recorded as a path, with its measurement and the root cause that would remove it.
+- **`DECISION-DEBT.md` ages were a day short, and same-day ones read "?".** `capture-open-loops.sh`
+  computed "now minus created", but BSD `date -j -f %Y-%m-%d` fills in the current time of day, so
+  the two clock reads straddled a second and floored to one day less (RFC-0021 at 45d beside two
+  same-day RFCs at 46d). Ages are now whole days between two midnights, rounded for DST, and an
+  artifact created today reads `0d`.
+- **`test-checks.sh` committed into the repository it was testing when run from a git worktree.**
+  The pin-staleness case copies the checkout with `cp -R .` and commits in the copy. In a worktree
+  `.git` is a FILE pointing at the real repository, so the copy's commit — authored `T <t@t.t>`,
+  "feat: change a hook", sweeping in every uncommitted change — landed on the real branch, and was
+  pushed. Each copy is now detached into its own repository before anything commits in it.
+- **`check-repo.sh` and `check-migrations.sh` refuse to inspect a vendored snapshot of themselves.**
+  Both derive their target from their own location, which is right in this repository and wrong in every
+  other — where they live at `.paridyum/knowledge/scripts/` (ADR-0001). Run there without `--root`, they
+  inspected the snapshot and reported `n/a` for almost everything.
+
+  **`n/a` is indistinguishable from a pass to everyone who has ever read one.** It cost four repositories
+  in two days: `platform-tenancy` was carrying **11** real errors, `lib-auth-typescript` **8**,
+  `infra-kubernetes` **3** — each behind a run that said it had passed. That is the defect ADR-0014's
+  audit found four separate times, and `check-migrations.sh`'s own header names it: *"A gate that prints
+  'passed' over an empty input set is the defect class the ADR-0014 audit found four times. `n/a` is not
+  a pass."* It was true of the script's inputs and not of the script's own invocation.
+
+  Now it exits 2 with the command that works. Verified from a simulated vendored path: refuses without
+  `--root`, proceeds with it, and is untouched when run from this repository.
+
+- **The shared Rust workflow ran the migration gate against this repository's own test fixtures.**
+  `rust-ci.yml` called `check-migrations.sh` with **no `--root`**, so for any repository with migrations
+  it scanned the vendored snapshot — including the deliberately-failing fixtures under
+  `tests/fixtures/migrations/fail-*`. It has never run green for such a repository, and the only reason
+  nobody saw it is that no repository with migrations had CI until this week. Fixed in the template here
+  and in the live workflow (`infra-ci`).
+
+  `nextjs-ci.yml`'s template had drifted the same way on `check-repo.sh` while the live workflow already
+  passed `--root .`, so a repository scaffolded from the template inherited the blind spot.
 
 - **Two checks were parser differentials, and one of them passed a switched-off control.**
   `check-repo.sh` decided whether ADR-0007's PreToolUse guard was installed by grepping
@@ -1707,582 +2423,6 @@ handle — file names may be reorganised, ids never are.
   the secret, so the `${VAR}` allowlist entries applied to the scheme rather than the
   password. `repo.secret_scan_clean` reported clean while enforcing nothing — in the
   pre-commit hook and in CI, which passes the same config via `GITLEAKS_CONFIG`.
-
-### Changed
-
-- **The install documented by archify's own README is declined.** `npx skills add tt-a1i/archify -g`
-  delegates the clone to a third-party CLI at no pinned revision — an unpinned dependency fetching an
-  unpinned dependency. The pin is a commit sha because the package is `"private": true` and not on
-  npm, and because its newest tag (`v2.9.0`) does not correspond to the shipped version
-  (`2.17.0-dev.1`): there is no release tag that names the code anyone would run.
-
-
-- **`run_gate` captures gate output instead of discarding it.** Warnings go into the checkpoint
-  commit message beside the gate results, and onto stderr while the operator is looking. Failing
-  gates now record what failed, so `git log --grep 'FAIL'` stops being a list of checkpoints with
-  no diagnosis.
-- **The generated pre-commit hook no longer redirects `check-repo.sh`, `check-migrations.sh` or
-  `check-changelog.sh` to `/dev/null`.**
-- **`session-context.sh` reports research capture as armed only when `log-web-sources.sh` is
-  present in the INSTALLED plugin**, not when `PARIDYUM_KNOWLEDGE_ROOT` is set. The old form would
-  have announced capture as armed on 2026-08-31 while nothing was capturing — an assurance derived
-  from configuration, which is the conflation ADR-0007's own note names.
-- **`paridyum-platform` version `0.1.0` → `0.2.0`.** The cache is keyed by version, and `0.1.0`
-  had covered at least three distinct hook sets. ADR-0059 decision 4.
-
-- **The evidence ledger — RFC-0034 step 5.** `append-evidence.py` appends STD-0014 envelopes
-  to a hash-chained, append-only `YYYY-MM.jsonl`; `verify-evidence.py` walks it and reports
-  chain faults with a remedy, not just a diagnosis; `collect-evidence.py` pulls envelopes from
-  the organisation's CI runs; `collect-evidence.yml` runs that twice daily.
-
-  **Pull, not push**, for REQ-0001's reason: org-level Actions secrets do not work for private
-  repositories on Free, so a push design needs one write credential per repository — growing
-  with the estate, failing invisibly, and letting any repository forge another's results. This
-  needs one read-only credential in one place, and no repository can write to the ledger at all.
-
-  **The digest rule is written down**, because RFC-0034 §4 did not state it and an ambiguous
-  digest makes verification impossible later: `entry_sha256` is SHA-256 over the canonical
-  JSON of the entry with the `entry_sha256` key *removed*, keys sorted, compact separators,
-  UTF-8, non-ASCII unescaped — the same encoding `tool-docket`'s `chain.rs` already produces,
-  so the two ledgers hash the same data to the same digest.
-
-  **Identity is the envelope's own canonical bytes**, not a composite of run id and attempt.
-  The composite cannot identify a `local` envelope at all, because STD-0014 forbids `run`
-  there — so it would degrade to no key exactly where duplicates are most likely, a person
-  running a command twice.
-
-  Tamper-evidence proven on a real ledger rather than a fixture: one byte changed inside a
-  line, `verify` names the line, the recomputed digest and the claimed one, and refuses; an
-  append onto the broken chain is refused; restoring the byte returns the file bit-identical
-  and appends resume.
-
-- **`verify-evidence.py` runs in `infra-ci`'s own CI**, not only in the collector before it
-  commits. The collector proves what it wrote; this proves nobody rewrote anything since,
-  which is the property an append-only record exists for and is worthless if only the writer
-  checks it.
-
-- **`junit-to-envelope.py` — the shared converter STD-0014 requires,** with a 67-case suite
-  wired into `test-checks.sh` so it runs in the blocking tier rather than being remembered.
-  One implementation for every stack: JUnit in, envelope out. It validates what it writes,
-  against the schema *and* the cross-field rules the schema cannot carry, and refuses rather
-  than substituting when JUnit omits `timestamp` or `time` — which this repository's own gate
-  suite does.
-
-  Its most valuable cases prove a claim this repository makes about itself. They corrupt an
-  envelope between build and write, assert the vendored validator **passes** all three, and
-  assert the converter refuses them anyway. So "an envelope satisfying the schema is not
-  thereby valid" is demonstrated rather than asserted.
-
-- **`report-test-coverage.sh` — which declared test types actually run, and how much of the
-  answer is inference.** RFC-0034 rollout step 1, which needs no decision from the RFC. It
-  discovers repositories rather than listing them, resolves each caller's `uses:` against the
-  local reusable workflow so the pipeline can be read, and binds the caller's `with:` inputs so
-  literal gates evaluate.
-
-  **Every row carries a confidence and prints its basis.** `declared` (the pipeline names the
-  TST- id), `direct` (the step list and literal gates settle it), `HEURISTIC` (states the
-  inference and the tool list it searched), or `cannot determine` — which is used when nothing
-  was probed, never collapsed into "not found". It is a *report*, not a check: it exits 0
-  whatever it finds, and its header says why.
-
-  Findings worth acting on, each verified against the repositories:
-  - **`TST-0003 integration` is `required`, tier `pr`, and runs nowhere.** Both Rust callers
-    pass `integration: false` explicitly, neither has a `tests/it/`, and `console-docket`
-    declares no integration script.
-  - **`TST-0013 mutation` is declared and never fires** — the job exists, gated on the nightly
-    tier, and nothing in the estate passes that tier or schedules it.
-  - **`console-docket`'s Playwright harness exists and no CI job invokes it** — already known
-    and recorded there, now visible from the estate level.
-  - **`infra-ci` runs no secret scan on its own code** while shipping the secret-scan job to
-    every other repository.
-  - **`TST-0061 boundary-conformance` rests on one of its three declared checks;** the other two
-    are implemented nowhere.
-
-  And the number that most supports RFC-0034: of the declared types, exactly **one** row is
-  `declared` by a pipeline, because the whole estate names a TST- id in one place. Most types
-  can only be answered by annotating a job with its id, which is what RFC-0034 §1 proposes —
-  every annotation added moves a row from heuristic or unknown to declared.
-
-- **STD-0014 — the test evidence envelope**, and `test-envelope.schema.json` as its machine
-  contract. Implements RFC-0034 §2. JUnit XML is what every stack already emits and is
-  anonymous about everything that matters: repository, commit, tier, which declared test type
-  it implements, and whether a workflow or a laptop produced it. The envelope carries those
-  and wraps the JUnit rather than replacing it, so Rust, TypeScript, Python and anything after
-  them are read by one consumer.
-
-  **`provenance` is the field that earns its place.** `local` exists because
-  `console-docket`'s Playwright suite covers the write path and cannot run in CI — no runner
-  has a typesetter — so rejecting local runs would keep the estate's most valuable suite
-  invisible. Accepting them unlabelled would make the evidence untrustworthy. So a `local`
-  envelope may never satisfy a gate, may never be the sole reason a `required` type reports as
-  running, and is displayed as what it is wherever a number derived from it appears.
-
-  **Two rules the schema cannot enforce are named in the standard rather than assumed.**
-  Verified by mutating a real envelope from a live CI run: eight of ten corruptions are
-  rejected, and the two that are not are both cross-field — `totals` summing to `tests`, which
-  JSON Schema cannot express at any version because it has no arithmetic, and the
-  `provenance`-conditional fields, which the schema expresses with `allOf`/`if`/`then` and the
-  vendored validator declines to implement while saying so out loud. The consequence is a
-  rule: a producer validates against the schema *and* checks those two by hand, because an
-  envelope that satisfies the schema is not thereby valid.
-
-- **`artifacts` on a test type** in `test-registry.schema.json` — the machine-readable
-  counterpart to `evidence`. `evidence` stays prose and is never parsed: it holds sentences
-  like `"junit.xml, trace and video artifacts"` and `"capacity model with the measurements
-  behind it"`, and a collector reading them would make that English load-bearing, which
-  ANTI-0008 forbids by name. Optional, because a type producing nothing collectable — a manual
-  review, a drill — should be able to say so rather than be guessed at.
-
-- **RFC-0034 — test evidence is attributed to a declared type, collected by pull, and read
-  from one place.** `test-registry.yaml` declares a catalogue of test types and nothing can
-  say which of them run: evidence is per-repository, expires at 90 days, and no workflow
-  declares which declared type it implements, so the mapping is a guess. `console-docket`'s
-  Playwright suite covers the write path and runs on a laptop, so its evidence exists
-  nowhere. REQ-0006 §6 asks for CI pass rate and flake rate and neither is obtainable.
-
-  Two constraints did the deciding. **ANTI-0008 forbids the obvious implementation:**
-  `evidence` is prose written for a person — `"junit.xml, trace and video artifacts"` — so a
-  collector that parsed it would make that English load-bearing. A separate machine-readable
-  `artifacts` field is proposed and the prose is left untouched. And **REQ-0001's finding
-  chose pull over push:** org-level Actions secrets do not work for private repositories on
-  Free, so a push design needs one hand-set write credential per repository, growing with the
-  estate, failing silently when one goes stale, and letting any repository forge any other's
-  results. Pull needs one read-only credential in one place.
-
-  Sequenced so the credential decision comes last: an inventory report, then the envelope
-  standard, then emission in the reusable workflows, then a dashboard that reads live state
-  with the operator's own `gh` credentials and no stored secret at all, and only then the
-  ledger. Six alternatives are recorded, including a third-party service (rejected on
-  REQ-0012's exitability test, the same test that rejected Terraform) and doing nothing
-  (survivable at this size, and rejected because nobody reads the workflows so nobody knows).
-
-  Open questions are left open, including the one that gates the last step: whether a
-  read-only organisation-wide CI token falls under REQ-0001, which is titled *runtime* secret
-  management. That is not an agent's call.
-
-- **`nextjs-ci.yml` — the reusable TypeScript/Next.js CI workflow.** ADR-0021 requires CI
-  to be a reusable workflow per stack, called by every class declaring `ci: true`. Only
-  `rust-ci.yml` existed, so the `console` class ADR-0055 added had no CI to call and its
-  gates were enforced by nothing. Five jobs: `gates` (lint, typecheck, build in one job —
-  they share an install, and splitting them triples the install to save nothing),
-  `supply-chain`, `secrets`, `changelog`, `governance`. It deliberately runs **no tests**:
-  RFC-0003 selects Vitest and Playwright, no caller has either, and a test job that passes
-  on an empty suite reports coverage of nothing.
-
-  pnpm is installed with `npm install -g pnpm@11 --ignore-scripts` rather than via
-  `corepack` (no longer bundled with Node, absent in 25.x) or `pnpm/action-setup` (one more
-  third-party action to pin and trust with the job token, for one command). Scripts come
-  from the caller's vendored snapshot for the reason `rust-ci.yml` records: the default
-  `GITHUB_TOKEN` can only read the calling repository.
-
-- **`check-pnpm-builds.sh` — fail when a dependency ships a build script nobody reviewed.**
-  pnpm's own `strictDepBuilds: true` is meant to do this and is unusable in a repository
-  with even one reviewed-and-refused package: the refusal itself trips it, so *every*
-  install exits non-zero, fresh and satisfied alike, taking every `pnpm exec` and CI step
-  with it. The documented escape hatches do not work — an `allowBuilds` entry of `false`
-  does not silence it on pnpm 11.22.0, and the pnpm 10 key `ignoredBuiltDependencies` is no
-  longer read. So callers set `strictDepBuilds: false` and recover the signal here, by
-  asserting that `pnpm ignored-builds` reports nothing under *Automatically ignored* while
-  leaving reviewed refusals silent. Verified in both directions: it passes with a reviewed
-  refusal present and fails, naming the package, when that review is removed.
-
-
-- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
-  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
-  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
-  each execute both tiers — identified by STD-0001's file layout rather than by separate
-  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
-  does **not** claim TST-0003: integration runs in its own step, gated on
-  `inputs.integration`, and that gate is off for every current caller.
-
-  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
-  inference into a declared fact.
-
-- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
-  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
-  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
-  `kind` is required now — the registry's job is to say what a type produces, and where it
-  lands is the producing job's business. Putting a repository's directory layout into a
-  locked org-scope registry was the mistake.
-
-- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
-
-- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
-  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
-  new `console-` repository rather than a new class.
-- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
-  is what the secret grants, not where it lives. A credential a *running service* needs is in
-  scope; one that reads only what its holder can already read, used by CI, is not. Written into
-  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
-  every time. It explicitly does not make such a token free — it is still one secret set by hand
-  in one repository, which is the drift REQ-0001 describes, bounded at one.
-- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
-  first console served HR and the wording leaned on that example enough that a testing dashboard
-  for engineers read as though it needed a different class. The test in the ADR already settled
-  it — the class turns on reachability, and nothing in that test mentions who the operator is.
-  Splitting on job title would mean a second class describing the same shape.
-
-- **RUN-0001 now provisions `tofu` rather than `terraform`, and gains `sops`, `age` and
-  `talosctl`.** ADR-0052 decided OpenTofu and declined the Terraform binary — Terraform has
-  shipped under BUSL since v1.6 and fails REQ-0012's exitability test, the same test that made
-  RFC-0025 reject Sidero Omni. The runbook was the decision's last unclosed edge: it was still
-  installing the binary the organisation had decided against, and a workstation provisioned
-  correctly ended up with the wrong tool. The three tools added are the ones Phase 2b's substrate
-  tasks call and the runbook did not install. **ADR-0020's `terraform/` directory and the
-  `terraform.fmt_and_validate` check id are unchanged** — ADR-0052 decision 2 keeps both, because
-  the identifier is vocabulary and `tofu fmt`/`tofu validate` are the operations it names.
-  The `kubectl` and `helm` rows also now cite ADR-0020 rather than superseded ADR-0003.
-
-
-- **Both reusable workflows now emit a STD-0014 envelope** after their test job, uploaded
-  beside the JUnit it summarises. `rust-ci.yml` and `nextjs-ci.yml` each declare
-  `--implements TST-0001,TST-0002`, because one `cargo nextest run` and one `vitest run`
-  each execute both tiers — identified by STD-0001's file layout rather than by separate
-  commands, so claiming one would understate what the job does. `rust-ci.yml` deliberately
-  does **not** claim TST-0003: integration runs in its own step, gated on
-  `inputs.integration`, and that gate is off for every current caller.
-
-  This is RFC-0034 rollout step 3, and it is what turns the coverage question from an
-  inference into a declared fact.
-
-- **`artifacts[].path` is optional and gained a `stack` discriminator.** Wiring the workflows
-  exposed it immediately: TST-0001 lands at `reports/junit-unit.xml` under TypeScript and
-  `target/nextest/ci/junit.xml` under Rust, and one list per type could not say so. Only
-  `kind` is required now — the registry's job is to say what a type produces, and where it
-  lands is the producing job's business. Putting a repository's directory layout into a
-  locked org-scope registry was the mistake.
-
-- **`TST-0001` and `TST-0002` declare their artifacts**, the first entries to use the field.
-
-- **RFC-0034 accepted**, with its two gating questions answered by rohanbatrain: a read-only CI
-  credential is out of REQ-0001's scope, so the durable ledger proceeds; and the dashboard is a
-  new `console-` repository rather than a new class.
-- **REQ-0001 now states its own boundary.** A new "What this does not cover" section: the test
-  is what the secret grants, not where it lives. A credential a *running service* needs is in
-  scope; one that reads only what its holder can already read, used by CI, is not. Written into
-  the requirement rather than left in a design document, so it is not re-argued from RFC-0034
-  every time. It explicitly does not make such a token free — it is still one secret set by hand
-  in one repository, which is the drift REQ-0001 describes, bounded at one.
-- **ADR-0055 clarified**: `console` means Paridyum's own operators, not the HR department. The
-  first console served HR and the wording leaned on that example enough that a testing dashboard
-  for engineers read as though it needed a different class. The test in the ADR already settled
-  it — the class turns on reachability, and nothing in that test mentions who the operator is.
-  Splitting on job title would mean a second class describing the same shape.
-
-- **REQ-0006, REQ-0007, REQ-0012, REQ-0015 and REQ-0016 move `deferred` → `accepted`.** Their
-  triggers had fired and nobody noticed, because **nothing detects a fired trigger**:
-  `knowledge.deferred_requirements_have_triggers` checks a trigger is *present*, and the only
-  time-aware check hardcodes the assumption that triggers have not fired. Detection is a human
-  reading eighteen files. Each trigger now records what fired it, in REQ-0002's format.
-  - **REQ-0007** — RFC-0003 and RFC-0008 were both written from fetched external sources, one of
-    them correcting a CVE id inside a binding artifact. The requirement's own deferral rationale
-    said item 4 *"needs an agent consuming external content, which today it does not"* — false as
-    written.
-  - **REQ-0015** — its trigger fires at *design*, not deployment, deliberately. RFC-0008 §1
-    designs Server Actions as publicly callable, unauthenticated-by-default endpoints and cites a
-    CVSS 10.0. The threat model it now owes is also the second opinion RFC-0009 Q1 asks for, so
-    they are one piece of work.
-  - **REQ-0016** — `templates/rust-service/manifest.yaml` declared `slo: 99.9 / 250`, which *is*
-    the trigger. Worse, it would have auto-fired on service #1 with those numbers copied —
-    "numbers derived from taste", the exact failure the requirement exists to prevent. **The block
-    is now commented out of the scaffold**, so the numbers must be chosen rather than inherited.
-  - **REQ-0006** — STD-0007 reporting `n/a` on four commits over 1,000 lines is clause 1
-    verbatim: a bypass invisible in the next run. **REQ-0012** — GitHub has held the entire source
-    of truth since ADR-0004; the deferral answered only the "customer data" half of its own trigger.
-
-
-- **The enforcement backlog now measures enforcement.** `knowledge.no_unenforced_locked_artifacts`
-  tested `enforced_by: []` and nothing else, so it answered *"was a check named"* and the gate
-  printed *"every locked artifact names an enforcing check"* — while ten locked artifacts,
-  STD-0009 (tenant isolation) among them, had every named check owned by `tool-forge`, which does
-  not exist. The gate now resolves each id against the registry and prints three numbers instead
-  of one: **43 locked, 33 with a live check, 10 enforced by nothing that runs today**, with the
-  ten named. Still informational — turning it red today would fail on ten artifacts at once and
-  teach people to ignore it, which is how a control becomes decoration.
-- **ADR-0033 and GLO-0006 are now `locked`.** They lock ahead of ADR-0032, ADR-0034 and STD-0010
-  on a deliberate line: **an external standard already froze their content.** ISO 4217 fixes minor
-  units and three-letter currency codes; BCP 47 and IANA fix the four locale fields. Neither is
-  ours to get wrong, both carry checks that run and have been watched rejecting planted defects,
-  and holding them buys nothing.
-  The other three stay `accepted` because they encode designs **we invented** — the `code`/`params`
-  error envelope, the six-level resolution chain — that nothing has yet consumed. `locked` means
-  "must not be contradicted, not even temporarily", so locking before first contact would block the
-  first service that finds the envelope wrong until a supersession lands.
-  **The hold is recorded in DECISION-DEBT.md rather than left to memory**, and that is not
-  bookkeeping: `knowledge.no_stale_proposed_artifacts` covers `proposed` only, there is no
-  stale-`accepted` equivalent, and an ADR cannot carry a `trigger` — the schema restricts it to
-  requirements and bets. Without the ledger entry the hold would have been indistinguishable from
-  neglect, which is ADR-0011's entire subject.
-- **The ADR-0025 checkpoint hook no longer records verdicts it cannot support.** An end-to-end
-  read of `checkpoint-session.sh` found six defects beyond the concurrency one RFC-0011 opens
-  on, two of them serious:
-  - **An absent gate counted as `green`.** `run_gate` appended `absent` and incremented nothing,
-    and the verdict only left `green` when a gate *failed* — so a checkpoint that ran zero gates
-    reported success. This is the principle `check-migrations.sh` states about its own empty
-    input, violated inside the component that writes the history: *"n/a is not a pass."*
-  - **A commit made with no secret scan was indistinguishable from one that passed it.** The
-    absence went to stderr and nothing entered the commit body. C-0004 makes a credential in
-    history unrecoverable, so that record has to survive.
-  - **The gates ran before `git add -A`**, so the verdict provably predated the committed
-    content. Staging now happens first: a peer writing afterwards can change what the gates
-    read, but no longer what was committed.
-  - **The `index.lock` pre-flight sat a whole gate pipeline away from the write it guarded.**
-    Moved next to it. Still not a mutex — git's locking is still the real guard — but the
-    window is milliseconds rather than seconds.
-  - **C-0003 was enforced nowhere for checkpoint commits**: `--no-verify` skips the pre-commit
-    hook that runs `check-commits.sh`, and CI marks it `continue-on-error` on push. Now a
-    recorded gate.
-  - **The one positive detection of a concurrent session was discarded.** The hook reads only
-    its *own* `session_id` and cannot enumerate peers, so the `index.lock` loser is the only
-    component that ever knows a peer exists. It now leaves a breadcrumb, and the next checkpoint
-    records `unverified (shared tree)` and cites RFC-0011.
-  - `session:` became `checkpointed-by:` — the trailer now claims what happened rather than who
-    authored it. Nothing parsed it, and ADR-0025 does not mandate it by name.
-
-  None of this contradicts ADR-0025: failing gates still do not block, the hook still exits 0,
-  and secrets remain the only blocker. These make the record honest, which is what the ADR wants.
-- **The checkpoint hook's verdict logic has tests for the first time** — ten cases, driven with
-  synthetic payloads against throwaway repositories the way ADR-0007 requires of a hook. Its
-  registration and its bulk guard were already covered, which is exactly why the gap survived:
-  a component with six passing cases reads as tested. Partial coverage that reads as full is the
-  ADR-0014 defect class pointed at a test suite instead of a check.
-- **Thirty-three factual errors corrected in the internationalisation set before it was locked**,
-  found by auditing every countable claim and cross-reference against the artifact it cites. The
-  most serious: **ADR-0032, ANTI-0008 and STD-0010 contradicted locked C-0005** by using dotted
-  lowercase event type names (`todo.assigned`), where C-0005 requires `<Subject><PastTenseVerb>`
-  in PascalCase and `manifest.schema.json` enforces `^[A-Z][A-Za-z0-9]*$` in three places —
-  the exact drift RFC-0010 already lists. Also: ADR-0034 cited C-0006 and BET-0003 as supporting
-  a "white-label direction" when C-0006 lists that framing among the ones that are *actively
-  wrong*, and claimed an operator "reads across tenants" when GLO-0005 states there is no scope
-  that spans tenants; ADR-0033 put a `SUM()` overflow argument on a single value seven orders of
-  magnitude inside `bigint`, and attributed `financial-record` to ANTI-0007 with an "often" that
-  would have led readers to classify ordinary invoice tables and hard-fail the migration gate;
-  STD-0010 prescribed storing a future appointment as an instant plus a zone, which is backwards
-  — the instant is the thing that does not move — and counted a ZWJ family emoji as three code
-  points where it is five.
-  **This is the case for `new-decision` §5b.** Had these been created `locked` as originally
-  written, a contradiction of a locked constitution would have frozen into an immutable artifact,
-  fixable only by supersession.
-- **`db.money_columns_declare_currency` now enforces the half it declared.** Its registry spec
-  said *"Fails when… the monetary column does not use the mandatory `_minor` suffix"*; the gate
-  emitted a warning and no fixture planted the defect, so by this repository's own rule the check
-  was partial while not being marked partial. It is now an error with a fixture that proves it.
-- **The `pass` migration fixture was carrying the defect ADR-0033 forbids.** `invoices.amount
-  bigint`, no currency column anywhere on the table, sitting in the directory whose name asserts
-  it is correct — and CLAUDE.md's warning applies exactly: *do not pattern match off a
-  neighbouring file and assume it is correct*. Now `amount_minor` + `currency`, with a
-  `tenant_settings` table added so GLO-0006's four fields have a worked example that the gate
-  actually exercises.
-- **REQ-0009 gains a section naming what it does not cover**, rather than being superseded or
-  split. Its trigger and its eleven items are unchanged; the new section records that its title
-  scoped it to the view layer and points at the five artifacts covering the rest. RFC-0003 cites
-  it, so splitting it would have created dangling references for no gain.
-- CLAUDE.md's glossary line no longer states a count. It said "five entries" and there are now
-  six — the fourth time a hand-maintained number in this repository has gone stale, and the
-  reason README.md already refuses to state one.
-
-- **Five `test.*` checks moved off `tool-forge` the week they were declared** — 71 awaiting it
-  became 66, with nothing built in Rust. `test.testing_md_declares_untested_surface`,
-  `test.tiers_are_declared_in_ci`, `test.flaky_tests_are_quarantined_with_an_owner` and
-  `test.default_profile_does_not_retry` are now implemented in `check-repo.sh`;
-  `test.static_analysis_runs_on_pull_request` is `infra-ci`. **Three are `partial: true`** —
-  `tiers_are_declared_in_ci`, `flaky_tests_are_quarantined_with_an_owner` and
-  `static_analysis_runs_on_pull_request` — because each verifies a readable file and not the
-  runtime half of its own spec. A count that folds partial into implemented is how two checks
-  were previously reported as done while checking less than their names claimed.
-  This is the third time the repository has caught itself declaring `owner: tool-forge` for a
-  check that reads files in a checkout. Two of the five had *already been implemented* — inline
-  in `rust-ci.yml` — while still declared as awaiting a binary nobody has written.
-- **`rust-ci.yml` gains a `governance` job.** The shared workflow every Rust repository will call
-  ran **neither** the knowledge gate nor the repository gate, which means it violated
-  `repo.ci_runs_knowledge_check` — an `error` check declared against every class — while
-  reimplementing one slice of STD-0002 inline. It now runs both from the vendored snapshot
-  (ADR-0001), and fails loudly rather than skipping when that snapshot is absent.
-  The inline TESTING.md block added the same day was removed: one rule, one implementation.
-
-- **`scripts/test-checks.sh` publishes `junit.xml`**, uploaded by CI on every run including a red
-  one. This suite is the repository's blocking tier and wrote only to stdout, so the repository
-  failed its own `test.evidence_is_published_for_blocking_tiers` — recorded honestly in TESTING.md
-  rather than excused, and now closed. A failing case carries its stderr as the failure message,
-  which is the half that makes the artifact worth keeping; the failure path is proven by a
-  deliberately failing case rather than assumed. Gitignored, because the ADR-0025 hook stages
-  everything.
-  What this does **not** fix is retention: artifacts expire, and the durable record remains the
-  commit message the checkpoint hook writes. TESTING.md now states which of the two answers "did
-  it pass" and which answers "which case".
-
-
-- **RFC-0003 and RFC-0008 re-verified against primary sources before decision.** Every version
-  and severity figure in them had been written from memory; two were wrong and two open
-  questions turned out to be already answered.
-  - **`CVE-2025-66478` corrected to `CVE-2025-55182` ("React2Shell", CVSS 10.0).** The id both
-    RFCs cited is the Next.js downstream advisory and was **rejected by NVD as a duplicate** —
-    a scanner keyed on it alone matches nothing. More importantly the root cause is **React's
-    RSC Flight protocol, not Next.js**, so *any* RSC renderer is affected. Different blast
-    radius, which is the reason the correction matters rather than pedantry.
-  - **Pin TypeScript 6.0, not 7.** TS 7.0 (2026-07-08, Go-native, 8–12× faster) ships with **no
-    public compiler API**, `typescript-eslint`'s type-aware rules are built against that API,
-    and ESLint's own repositories are blocked on it. The fast compiler costs every type-aware
-    lint rule — which is the entire reason ESLint was chosen over a syntactic linter. Stable
-    API expected in 7.1, ~October 2026. "Use the latest TypeScript" is the obvious instruction
-    and it is wrong here, which is exactly what a generated `package.json` would get wrong.
-  - **Shai-Hulud resurfaced 2026-08-04**, four days before this was written: the CHAINDROP worm
-    hit 1,300+ package versions across ~2B monthly downloads, including **`flat-cache` and
-    `file-entry-cache` — ESLint's own caching dependencies.** The compromise was inside the
-    toolchain being proposed, in the week it was being decided.
-  - **Open question 5 (quarantine window: CI or lockfile?) is void** — pnpm 11 enforces it at
-    *resolution*, a third option the question did not contain. `minimumReleaseAge: 1440` and
-    `blockExoticSubdeps: true` are now defaults; `trustPolicy: no-downgrade` is the one worth
-    adopting explicitly. A draft named `minimumReleaseAgeStrict`, which appears in secondary
-    write-ups but **not in pnpm's own docs** — dropped rather than repeated, since an
-    unverified setting name produces config that silently does nothing.
-  - **CVE-2025-29927** (middleware auth bypass via `x-middleware-subrequest`, CVSS 9.1) added
-    to RFC-0008. Patched long before current versions; retained because the design lesson
-    outlives the patch and makes "every Server Action authorises itself" a rule with evidence
-    rather than a convention.
-  - **Vitest cannot render async Server Components**, so Playwright is load-bearing rather than
-    preferred, and STD-0001's Rust-shaped test pyramid cannot be satisfied as written by a
-    `web-*` repository. Flagged for decision instead of discovered as a failing coverage gate.
-- **REQ-0014 narrowed by npm's own timeline.** Classic tokens were **permanently revoked
-  2026-02-03**; OIDC trusted publishing mints short-lived CI credentials and generates
-  provenance attestations automatically. For `library`/`sdk` there is nothing to design, only
-  something to switch on — and it removes a REQ-0001 dependency, since there is no publish
-  token left to hold.
-- **The plugin is now installed, so layer 1 and the Stop hooks are live for the first time.** A
-  `hooks` block was added to `.claude/settings.json` as a fallback, measured at four Stop hooks per
-  response with two redundant, and removed — ADR-0027 decision 2 keeps the authorisation without the
-  cost.
-- **`test-checks.sh` no longer runs in the ADR-0025 Stop hook.** An audit measured it at **90
-  seconds** — it invokes `check-knowledge.sh` once per planted defect — and the hook fires on every
-  response, so every interaction cost ~96s against a 120s timeout: one slow addition away from the
-  hook being killed mid-commit, the one failure ADR-0025 cannot tolerate. The split is not only
-  speed. **The hook exists for durability; proving the gates still reject what they claim is
-  verification**, and that belongs where latency is invisible. Hook: ~96s → **8.3s**.
-- **`check-knowledge.sh`: 5795ms → 2482ms.** Two causes. The cross-reference check ran a full-repo
-  `grep` for *every unique id* — 79 of them — where one pass with an awk group-by gives the same
-  mapping. And the frontmatter reader forked an awk per field per file, ~1100 times.
-- **shellcheck now runs in CI**, gated at `error` severity — 0 across every tracked script. `bash -n`
-  is a parser, not a linter: it accepted an unguarded `cd`, a dead assignment and a case pattern
-  shadowing a later one, all three of which were present in the gate scripts and none of which it
-  reported. The remaining `warning`-level findings are SC2088/SC1083 false positives inside display
-  strings in `bootstrap.sh`, where a literal tilde is intended.
-- `knowledge.orphan_check_declarations` **now accounts for immutable artifacts.** A `locked` or
-  `superseded` artifact cannot cite a check — adding `enforced_by` is a content change the
-  immutability rule forbids — yet ADR-0014's whole model is that the gate hardens over time, so a
-  check written for an already-locked decision is the *normal* path. Comparing `blocks` against
-  citers alone produced a permanent warning with no legal way to silence it, which is how a gate
-  teaches people to ignore it. Surfaced by writing the check above for the already-locked ADR-0026.
-- **The hand-maintained locked-decisions table is gone from CLAUDE.md** — 33 lines, and the fifth
-  instance of a list-in-prose this repository has been caught by. Four rows had been added to it in
-  a single day, and it was *strictly worse* than what already existed: `session-context.sh` emits
-  the same list at SessionStart **filtered by repository class**, so the table showed an agent in a
-  `web-*` repo a set of Rust ADRs that do not bind it.
-- Six CLAUDE.md sections were duplicating artifacts that already existed — STD-0004, STD-0007,
-  C-0006, `bets/`, and the `new-decision` / `design-change` skills. Replaced by routes. The
-  artifact-registry and `bet` rules **moved into the `new-decision` skill** rather than being
-  deleted: content went to its home.
-- `MAX_CLAUDE_LINES` lowered 250 → 150. A budget at twice the actual size constrains nothing, and
-  250 was sized for the manual.
-
-- **Twenty checks moved off `tool-forge` without a line of Rust being written.** They were
-  declared `owner: tool-forge` and none of them needed Rust — they read files in a checkout,
-  which the bash gates already did. So 79 checks were waiting on one dependency while roughly
-  twenty were waiting on nothing. Implemented: **44 → 64 of 123.** Two are marked
-  `partial: true` honestly: `db.account_scoped_tables_carry_tenant_id` implements the schema half
-  and not the query half, and `db.tables_are_plural_snake_case` cannot decide pluralisation
-  lexically.
-- The remaining 59 are **not** reachable by effort. 24 need a Rust repository, 20 need any
-  repository, 7 need a migration, 6 need a CI workflow — and no repository of any class exists
-  yet. Implementing them would mean code that runs against nothing and returns success, which is
-  exactly what ADR-0008 forbids and what the 2026-08-06 audit found four times over.
-- `check-repo.sh` and `check-migrations.sh` run in CI and in the pre-commit hook;
-  `test-checks.sh` runs in CI only, because a pre-commit hook that takes seconds is one people
-  bypass with `--no-verify`.
-
-- **ADR-0022 is now `locked`.** It landed `accepted` on its own terms — *"locking early would
-  freeze a shape whose second use has not tested it"* — and `glossary` was that second use.
-- **RFC-0003 narrowed to the TypeScript stack**, with its React Server Components trust boundary
-  and Kubernetes self-hosting findings moved to RFC-0008 unchanged. Its `scope` was also wrong in
-  both directions: it named `platform`, `service` and `spec`, none of which TypeScript binds, and
-  omitted `web` and `mobile`, which it does. Written before those classes existed.
-- **RFC-0004 resolved by C-0005.** It was still `proposed` with `resolved_by: null` while
-  `class-registry.yaml` existed, C-0005 was `locked` and named the registry in its own title, and
-  ten classes had been declared through the mechanism. The artifact had landed and its RFC was
-  never closed — the same shape of unmaintained drift as a stale count in a header.
-- The three tenancy checks inherited from ADR-0023 had their specs widened to two levels and now
-  name both ADR-0023 and ADR-0024 in `blocks`. A superseded artifact keeps its `enforced_by`,
-  since only `status`, `superseded_by` and `locked_at` may move in a supersession, so `blocks`
-  lists **accumulate** across supersessions rather than transferring.
-- C-0006's not-commodity list, REQ-0013 and ANTI-0007 all annotated for nested tenancy. Export now
-  describes two products; a breach at the inner boundary exposes people who never chose to trust
-  either us or the operator.
-
-- The artifact type list is no longer hardcoded. It was duplicated at **fifteen** sites —
-  five in `knowledge.schema.json`, four in `check-knowledge.sh`, one each in
-  `check-registry.yaml`, `check-registry.schema.json`, `guard-locked-decisions.sh` and
-  `capture-open-loops.sh`, and the layout blocks in `README.md` and `CLAUDE.md` — of which
-  fourteen failed silently when missed. A directory absent from `ART_DIRS` was not scanned at
-  all: no error, no warning, an entire artifact class unenforced while the gate printed
-  `Knowledge check passed`. Ten sites are now generated from `artifact-registry.yaml`, three
-  stay hardcoded for stated reasons and are compared by the gate, and the two prose blocks
-  are deliberately neither. Fourth application of the move ADR-0014, ADR-0015 and C-0005 each
-  made before it.
-- **BET-0001 now states that it is a beachhead, not a destination**, and C-0006 anti-goal 6
-  now says explicitly that it constrains sequencing rather than ambition. Many markets is the
-  intended end state — C-0001's Vision is multi-market by definition. Without this, BET-0001
-  read as a permanent choice, and an agent retrieving "who is this for" would have designed a
-  runtime fitted to one segment. That reaches BET-0003 as a new cost: the contract may not
-  assume one operator per business, one business per paying account, the presence or absence
-  of the business's own end users, or a subscription-shaped money flow. Design for breadth,
-  sell to one segment.
-- `knowledge.frontmatter_valid`'s spec no longer enumerates directories. It had listed seven
-  while the gate scanned eight, omitting `requirements/` — a spec narrower than the check it
-  described, in the direction that understates coverage.
-- The per-owner and declared/implemented counts were removed from `check-registry.yaml`'s
-  header. Measured while adding these entries, they were wrong in five places — 11 and 3
-  against actual 14 and 4, and totals of 111/36 against 113/40. Nobody had introduced an
-  error; the numbers were not maintained. Third time, and `README.md` already records the
-  lesson: the gate prints every count live, so the figure is one command away.
-
-- The `scope` and `class` enums, and the prefix-to-scope map, are now generated from
-  `class-registry.yaml` rather than maintained in four places. ADR-0015 flagged that
-  duplication as a hazard; it is gone.
-- **ADR-0018 locked**, citing ADR-0008 rather than superseding it. The ADR-0008 question
-  was researched rather than argued: ISO/IEC/IEEE 29148 defines a well-formed requirement
-  as *implementation free*, *singular* and *traceable* — three characteristics an ADR
-  cannot carry — and established ADR practice names "treating ADRs as the universal
-  documentation format" as a failure mode. ADR-0008 rejected `LAW-` because it duplicated
-  C-0001 and C-0004; `REQ-` duplicates nothing. The same research reversed the plan to
-  leave it proposed for months: RFC and ADR lifecycles differ deliberately, and an ADR
-  "should not remain in draft indefinitely" — least of all one twelve artifacts depend on.
-- **RFC-0002** given a feedback deadline of 2026-09-07, and its stale claims corrected. It
-  said `anti-patterns/` was empty and two REQs existed, directly above a table recording
-  that six ANTI artifacts had shipped.
-- **REQ-0006** gains two items from a skeptical audit — enforcement must be declared by an
-  artifact, and trigger clustering must be sequenced. Three controls were found enforcing
-  with no declaring artifact, and three requirements were found sharing one activation
-  moment.
-- Accessibility and i18n, vendor governance and compliance were previously left unrecorded
-  on the grounds that they govern nothing that exists. That reasoning was wrong: ADR-0008's
-  empty-scaffolding argument is about directories advertising coverage, and a deferred
-  requirement with a trigger asserts the opposite. Recording costs context now; not
-  recording costs rediscovering it cold.
-- **ADR-0015 locked.** Held at `proposed` for a day, which earned its keep — an audit found
-  it made two checks unsatisfiable at the source, and that was fixed before locking.
-- `repo.no_dangling_decision_references` now names every file citing a dangling id, not
-  just the first. Reporting only one made a widely-cited typo look like a single
-  occurrence.
-- `README.md` no longer contradicts itself. It claimed no lock was mechanically enforced
-  three lines above a statement that 36 checks are. The hand-maintained table of locked
-  artifacts listed 8 of 24 and is replaced by a count and a command, because it went stale
-  within a week of being written.
-- `session-context.sh` now surfaces carried-over open loops from the ledger.
-- **RFC-0001** resolved and closed by ADR-0009.
-- **ADR-0002** superseded by ADR-0014. Points 1, 2, 3 and 5 carry forward unchanged;
-  only point 4's treatment of an unknown check id is replaced.
-- `guard-locked-decisions.sh` escalates edits to enforcement hooks, plugin manifests and
-  gate scripts to `ask`, extending C-0004's enumeration to the machinery itself.
-- `README.md` and `CLAUDE.md` state the ADR-0014 resolution rules.
 
 ## [0.2.0] - 2026-08-06
 

@@ -5,82 +5,78 @@ hook (ADR-0011) and surfaced at the start of every session, so that a decision l
 unrecorded is put back in front of the next person to work here — whether or not
 anyone remembers it exists.
 
-<!-- REGENERATED: 2026-09-24 — do not hand-edit below; close the loop and the entry disappears -->
+<!-- REGENERATED: 2026-09-28 — do not hand-edit below; close the loop and the entry disappears -->
 
 ## Open loops
 
 ### Undecided — draft or proposed
 
-- **GLO-0007** `proposed` for 43d — Control region — where the platform's global facts live, not where a customer belongs
+- **GLO-0007** `proposed` for 47d — Control region — where the platform's global facts live, not where a customer belongs
   `glossary/GLO-0007-control-region.md`
-- **GLO-0008** `proposed` for 43d — Datacentre — a failure domain inside a region, never a residency boundary
+- **GLO-0008** `proposed` for 47d — Datacentre — a failure domain inside a region, never a residency boundary
   `glossary/GLO-0008-datacentre.md`
-- **GLO-0009** `proposed` for 37d — Fleet manager — what provisions metal, and deliberately not called a control plane
+- **GLO-0009** `proposed` for 41d — Fleet manager — what provisions metal, and deliberately not called a control plane
   `glossary/GLO-0009-fleet-manager.md`
-- **RFC-0014** `proposed` for 44d — A region is a residency boundary, and every table declares which plane it lives in
+- **RFC-0014** `proposed` for 48d — A region is a residency boundary, and every table declares which plane it lives in
   `rfc/RFC-0014-a-region-is-a-residency-boundary.md`
-- **RFC-0015** `proposed` for 44d — A fact has one home, and nothing crosses a region boundary
+- **RFC-0015** `proposed` for 48d — A fact has one home, and nothing crosses a region boundary
   `rfc/RFC-0015-a-fact-has-one-home.md`
-- **RFC-0016** `proposed` for 44d — The edge is rented, never holds tenant data, and never asserts identity
+- **RFC-0016** `proposed` for 48d — The edge is rented, never holds tenant data, and never asserts identity
   `rfc/RFC-0016-the-edge-is-rented.md`
-- **RFC-0017** `proposed` for 44d — An operator's personal data lives in the operator's region, not the control region
+- **RFC-0017** `proposed` for 48d — An operator's personal data lives in the operator's region, not the control region
   `rfc/RFC-0017-operator-personal-data-is-regional.md`
-- **RFC-0018** `proposed` for 44d — The control plane is one repository, with a closed list and a split trigger
+- **RFC-0018** `proposed` for 48d — The control plane is one repository, with a closed list and a split trigger
   `rfc/RFC-0018-the-control-plane-is-one-repository.md`
-- **RFC-0019** `proposed` for 43d — A datacentre is one Proxmox cluster, and Kubernetes runs on virtual machines above it
+- **RFC-0019** `proposed` for 47d — A datacentre is one Proxmox cluster, and Kubernetes runs on virtual machines above it
   `rfc/RFC-0019-a-datacentre-is-one-proxmox-cluster.md`
-- **RFC-0020** `proposed` for 43d — An external fact is cited and dated, because it changes somewhere else
+- **RFC-0020** `proposed` for 47d — An external fact is cited and dated, because it changes somewhere else
   `rfc/RFC-0020-external-facts-are-cited-and-dated.md`
-- **RFC-0021** `proposed` for 43d — A device hostname is family, country and sequence, and it is not a database
+- **RFC-0021** `proposed` for 47d — A device hostname is family, country and sequence, and it is not a database
   `rfc/RFC-0021-a-device-hostname-is-family-country-and-sequence.md`
-- **RFC-0022** `proposed` for 40d — What must be true for a founder to build on a platform whose operator competes with them
-  `rfc/RFC-0022-the-operator-competes-with-its-tenants.md`
-- **RFC-0023** `proposed` for 40d — The development substrate is production one level down, and the transition is a variable
+- **RFC-0023** `proposed` for 44d — The development substrate is production one level down, and the transition is a variable
   `rfc/RFC-0023-the-development-substrate-is-production-one-level-down.md`
-- **RFC-0025** `proposed` for 37d — The fleet manager bootstraps itself, and Paridyum is customer zero
+- **RFC-0025** `proposed` for 41d — The fleet manager bootstraps itself, and Paridyum is customer zero
   `rfc/RFC-0025-the-fleet-manager-provisions-paridyum.md`
-- **RFC-0026** `proposed` for 37d — The covenant vehicle — where the tithe goes, and what holds it when the sums are small
+- **RFC-0026** `proposed` for 41d — The covenant vehicle — where the tithe goes, and what holds it when the sums are small
   `rfc/RFC-0026-the-covenant-vehicle.md`
-- **RFC-0027** `proposed` for 37d — Research is captured where it happens, because provenance does not survive a memory
+- **RFC-0027** `proposed` for 41d — Research is captured where it happens, because provenance does not survive a memory
   `rfc/RFC-0027-research-is-captured-where-it-happens.md`
-- **RFC-0028** `proposed` for 37d — The web template — what template-web contains, and the five decisions it needs first
+- **RFC-0028** `proposed` for 41d — The web template — what template-web contains, and the five decisions it needs first
   `rfc/RFC-0028-the-web-template.md`
-- **RFC-0029** `proposed` for 36d — A derivation is an artifact, and an estimate is writable only if it is labelled
+- **RFC-0029** `proposed` for 40d — A derivation is an artifact, and an estimate is writable only if it is labelled
   `rfc/RFC-0029-a-derivation-is-an-artifact.md`
-- **RFC-0030** `proposed` for 36d — A task id cited by a governed artifact must resolve, and two files must not disagree about it
+- **RFC-0030** `proposed` for 40d — A task id cited by a governed artifact must resolve, and two files must not disagree about it
   `rfc/RFC-0030-a-cited-task-id-must-resolve.md`
-- **RFC-0031** `proposed` for 36d — The pull request is not the unit of work — stacks, a work-in-progress ceiling, and automatic draining
+- **RFC-0031** `proposed` for 40d — The pull request is not the unit of work — stacks, a work-in-progress ceiling, and automatic draining
   `rfc/RFC-0031-the-pull-request-is-not-the-unit-of-work.md`
-- **RFC-0032** `proposed` for 36d — Every repository carries an SOP, and every repository declares what it provides
+- **RFC-0032** `proposed` for 40d — Every repository carries an SOP, and every repository declares what it provides
   `rfc/RFC-0032-every-repository-carries-an-sop.md`
-- **RFC-0033** `proposed` for 36d — Every deliverable carries a logbook, and how it was built is captured rather than remembered
+- **RFC-0033** `proposed` for 40d — Every deliverable carries a logbook, and how it was built is captured rather than remembered
   `rfc/RFC-0033-every-deliverable-carries-a-logbook.md`
-- **RFC-0036** `proposed` for 24d — The substrate host's graphical session is reached over the tunnel, by a service that owns no port on the LAN
+- **RFC-0036** `proposed` for 28d — The substrate host's graphical session is reached over the tunnel, by a service that owns no port on the LAN
   `rfc/RFC-0036-the-substrate-hosts-graphical-session-is-reached-over-the-tunnel.md`
-- **RFC-0038** `proposed` for 24d — The personal drive is read-only, its egress is exclusive, and it finishes before the substrate exists
+- **RFC-0038** `proposed` for 28d — The personal drive is read-only, its egress is exclusive, and it finishes before the substrate exists
   `rfc/RFC-0038-the-personal-drive-is-read-only-exclusive-and-off-the-host-before-the-substrate.md`
-- **RFC-0039** `proposed` for 19d — The people platform is one program, and the order it must be built in is forced rather than chosen
+- **RFC-0039** `proposed` for 23d — The people platform is one program, and the order it must be built in is forced rather than chosen
   `rfc/RFC-0039-the-people-platform-is-one-program-and-its-order-is-forced.md`
-- **RFC-0040** `proposed` for 19d — A diagram is a renderer, and the model stays where it already is
+- **RFC-0040** `proposed` for 23d — A diagram is a renderer, and the model stays where it already is
   `rfc/RFC-0040-a-diagram-is-a-renderer-and-the-model-stays-where-it-is.md`
-- **RFC-0043** `proposed` for 16d — web-careers is carved out of web-paridyum in four independently revertable slices
+- **RFC-0043** `proposed` for 20d — web-careers is carved out of web-paridyum in four independently revertable slices
   `rfc/RFC-0043-web-careers-is-carved-out-of-web-paridyum-in-four-slices.md`
-- **RFC-0044** `proposed` for 9d — docket as a service completes the platform against ADR-0042, tenant zero first
+- **RFC-0044** `proposed` for 13d — docket as a service completes the platform against ADR-0042, tenant zero first
   `rfc/RFC-0044-docket-as-a-service-completes-the-platform.md`
-- **RFC-0045** `proposed` for 9d — The isolation envelope is a placement, a containment class, and an attestation
-  `rfc/RFC-0045-the-isolation-envelope-is-a-placement-a-containment-class-and-an-attestation.md`
-- **RFC-0046** `proposed` for 9d — A tenant-held key is an availability dependency, and revocation is destruction
+- **RFC-0046** `proposed` for 13d — A tenant-held key is an availability dependency, and revocation is destruction
   `rfc/RFC-0046-a-tenant-held-key-is-an-availability-dependency-and-revocation-is-destruction.md`
-- **RFC-0047** `proposed` for 9d — Renting the platform is a stamp, not a third column
+- **RFC-0047** `proposed` for 13d — Renting the platform is a stamp, not a third column
   `rfc/RFC-0047-renting-the-platform-is-a-stamp-not-a-third-column.md`
-- **RFC-0048** `proposed` for 9d — A public surface is a tenant's surface, and Paridyum is its first tenant
-  `rfc/RFC-0048-a-public-surface-is-a-tenants-surface-and-paridyum-is-its-first-tenant.md`
-- **RFC-0049** `proposed` for 9d — A tenant is a set of releases, and /dashboard is where they are deployed
+- **RFC-0049** `proposed` for 13d — A tenant is a set of releases, and /dashboard is where they are deployed
   `rfc/RFC-0049-a-tenant-is-a-set-of-releases-and-the-dashboard-is-where-they-are-deployed.md`
-- **RFC-0050** `proposed` for 9d — The dashboard's first run is the provisioning saga made visible
+- **RFC-0050** `proposed` for 13d — The dashboard's first run is the provisioning saga made visible
   `rfc/RFC-0050-the-dashboards-first-run-is-the-saga-made-visible.md`
-- **RFC-0051** `proposed` for 9d — A tenant chooses a jurisdiction, and nothing below it
+- **RFC-0051** `proposed` for 13d — A tenant chooses a jurisdiction, and nothing below it
   `rfc/RFC-0051-a-tenant-chooses-a-jurisdiction-and-nothing-below-it.md`
+- **RFC-0053** `proposed` for 3d — CI executes on our own substrate, and a runner never shares a failure domain with tenant data
+  `rfc/RFC-0053-a-runner-never-shares-a-failure-domain-with-tenant-data.md`
 
 ### Durability
 
@@ -167,5 +163,7 @@ anyone remembers it exists.
 - [ ] 2026-09-12 read `https://zitadel.com/docs/apis/resources/admin/admin-service-add-smtp-config` (session `a8266409`) — no artifact declares it in `sources`. Cite it under RFC-0020, or tick this if it was a dead end.
 - [ ] 2026-09-12 read `https://pve.proxmox.com/wiki/Package_Repositories` (session `a8266409`) — no artifact declares it in `sources`. Cite it under RFC-0020, or tick this if it was a dead end.
 - [ ] 2026-09-16 session `47909226` — 214 decision-shaped statements, no artifact created or changed. Was something decided that is not written down?
+- [ ] 2026-09-26 read `https://raw.githubusercontent.com/srl-labs/vrnetlab/master/juniper/vjunosswitch/docker/init.conf` (session `ses_f25c`) — no artifact declares it in `sources`. Cite it under RFC-0020, or tick this if it was a dead end.
+- [ ] 2026-09-26 read `https://raw.githubusercontent.com/srl-labs/vrnetlab/master/juniper/vjunosswitch/docker/launch.py` (session `ses_f25c`) — no artifact declares it in `sources`. Cite it under RFC-0020, or tick this if it was a dead end.
 
 Tick an item to dismiss it, or record the decision as an ADR and delete the line.

@@ -85,6 +85,7 @@
       "items": {
         "enum": [
             "org",
+            "agent",
             "console",
             "infra",
             "library",

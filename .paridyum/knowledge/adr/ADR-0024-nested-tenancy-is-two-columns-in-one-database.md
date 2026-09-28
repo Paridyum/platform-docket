@@ -2,11 +2,11 @@
 id: ADR-0024
 title: Nested tenancy is two columns in one database, and operator scope is a grant
 type: adr
-status: locked
+status: superseded
 created: 2026-08-07
 locked_at: 2026-08-07
 supersedes: [ADR-0023]
-superseded_by: null
+superseded_by: ADR-0115
 scope: [org, platform, service, infra]
 applies_to: ["*"]
 tags: [tenancy, nested-tenancy, isolation, postgres, rls, authorisation, density]

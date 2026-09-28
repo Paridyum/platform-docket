@@ -2,7 +2,7 @@
 id: RFC-0022
 title: What must be true for a founder to build on a platform whose operator competes with them
 type: rfc
-status: proposed
+status: accepted
 created: 2026-08-15
 locked_at: null
 supersedes: null
@@ -12,14 +12,67 @@ applies_to: ["*"]
 tags: [conflict-of-interest, isolation, data-use, trust, self-preferencing, export, audit]
 breaking: true
 enforced_by: []
+sources:
+  - url: https://cloudnative-pg.io/documentation/1.22/logging/
+    title: CloudNativePG — Logging (PGAudit support)
+    retrieved: 2026-09-27
+    supports: >
+      §D5a path 2. PGAudit is enabled by adding `pgaudit.*` parameters to the cluster's
+      `postgresql` section; the operator manages `shared_preload_libraries` and the
+      CREATE/DROP EXTENSION in every database, and the audit records are routed to stdout
+      as JSON under `.record.audit`. This is what makes closing the direct-psql path a
+      configuration change rather than a project.
+  - url: https://github.com/pgaudit/pgaudit
+    title: pgaudit — README
+    retrieved: 2026-09-27
+    supports: >
+      §D5a paths 2 and 3. The statement classes are READ, WRITE, FUNCTION, ROLE, DDL, MISC,
+      MISC_SET and ALL, combined as a comma-separated list with `-` to exclude. And the
+      property that makes this a control rather than a log: "Settings may be modified only by
+      a superuser. Allowing normal users to change their settings would defeat the point of an
+      audit log." So the audited application role cannot switch off its own auditing.
+  - url: https://docs.siderolabs.com/talos/v1.13/configure-your-talos-cluster/system-configuration/patching
+    title: Talos Linux — Configuration Patches
+    retrieved: 2026-09-27
+    supports: >
+      §D5a's erratum. `cluster.apiServer.auditPolicy` exists in the Talos machine config and is
+      REPLACED on merge when patched rather than merged — so a patch must carry a complete policy,
+      not an addition to the default one.
+  - url: https://garagehq.deuxfleurs.fr/documentation/reference-manual/features/
+    title: Garage — List of features
+    retrieved: 2026-09-27
+    supports: >
+      §D5a path 4. The feature list documents Prometheus metrics and OpenTelemetry traces
+      and does NOT document S3 server access logging or a per-object audit trail. Stated as
+      "not documented" rather than "not possible": absence from a feature page is not proof
+      of absence from the product.
 ---
 
 # RFC-0022 — The operator competes with its tenants
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0116, ADR-0120.** In this RFC **"the operator" is Paridyum** —
+> the platform — not GLO-0001's operator. D5's tenant-visible access is built as ADR-0120's grants,
+> and staff act in ADR-0116's platform context, which the database confines to the personless
+> skeleton.
+
 ## Status
 
-**PROPOSED**, 2026-08-15. Opened by BET-0005, which commits Paridyum to operating the same
-catalogue products it franchises.
+**ACCEPTED** as of 2026-09-27 by the operator. Proposed 2026-08-15, opened by BET-0005, which commits
+Paridyum to operating the same catalogue products it franchises.
+
+**Accepted with D5 labelled PARTIAL, which the RFC's own open question 2 demanded.** That question asked
+whether every access path can be logged or only application-mediated ones, and said *"a partial one must
+be described as partial."* It is now answered from measurement rather than estimate — §D5a is the answer
+— and D5 is **partial today**: the application path is logged and five others are not. Publishing D5 as
+an unqualified guarantee would have been claiming a capability before it is real, which ADR-0041 D4
+forbids.
+
+**What acceptance releases:** D1 through D4 become binding rather than proposed, and D5 becomes
+publishable **in its partial form** with §D5a as the statement of what is and is not covered. What it
+does not release is any page saying "we log every access", because that is not true and §D5a says why.
+
+D1 is already in force (ADR-0049 D2, and tenant zero holds no grant a customer could not hold). D4's
+export exists as of 2026-09-26 (`platform-tenancy/scripts/extract.py`, RFC-0045 §F).
 
 **Four boundary options were considered and rejected the same day**, all for one reason: they are
 physical-franchise mechanics that do not transfer to a digital business where **tenants run under
@@ -195,6 +248,130 @@ its trigger to fire during the first wave anyway.
 
 Self-attestation is worth very little. A log the counterparty reads is worth a great deal.
 
+### D5a — the part of D5 that is not covered, measured rather than estimated
+
+**Added 2026-09-27, answering open question 2.** D5 says a tenant sees operator access to its data. That
+is a promise about access paths, so it is only as strong as the weakest path — and there are six in the
+table below, a seventh that is not ours, and an eighth opened on the same day (see its note).
+Measured against this estate as it stands:
+
+| # | Path to a tenant's data | Logged where the tenant can see it | Closable how |
+| --- | --- | --- | --- |
+| 1 | **The application** — `platform-tenancy`, `tool-docket`, the web surfaces | **Yes.** `audit_events`, one row per operation (ADR-0110), readable by the tenant's own administrator | — |
+| 2 | **`psql` as the superuser inside the pod** — `migrate.py`, `retention.py`, the seeds, the isolation proofs, any ad-hoc `kubectl exec` | **No.** These bypass the application entirely | **PGAudit.** CloudNativePG enables it by adding `pgaudit.*` parameters and manages the library and the extension itself; records reach stdout as JSON under `.record.audit` |
+| 3 | **`paridyum_app`'s DSN used from outside the application** | **No.** Same bypass, with RLS still in force | PGAudit, as path 2 |
+| 4 | **Backups** — the WAL archive and base backups in Garage | **No.** Whoever can read the bucket can read every tenant's rows | Partially. Garage documents metrics and traces, not S3 access logging; a logging proxy in front of it, or credential issuance that is itself recorded |
+| 5 | **A restore clone** — `postgres/restore-rehearsal.yaml` | **No.** A clone is a full copy of every tenant's data | Policy: a clone is a database and takes the same `pgaudit.*` parameters |
+| 6 | **Raw volume access** — the Longhorn volume, or the node's disk | **No**, and no log can cover it | Not closable by logging. Encryption changes the exposure and not the operator's position: the running database holds the key |
+
+**Path 7 is not ours.** Zitadel holds the authentication events, and the correlation id is the join
+(ADR-0044 D1). A tenant seeing both halves needs that id present in each, which is why it was built
+before this.
+
+> ### Path 8, added the same day — opened by the scoping that makes paths 2, 3 and 5 work
+>
+> Before pgaudit was switched on, the question nobody had asked: `pgaudit.log` applies to **every
+> role**, Zitadel's service role included, on the same cluster. Measured over 60 s of catalog
+> statistics: the `zitadel` database at ~8 transactions/s and ~2.5 rows written/s at idle, `paridyum`
+> at ~0. With `log_relation` on, auditing Zitadel's own polling is hundreds of thousands to millions of
+> lines a day into a container log kubelet rotates by size — so a path-2 `psql` session would be
+> rotated away within minutes, and the control would have defeated itself while looking healthy.
+>
+> So `infra-kubernetes` `make postgres-audit-scope` sets **Zitadel's own role, in its own database**,
+> to `ddl, role`. Every other role — the superuser included — keeps `read, write, ddl, role`, so a human
+> reading or changing the `zitadel` database is recorded **unless that human turns it off first**:
+> pgaudit's settings are superuser-only, which binds `paridyum_app` and `zitadel` and not the
+> superuser. A superuser can `SET pgaudit.log = 'none'`, and that `SET` is not itself recorded
+> (`misc_set` is excluded, for the noise reason in `cluster.yaml`). So path 2 is recorded against a
+> careless operator, not a deliberate one — the same position as path 6, one level up. What still
+> records the deliberate case is the kube-apiserver's audit log (Talos default, `level: Metadata`,
+> the erratum below): the `kubectl exec` into the database pod, who and when, though not what was read.
+>
+> **That opens path 8:** a holder of the Zitadel database credential can read and change identity
+> data in the `zitadel` database unaudited while connected as that role. Identity data is a tenant's
+> users' personal data, so this is a path to a tenant's data, not an internal one. It is a
+> secret-access path — the credential lives in a SOPS-encrypted Kubernetes secret — and it is closable
+> the same way path 6's neighbours are not: **by keeping the records long enough that the exemption is
+> unnecessary.** The root cause is that audit records live only in a size-rotated container log
+> (`infra-kubernetes` DECISION-DEBT: raise kubelet's log limits in the Talos config, ship
+> `.record.audit` off the node — the "reach" half of T-G.22). When that lands, the exemption should go.
+
+> ### ✘ ERRATUM, same day — the paragraph below was wrong, and its "verified" was worthless
+>
+> It read: *"the kube-apiserver has **no audit policy configured** in this estate — verified 2026-09-27,
+> nothing in `infra-terraform` or `infra-kubernetes` sets `--audit-log-*` or an audit policy file."*
+>
+> **The verification was a grep that filtered out its own evidence.** It ended
+> `| grep -v '.paridyum'`, and `.` matches any character — so every path under
+> `/Users/rohan/Developer/paridyum/` was excluded, which is every path there is. The command returned
+> nothing and the nothing was read as an answer.
+>
+> **The truth is better than the claim.** Talos v1.13.7 ships kube-apiserver audit logging **on by
+> default**: `cluster.apiServer.auditPolicy` with `rules: [- level: Metadata]`, present in
+> `infra-terraform/talos/rendered/controlplane.yaml`, writing to `/var/log/audit/kube/*.log` on the
+> control-plane nodes. So **`kubectl exec` into the database pod IS recorded** — who, which pod, when.
+>
+> What it is not is **shipped** or **visible to a tenant**. So this does not close paths 2 or 5; it
+> changes what is missing from them, from *"nobody knows it happened"* to *"the operator's own node knows,
+> and rotates it in 30 days"*. Recorded as an erratum rather than an edit (ADR-0031) because the mistake
+> is the useful part: it is the fourth time in two days that a check reported nothing because the check
+> was wrong, and the first where the author of the check was the one relying on it.
+>
+> One consequence worth carrying: a Talos patch **replaces** `auditPolicy` rather than merging into it, so
+> narrowing or widening the policy means writing a complete one, and a partial patch silently discards
+> Talos's default.
+
+**What remains on the apiserver path, then, is not recording but reach.** The records exist on the node.
+Nothing ships them, nothing makes them tamper-evident, and no tenant can read them — which is D5's actual
+bar, and the reason this path stays in the table as uncovered rather than being ticked.
+
+**The honest conclusion, and it is not "we will close them all".** Paths 2, 3 and 5 are closable by
+configuration — **and were configured on 2026-09-27**: `pgaudit.*` parameters on the cluster and on the
+restore clone (`infra-kubernetes/postgres/`), pending an apply that restarts the database. Path 4 is
+partially closable.
+
+**Path 6 is not closable *by logging*, and the stronger claim this section made first — "not closable at
+all" — was overconfident.** What there is evidence for is narrower: no log can cover raw volume access,
+because the party being logged controls the logger. Whether the *exposure* can be closed by other means is
+a question this RFC has not researched, and three avenues are named here precisely so the conclusion is
+revisited rather than inherited:
+
+1. **Memory-encrypted execution with attestation.** If the database runs where the host cannot read its
+   memory, and a tenant can verify that from outside, raw disk access stops yielding plaintext and the
+   operator's position changes rather than being described differently. Unresearched here: what it costs,
+   what it requires of the substrate, and whether the attestation is something a tenant can actually
+   check rather than be told about.
+2. **Keys the tenant holds rather than us.** RFC-0046's territory. It does not help while the running
+   database holds the key in memory — which is exactly why it pairs with (1) rather than substituting
+   for it.
+3. **Tamper-evident shipping, which changes detectability rather than access.** The estate already has
+   this pattern: docket's four sealed chains are hash-chained and append-only. Applied to an access log
+   shipped somewhere the operator cannot rewrite, concealment becomes detectable even where access stays
+   possible — which is a weaker guarantee than prevention and a much stronger one than a promise.
+
+**So this section's verdict is provisional and dated.** It is what could be established on 2026-09-27 with
+the estate as it stands, and the trigger to reopen it is the first of: a tenant asking for more than
+partial, a substrate change that makes (1) available, or RFC-0046 moving from designed to built. An
+architecture conclusion that nobody is expected to revisit is the shape of thing ADR-0011 exists to
+prevent.
+
+So the strongest statement this estate can truthfully make to a tenant is not *"we log every access"*.
+It is:
+
+> These paths are logged and you can read the log. These are gated by a procedure that records its own
+> use and requires a human approval. This one remains, and it remains because we run the hardware —
+> here is what that means.
+
+That is a weaker sentence and a more credible one, and it is the same argument D2a already makes about
+the commitments that cannot be checked: **an unfalsifiable guarantee is worth less than a bounded one**.
+A tenant sophisticated enough to ask about self-preferencing is sophisticated enough to notice which
+kind they were handed.
+
+**What this does not permit.** No page, capability matrix or sales conversation may describe the access
+log as complete until paths 2, 3 and 5 are closed, path 4 is stated, and path 8 is closed or stated. ADR-0041 D4 forbids claiming a
+capability before it is real, and this is the capability most likely to be over-claimed, because the
+partial version demonstrates well.
+
 ### D6 — The separate legal entity stays deferred, with a trigger
 
 BET-0005 rejected it as premature and named the reconsideration point. Restated here so it is
@@ -226,10 +403,13 @@ prevents the access that goes through the application; it does nothing about exp
    competes. A real asset given up, and given up because the alternative is a platform whose
    customers are rationally afraid of it. Kept in this list, struck through, because the reasoning
    matters more than the outcome and a deleted question reads as one that was never asked.
-2. **Is a tenant-visible operator access log achievable under ADR-0024?** Shared database with
-   forced RLS means operator access is credentialed at a level the application may not see.
-   Whether every access path can be logged, or only application-mediated ones, decides whether D5
-   is a guarantee or a partial one — and a partial one must be described as partial.
+2. ~~**Is a tenant-visible operator access log achievable under ADR-0024?**~~ **Answered 2026-09-27:
+   partial, and §D5a is the answer.** One of the six paths in its table is logged today — the application's, through
+   `audit_events`. Three more are closable by configuration (PGAudit, which CloudNativePG supports
+   natively), one partially (the backup bucket), and **one not at all**: raw volume access, because the
+   party being logged controls the logger. So D5 is published as partial, with the paths named. Kept in
+   this list, struck through, because the shape of the answer matters more than the verdict — the
+   question was whether to describe it as a guarantee, and the answer is no.
 3. **Does the commitment need to be contractual to be worth anything?** A published policy can be
    changed unilaterally. A term in the tenant agreement cannot. The second is much more credible
    and much harder to reverse, which is the point.

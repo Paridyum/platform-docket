@@ -54,6 +54,11 @@ done
 
 LEDGER="$root/DECISION-DEBT.md"
 today="$(date +%Y-%m-%d)"
+# Seconds at local midnight of a YYYY-MM-DD date (BSD date, then GNU date), or nothing.
+midnight() {
+  date -j -f "%Y-%m-%d %H:%M:%S" "$1 00:00:00" +%s 2>/dev/null || date -d "$1 00:00:00" +%s 2>/dev/null
+}
+today_s="$(midnight "$today")"
 
 fm() { awk -v k="^$2:" 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit} $0~k{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$1" 2>/dev/null; }
 
@@ -100,10 +105,15 @@ while IFS= read -r f; do
   case "$st" in draft|proposed) ;; *) continue ;; esac
   created="$(fm "$f" created)"
   age="?"
-  if [[ -n "$created" ]]; then
-    if age_s=$(( $(date +%s) - $(date -j -f %Y-%m-%d "$created" +%s 2>/dev/null || date -d "$created" +%s 2>/dev/null || echo 0) )) && [[ $age_s -gt 0 ]]; then
-      age="$(( age_s / 86400 ))d"
-    fi
+  if [[ -n "$created" ]] && created_s=$(midnight "$created") && [[ -n "$created_s" ]]; then
+    # Whole days between two MIDNIGHTS, rounded: `date -j -f %Y-%m-%d` alone fills in the current
+    # time of day, so "now minus created" straddled a second boundary and floored to a day less
+    # (RFC-0021 read 45d beside two same-day RFCs at 46d), and a same-day artifact computed 0 and
+    # showed "?". Rounding absorbs a DST day of 23 or 25 hours.
+    days=$(( (today_s - created_s + 43200) / 86400 ))
+    # A `created` date in the future is a typo or a clock, not an age — show "?" so the ledger still
+    # surfaces it as unreadable instead of passing it off as brand new.
+    if (( today_s >= created_s )); then age="${days}d"; fi
   fi
   open_decisions+="- **$(fm "$f" id)** \`$st\` for $age — $(fm "$f" title)
   \`${f#"$root"/}\`

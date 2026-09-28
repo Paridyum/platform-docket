@@ -40,6 +40,25 @@
 version: 1
 
 classes:
+  - class: agent
+    prefix: agent-
+    scope: agent
+    stacks: [rust]
+    deployable: false
+    ci: true
+    description: A distributed application that runs on machines the estate does not control and acts for one tenant.
+    declared: 2026-09-27
+    notes: >
+      Added by ADR-0111 for RFC-0054's station — the first distributed client this estate
+      ships. `deployable: false` is load-bearing rather than incidental: the agent is
+      installed on a tenant's own machines, never scheduled onto the cluster, so ADR-0020's
+      chart machinery does not reach it and this class must not be marked deployable.
+      Its Zitadel application type is **Native**, and a station authenticates by **device
+      authorization (RFC 8628)** — the one property `tool-` could not carry, because
+      ADR-0070 D3 gives a tool no OIDC client and no internet identity. A repository in
+      this class distributes a signed binary rather than a workload; REQ-0014's supply-chain
+      rules apply to what it ships.
+
   - class: console
     prefix: console-
     scope: console

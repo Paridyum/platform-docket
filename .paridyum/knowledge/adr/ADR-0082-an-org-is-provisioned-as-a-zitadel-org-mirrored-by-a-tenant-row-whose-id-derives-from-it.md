@@ -17,6 +17,12 @@ enforced_by: []
 
 # ADR-0082 — An org is provisioned as a Zitadel org mirrored by a tenant row, whose id derives from the org
 
+> **Superseded in part, 2026-09-28 — ADR-0113.** In this ADR, **"org" means the tenant's Zitadel organization** —
+> the vendor object — and not an Org (GLO-0012). In code it is `zitadel_org` / `zitadel_org_id`
+> (ADR-0113 D2). The derivation rule stands. **The example ids below** (Paridyum's tenant and its
+> Zitadel organization) **belong to the estate before its 2026-09-28 rebuild from empty** (ADR-0118 D3);
+> the rebuilt tenant has new ones.
+
 ## Status
 
 **Accepted**, 2026-09-12. This is what makes tenancy *usable* rather than merely modelled, and its

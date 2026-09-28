@@ -16,6 +16,11 @@ enforced_by: []
 
 # ADR-0096 — Localized content in the database is a per-locale keyed JSON object
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0122.** **D1 and D2 are amended by ADR-0122 D4.** A localized
+> field carries every **content locale of the tenant that owns the row**, checked by a per-tenant
+> function — not every estate locale by a literal `CHECK`. `en` and `ar` stay the **software
+> locales** of every web product (a security floor), not a content requirement on tenants.
+
 ## Status
 
 **Accepted**, 2026-09-14. Prompted by ADR-0095: job postings are the **first authored content the

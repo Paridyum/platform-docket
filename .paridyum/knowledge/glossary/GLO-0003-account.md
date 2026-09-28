@@ -16,6 +16,10 @@ enforced_by: []
 
 # GLO-0003 — Account
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0114.** Paridyum bills the **org** (GLO-0012), not an
+> operator: money flows org → Paridyum and account → tenant, on separate rails. **An org is never an
+> account**, and a client company is never an account in its provider's tenant (RFC-0055, ADR-0120).
+
 ## Definition
 
 **An account is the unit one instance of a tenant's product serves: the INNER silo. It is

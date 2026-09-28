@@ -17,6 +17,10 @@ enforced_by: []
 
 # ADR-0084 — Branding is per tenant, because a tenant is an organization
 
+> **Superseded in part, 2026-09-28 — ADR-0113.** "A tenant is an organization" here means **the tenant's Zitadel
+> organization** (ADR-0047 D2), not an Org (GLO-0012). Branding stays per tenant, configured at the
+> portal (ADR-0119 D2).
+
 ## Status
 
 **Accepted**, 2026-09-12. Paridyum is the first tenant and the first to be branded (C-0008,

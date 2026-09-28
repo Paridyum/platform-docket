@@ -2,7 +2,7 @@
 id: RFC-0048
 title: A public surface is a tenant's surface, and Paridyum is its first tenant
 type: rfc
-status: proposed
+status: accepted
 created: 2026-09-15
 locked_at: null
 supersedes: null
@@ -23,6 +23,18 @@ enforced_by:
 ---
 
 # RFC-0048 — A public surface is a tenant's surface, and Paridyum is its first tenant
+
+## Status
+
+**ACCEPTED** as of 2026-09-26 by the operator.
+
+**§E closed open question 1 on 2026-09-26**, which was the one blocking implementation: the landing's
+content schema is four section types with fixed fields. Open questions 3–5 remain open and acceptance
+does not wait on them — they are product decisions (custom-domain routing, the empty-careers state,
+and a public-surface quota), none of which the schema depends on. Question 2 (whether `careers` is its
+own catalogue product) was answered by the product registry on 2026-09-20 and is marked below.
+
+**What acceptance releases:** T-G.11 (the landing content migration, whose shape §E now fixes).
 
 ## Problem
 
@@ -177,6 +189,57 @@ own front door. ADR-0050: absent means every product, which is true of neither.
 an `MKT-`, and C-0006 requires its evidence be non-tenant-derived. Whether careers is its own product
 or part of the hiring product is §Open questions 2.
 
+### E. The landing's content schema — four section types, and the rule that keeps them four
+
+**Added 2026-09-26, answering open question 1.** §B established that the landing becomes tenant
+rows with a declared schema and left the schema itself open, with the hazard named exactly:
+*an over-general schema is how a product becomes a builder by accident.* This fixes it, because
+T-G.11 cannot be built until it is fixed and guessing it in a migration would decide it in SQL.
+
+**Derived from what the product renders, not from what a tenant might want.** That is the whole
+method. `web-paridyum` today renders a statement block, outbound navigation and a contact address;
+its stripped-but-retained copy adds enumerations (`ours.items`, `commitments`). Four shapes cover
+all of it, and a fifth would have to be justified by a component that renders it.
+
+| type | fields | what it covers today |
+| --- | --- | --- |
+| `statement` | eyebrow, headline, body, note | `holding`, `hero`, `audience`, `stage`, `proof` |
+| `list` | eyebrow, headline, lead, items[{title, body}] | `ours`, `commitments` |
+| `link` | label, href | the outbound Careers link (ADR-0086 D4) |
+| `contact` | label, address | `contact` |
+
+**Every text field is localized `jsonb` per ADR-0096**, validated by `paridyum.is_localized_text`
+and `is_localized_list` — the functions migration 0007 already defines for `job_postings`. Reusing
+them rather than writing new ones matters: 0007's own comment records that a `CHECK` passes on NULL,
+so a half-translated row slips through without the `COALESCE`. That lesson should not be learned
+twice.
+
+**Four rules keep this a product rather than a builder.** Each is the line C-0006 draws, made
+operable:
+
+1. **The set is closed.** A row whose `type` is not one of the four is refused by a `CHECK`.
+2. **Fields per type are fixed.** A tenant chooses *words*, never *shapes*. There is no free-form
+   object, no arbitrary key, no `properties: jsonb`.
+3. **Order is an integer, and that is the only layout control.** No nesting, no columns, no
+   styling, no HTML, no class names. A section cannot contain a section.
+4. **Adding a type is a migration AND a component, in the same change.** Never one without the
+   other — a type the product cannot render is a settings field pretending to be a feature, and a
+   component with no type is dead code.
+
+**The test for whether the line held:** when a tenant asks for a section we do not have, the answer
+is a product decision and a migration — not a settings page. If it ever becomes a settings page,
+this section failed and C-0006 is engaged after all.
+
+**What is NOT in this schema, stated so it is not added by accident:**
+
+- **Branding** — colours, mark, typography. ADR-0084 owns it, and putting it here would make the
+  landing the place branding lives for every surface.
+- **Paridyum's positioning** — the category, the forbidden framings, the segment, the unit of sale.
+  §B already says these stay product zero's. They are *rows of these four types*, not four more
+  types named after them. A `forbidden_framings` section type would be this estate's schema
+  encoding one tenant's argument.
+- **Routing, domains and certificates** — open question 3, and unwritten.
+
 ## Alternatives considered
 
 1. **Leave both single-tenant; build a separate tenant-facing careers app later.** Rejected: two
@@ -244,12 +307,21 @@ because a default tenant left in place is §Proposal A.3's failure waiting to ha
 
 ## Open questions
 
-1. ~~**Does a tenant get a landing page?**~~ **ANSWERED 2026-09-15 by operator direction: yes.** It
-   is the same product with the tenant's own content rows, not a page builder. What remains open is
-   narrower: **what is the landing's content schema?** `job_postings` had a natural one; a landing
-   page's sections do not, and an over-general schema is how a product becomes a builder by accident.
-2. **Is `careers` its own catalogue product, or the public half of the hiring product?** Decides
-   whether an `MKT-` is owed and how the manifests declare `product:`.
+1. ~~**Does a tenant get a landing page?**~~ **ANSWERED 2026-09-15 by operator direction: yes.**
+   ~~What remains open is narrower: what is the landing's content schema?~~ **The remainder is
+   ANSWERED 2026-09-26 by §E:** four closed section types — `statement`, `list`, `link`, `contact` —
+   each with fixed fields, ordered by an integer and nothing else, localized per ADR-0096. The
+   hazard this question named is answered by rule 4 in particular: a type is added by a migration
+   and a component together, never by a settings field.
+2. ~~**Is `careers` its own catalogue product, or the public half of the hiring product?** Decides
+   whether an `MKT-` is owed and how the manifests declare `product:`.~~ **ANSWERED 2026-09-20 by
+   `product-registry.yaml`, recorded here 2026-09-27:** the public half of `hiring`, registered as
+   `kind: capability` — one deployable (`web-hiring`) serves the public index and the operator's
+   posting admin against the same rows, so two products would contradict what runs. A capability
+   claims no market, so no `MKT-` is owed and C-0006 anti-goal 6 is not engaged; the product's
+   `REQ-` still is. `web-hiring` declares `product: [hiring]` (T-G.6). **This line stayed open for a
+   week after the registry answered it**, including through this RFC's acceptance — the answer lived
+   in a registry `notes:` field that pointed here, and nothing pointed back.
 3. **How does a tenant's custom domain reach the careers surface?** Depends on the routing and
    certificate work ADR-0100 references and RFC-0044 stage 3 lists — currently unwritten.
 4. **What does a tenant's careers page show before it has postings?** An empty state on a tenant's

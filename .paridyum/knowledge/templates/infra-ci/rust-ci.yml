@@ -392,7 +392,14 @@ jobs:
       # anybody.
       - run: .paridyum/knowledge/scripts/check-knowledge.sh
       - run: .paridyum/knowledge/scripts/check-repo.sh --root .
-      - run: .paridyum/knowledge/scripts/check-migrations.sh
+      # `--root .` IS NOT OPTIONAL, and this line omitted it until 2026-09-27. Vendored at
+      # `.paridyum/knowledge/scripts/`, the script derives its target from its own location — so
+      # without `--root` it scanned the SNAPSHOT'S OWN TEST FIXTURES, which include deliberately
+      # failing ones, instead of the calling repository's migrations. It has never run green for a
+      # repository that has migrations, and no repository that has migrations had CI until this week,
+      # which is the only reason it was not noticed. Both scripts now refuse that invocation outright
+      # rather than reporting `n/a` on it.
+      - run: .paridyum/knowledge/scripts/check-migrations.sh --root .
 
   secrets:
     name: secret scan

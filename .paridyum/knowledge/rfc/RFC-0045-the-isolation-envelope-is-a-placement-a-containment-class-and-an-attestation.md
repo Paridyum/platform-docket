@@ -2,7 +2,7 @@
 id: RFC-0045
 title: The isolation envelope is a placement, a containment class, and an attestation
 type: rfc
-status: proposed
+status: accepted
 created: 2026-09-15
 locked_at: null
 supersedes: null
@@ -22,6 +22,28 @@ sources:
 ---
 
 # RFC-0045 — The isolation envelope is a placement, a containment class, and an attestation
+
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0118.** Where this RFC cites ADR-0100's provisioning surface
+> as tenant zero's control plane, read ADR-0118: the portal is the platform's own surface, serving
+> orgs, and tenant zero is Paridyum's tenant only. The isolation envelope itself is unchanged.
+
+## Status
+
+**ACCEPTED** as of 2026-09-26 by the operator.
+
+**Open questions 1 and 3 remain open, and acceptance does not wait on them.** That is the estate's
+normal shape rather than an exception — RFC-0003 and RFC-0004 are both `accepted` with five open
+questions still listed. Accepting fixes the direction as binding; it does not claim everything is
+settled.
+
+**Open question 3 is in fact now answerable from work already done.** T-G.7's restore rehearsal
+(2026-09-24) measured the recovery point at **sub-minute, bounded by WAL-archiving lag**, verified by
+an actual restore rather than by a configuration read. Open question 1 — the C1 ceiling as a number —
+is a capacity and pricing decision and stays with the operator.
+
+**What acceptance releases:** T-G.2 (§D's `audit_events`, which TASKS.md records as *permanently
+lossy* — each day of traffic is history that cannot be reconstructed) and T-G.10 (§A's placement
+resolver).
 
 ## Problem
 

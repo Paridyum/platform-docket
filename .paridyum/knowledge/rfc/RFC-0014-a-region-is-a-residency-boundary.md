@@ -67,6 +67,13 @@ sources:
 
 # RFC-0014 — A region is a residency boundary
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0115, ADR-0117.** Decisions 3 and 4 are resolved by
+> **ADR-0115** (four scopes — `platform`, `org`, `tenant`, `account` — one schema per plane's
+> database; ADR-0024 superseded) and **STD-0023** (the plane directive ratified). Where this RFC
+> says an **operator** owns tenants, read **org** (GLO-0012); its people are org-scoped and regional
+> (ADR-0117). The retired name for the control region is quoted below because this RFC retired it.
+> Everything else is unchanged and still `proposed`.
+
 ## Status
 
 **PROPOSED** as of 2026-08-11. Feedback deadline **2026-09-10**, set inside ADR-0011's 30-day

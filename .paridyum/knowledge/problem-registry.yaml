@@ -70,12 +70,12 @@ problems:
   - id: PROB-0003
     title: OIDC token_rejected — the tenant claim needs the resourceowner scope, which nobody requested
     first_seen: 2026-09-10
-    repos: [web-paridyum, lib-auth-typescript]   # renamed from lib-auth 2026-09-24, ADR-0107
+    repos: [web-paridyum, lib-auth]
     surface: >
       Login completes, the code exchanges fine, then the callback rejects the access token and
-      redirects with ?auth_error=token_rejected. `@paridyum/auth` throws "token carries no tenant claim".
+      redirects with ?auth_error=token_rejected. lib-auth throws "token carries no tenant claim".
     misleading_signal: >
-      Looks like a bad token, a signature/audience problem, or a library bug. The audience was
+      Looks like a bad token, a signature/audience problem, or a lib-auth bug. The audience was
       in fact correct and the signature valid.
     root_cause: >
       The tenant is `urn:zitadel:iam:user:resourceowner:id` (ADR-0047 D5), and Zitadel only

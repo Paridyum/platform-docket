@@ -16,6 +16,11 @@ enforced_by: []
 
 # ADR-0085 — System mail sends as the domain, through a provider that signs it
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0119.** This mechanism is applied **per tenant**: each tenant's
+> system mail sends from its own domain, DKIM-signed (ADR-0119 D2), and Paridyum's tenant keeps
+> `mail.paridyum.com` as written here. The portal's system mail sends from paridyum.in's own sending
+> subdomain (ADR-0119 D1).
+
 ## Status
 
 **Accepted**, 2026-09-12, and **implemented the same day**: the provider is **Resend**, PMG relays to

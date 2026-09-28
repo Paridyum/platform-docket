@@ -23,9 +23,10 @@ set -uo pipefail
 SELF_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 R="$SELF_ROOT"
 EXPECT_FAIL=false
+ROOT_GIVEN=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --root) R="$(cd "$2" && pwd)"; shift 2 ;;
+    --root) R="$(cd "$2" && pwd)"; ROOT_GIVEN=true; shift 2 ;;
     --expect-fail) EXPECT_FAIL=true; shift ;;
     *) shift ;;
   esac
@@ -36,6 +37,38 @@ if [[ -t 1 ]]; then
 else
   RED=""; GRN=""; YLW=""; RST=""
 fi
+
+VENDORED_SELF="$SELF_ROOT"
+
+# ── A VENDORED COPY MUST NOT INSPECT ITSELF ───────────────────────────────────────────────────
+#
+# `R` defaults to this script's own parent. That is right when the script is run from the
+# `knowledge` repository, and WRONG in every other repository — where the script lives at
+# `.paridyum/knowledge/scripts/`, a read-only vendored snapshot (ADR-0001). Run without `--root`
+# there, it inspects the snapshot instead of the repository and reports a cheerful `n/a`.
+#
+# ⛔ THAT COST FOUR REPOSITORIES IN TWO DAYS. `platform-tenancy` was carrying 11 real errors,
+# `lib-auth-typescript` 8, `infra-kubernetes` 3 — every one of them behind a run that said it had
+# passed. `n/a` is indistinguishable from a pass to everybody who has ever read one, which is the
+# defect ADR-0014's audit found four separate times and which this script's own header names.
+#
+# So this refuses rather than reporting. The message names the command that works, because the
+# alternative is a reader who now knows something is wrong and not what to type.
+if [[ "$VENDORED_SELF" == */.paridyum/knowledge && "$ROOT_GIVEN" != true ]]; then
+  printf '%s✘%s refusing to inspect a vendored snapshot of itself.\n' "${RED:-}" "${RST:-}" >&2
+  printf '\n' >&2
+  printf '  This script is at %s, which is\n' "$VENDORED_SELF/scripts" >&2
+  printf '  a read-only copy of the knowledge repository (ADR-0001) — not the repository you meant.\n' >&2
+  printf '\n' >&2
+  printf '  Without --root it would inspect that copy and report `n/a` for almost everything, which\n' >&2
+  printf '  reads exactly like a pass. Four repositories in this estate carried real errors behind\n' >&2
+  printf '  such a run. Pass the repository instead:\n' >&2
+  printf '\n' >&2
+  printf '      %s --root "$PWD"\n' "$0" >&2
+  printf '\n' >&2
+  exit 2
+fi
+
 ERRORS=0; WARNS=0; NA=0
 err() { printf '%s✘%s %s\n' "$RED" "$RST" "$1"; ERRORS=$((ERRORS+1)); }
 wrn() { printf '%s!%s %s\n'  "$YLW" "$RST" "$1"; WARNS=$((WARNS+1)); }

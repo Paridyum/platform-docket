@@ -1,5 +1,21 @@
 # Plan — the self-serve tenant flow
 
+> **Superseded in part, 2026-09-28 — ADR-0113 to ADR-0122 — re-scoped.** The 2026-09-28 hold below is replaced by
+> this re-scope, now that the org model has landed:
+>
+> - **The flow is paridyum.in → org → tenant**, not paridyum.com → control plane → tenant. A person
+>   signs up at the portal and gets a personal **org**; a tenant is created from an org, for it
+>   (RFC-0056 U1–U3, ADR-0114).
+> - **C1 (signup)** is replaced by RFC-0056's slices; **C2 (`max_tenants`)** counts **per org**, in
+>   the saga (ADR-0114 D5); **C3 and D8 (`<tenant>.paridyum.com`)** are replaced by ADR-0121 — a
+>   default host under a public-suffix app zone, and the tenant's own domain canonical once added.
+> - **D4 stands, reframed:** `web-dashboard` is **the portal at paridyum.in** (ADR-0118 D1), not a
+>   control plane on paridyum.com; `web-console` is each tenant's console at `/dashboard`.
+> - **Tenant zero holds no control plane** (ADR-0118). It is Paridyum's tenant, owned by the
+>   Paridyum org, and "the first traveller" through the same portal as anyone.
+> - **The estate is rebuilt from empty** once this lands (the operator's instruction, 2026-09-28); rows and
+>   ids measured below describe the estate before that.
+
 > **Decisions taken 2026-09-20 by the operator.** Eight of them, recorded in §1 before any code is
 > written, because the artifact precedes the implementation. Three amend accepted ADRs and two
 > authorise contexts that ADR-0042 decision 7 reserves to a human.
@@ -309,7 +325,7 @@ category could not be corrected at all, and the retrofit ADR-0024 D9 anticipates
 > | `admin` | `identity` | ✅ registered |
 > | `identity` | `identity` | ✅ registered |
 > | `docket` | — | ❌ **not registered** (F1). D7 decided `kind: capability`; the registry write has not happened |
-> | `hiring` | — | ❌ **no product exists** (F3). RFC-0048 open question 2 leaves it open; registering one owes an MKT- under C-0006 |
+> | `hiring` | — | ❌ **no product exists** (F3). RFC-0048 open question 2 leaves it open; registering one owes an MKT- under C-0006 *(superseded: `hiring` registered 2026-09-20 as `kind: capability`, RFC-0048 Q2 marked answered 2026-09-27)* |
 >
 > So B1 lands the schema and seeds what it honestly can. The remaining two are a registry decision,
 > not a task — and `product-registry.yaml` is the one file this plan says nothing may write
@@ -336,7 +352,9 @@ category could not be corrected at all, and the retrofit ADR-0024 D9 anticipates
 - [ ] **B2. `platform-entitlement`, minimally — `max_tenants`.** D6. One plan distinction enforced
       rather than described, which is T-3.8's own `done when`. Needs G1.
 - [ ] **B3. T-G.6 — `product:` on the remaining manifests.** Unblocked for the docket pair by D7.
-      `web-hiring` stays blocked on a decision, not a task (RFC-0048 open question 2).
+      ~~`web-hiring` stays blocked on a decision, not a task (RFC-0048 open question 2).~~ **`web-hiring`
+      done 2026-09-27** (`product: [hiring]`, web-hiring#6). **Still open:** the docket pair —
+      `tool-docket` and `console-docket` declare no `product:`, and `docket` is registered.
 - [ ] **B4. T-G.10 — the placement resolver, inert.** `poolFor(tenantId)` replaces the module-level
       `pool()`. Behaviourally inert at C0 and the seam every containment rung needs.
 
@@ -360,6 +378,47 @@ category could not be corrected at all, and the retrofit ADR-0024 D9 anticipates
       and T-B7 (its OIDC client). Both are still open.
 
 ### The finish line
+
+> #### Measured 2026-09-27 — what exists between here and C8
+>
+> Read from the code and from `helm list -A` on the cluster, not from this plan's checkboxes.
+>
+> | Piece | State |
+> | --- | --- |
+> | `web-dashboard` pages | **Written:** sign-in, tenant list, tenant detail, create-tenant. Auth BFF written. |
+> | Create-tenant **submit** | **Absent.** The page renders a jurisdiction choice whose button has no handler, no form action and no server action. Nothing is called. |
+> | `platform-tenancy` API | **Read-only:** `GET /v1/tenants`, `GET /v1/tenants/{id}`, `GET /v1/releases`. **No create endpoint**, so no saga, no `max_tenants`, no region write. |
+> | Provisioning saga (ADR-0039) | **Absent.** `platform-identity` serves roles and member management (`/v1/roles`, `/v1/members`, `/v1/members/{user_id}`, `…/roles`) but **nothing creates a tenant's Zitadel organization** — that is the missing step. |
+> | `platform-entitlement` (B2) | **Absent** — no repository. |
+> | Deploy saga (T-G.13) | **Absent.** Releases are installed by hand with Helm. |
+> | `web-console` (C4) | **Absent** — no repository. |
+> | `<tenant>.paridyum.com` (C3) | **Absent** — no wildcard record, certificate or generated route in `infra-edge`. |
+> | Public surfaces resolve tenant from host (C5) | **Not yet** — careers still reads its tenant from configuration (now the org id). T-G.1's seam is merged (web-hiring#5) and not yet deployed. |
+> | Running on the cluster | `admin`, `docket`, `hiring`, `identity`, `web-paridyum` + substrate. **Not running: `platform-tenancy`** (it has no Helm chart) **and `web-dashboard`** (chart written, not installed, no OIDC client in `applications.yaml`, T-A20 unanswered). |
+> | Database | 0010, 0014, 0015, 0016 pending. `releases` exists (0013) and holds no rows. **0015 waits on tool-docket#26 being deployed** — it breaks the running docket's `enter()` (TASKS.md T-G.3). |
+>
+> **Three milestones, in the order they can be reached:**
+>
+> 1. **See it.** `/dashboard` live and signed in, listing Paridyum as one tenant with its four
+>    Releases. Needs: the migrations applied and `seed-releases.py` run; a Helm chart for
+>    `platform-tenancy` and a deploy; the dashboard's OIDC client, T-A20, a deploy and an edge route;
+>    and `seed-releases.py`'s mapping extended to classify the two new Helm releases (it refuses, by
+>    design, to seed a partial picture). **One decision remains — T-A20, how the dashboard is
+>    reached;** everything else is already decided.
+> **⏸ Milestones 2 and 3 are ON HOLD, by operator direction 2026-09-28.** The model above tenants is
+> changing — a new level owns businesses, the default-host scheme replaces D8's `<tenant>.paridyum.com`,
+> and `max_tenants` moves to that level — and none of it is a knowledge artifact yet. Until those ADRs
+> land: nothing here builds C1/C2 (signup, `max_tenants`) or mints `<tenant>.paridyum.com`. The
+> measurements above stand; milestone 1 (see it) is unaffected. The two below are kept as written so
+> the record shows what changed.
+>
+> 2. **Create a tenant.** Needs the part that does not exist: `POST /v1/tenants`, the saga steps
+>    (Zitadel organization via `platform-identity`, tenant row with region, operator grant),
+>    `max_tenants` (B2), and the form wired to it. §2's missing design artifact comes first.
+> 3. **Deploy products to it.** The longest pole: the deploy saga (T-G.13) and the ADR it needs —
+>    whatever installs a Release holds cluster-wide install rights, which is a trust boundary no
+>    artifact yet draws — plus C3's subdomain, C5, docket's per-tenant account, and `web-console`.
+
 
 - [ ] **C8.** A stranger signs up, provisions a tenant, and reaches their own docket at their own
       hostname — **with Paridyum holding no scope that tenant could not hold.**
@@ -529,7 +588,7 @@ restore. That is expected and is ADR-0081 working, not a failure.
 
 | Surface | Missing |
 | --- | --- |
-| `web-dashboard` | **the auth BFF, which is unwritten.** Measured 2026-09-21: no `src/lib/auth/`, no `api/auth/*` routes, and **no `process.env` reads anywhere in `src/`** — so nothing consumes `PARIDYUM_OIDC_CLIENT_ID`, the chart's "the pod will not start" is false, and the pod would serve an unauthenticated surface. It is also not declared in `applications.yaml`, so `make zitadel-apps` would assign it nothing. Plus the routing decision (T-A20). |
+| `web-dashboard` | ~~**the auth BFF, which is unwritten.**~~ *(Written since — `src/lib/auth/` and `api/auth/*` exist as of 2026-09-27, and `src/lib/auth/config.ts` reads `PARIDYUM_OIDC_CLIENT_ID`, falling back to a `…_PENDING_DECLARATION` placeholder; the rest of this cell is the 2026-09-21 state. The OIDC client and T-A20 remain.)* Measured 2026-09-21: no `src/lib/auth/`, no `api/auth/*` routes, and **no `process.env` reads anywhere in `src/`** — so nothing consumes `PARIDYUM_OIDC_CLIENT_ID`, the chart's "the pod will not start" is false, and the pod would serve an unauthenticated surface. It is also not declared in `applications.yaml`, so `make zitadel-apps` would assign it nothing. Plus the routing decision (T-A20). |
 | `web-docket` (console) | a `routing-table.yaml` row — `console.paridyum.com` has **no entry** — and an OIDC callback still set to the `ssh -L` loopback (D-20) |
 
 Both are decisions rather than tasks, which is why they are not in the stages above.

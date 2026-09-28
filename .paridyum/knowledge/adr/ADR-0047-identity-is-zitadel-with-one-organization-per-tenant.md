@@ -28,6 +28,13 @@ enforced_by:
 
 # ADR-0047 — Identity is Zitadel, one organization per tenant
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0117, ADR-0119.** Read *the control region* wherever this ADR
+> uses the name GLO-0007 retired. **D1 is narrowed** (RFC-0017): the `paridyum` instance holds
+> **staff** only; org members sign in at a **portal instance** in their org's region (ADR-0119 D1).
+> **D3's custom login domain is the standard path**, and **D5's claims contract** binds a role to the
+> Zitadel organization that granted it (ADR-0119 D2, D5). D2 — one Zitadel organization per tenant —
+> is unchanged; in code that object is `zitadel_org`, never a bare `org` (ADR-0113 D2).
+
 ## Status
 
 **ACCEPTED** as of 2026-08-08. **Resolves RFC-0012**, which holds the analysis, the vendor

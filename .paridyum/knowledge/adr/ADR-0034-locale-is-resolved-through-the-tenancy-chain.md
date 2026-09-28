@@ -33,6 +33,12 @@ enforced_by:
 
 # ADR-0034 — Locale is resolved, never inferred
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0122.** **D1's chain splits in two** (ADR-0122 D5): the portal
+> resolves request → member → **org default** → platform, and a tenant resolves request → user →
+> account → tenant → platform. The level this ADR calls the default of *"who pays us"* is the
+> **org's** default: read only by the portal, and used once to **seed** a new tenant's declarations.
+> No tenant request reads its org's settings.
+
 ## Status
 
 **ACCEPTED** as of 2026-08-08, with two declared checks and one test type. Created `accepted`

@@ -50,6 +50,18 @@
 #               This is the kind C-0006's obligation is about, and the only kind that owes an
 #               MKT- before it may be built.
 #
+# ════════════════════════════════════════════════════════════════════════════════════════
+# KIND IS CATALOGUE BY DEFAULT — ADR-0112, 2026-09-27.
+#
+# A product is a `catalogue` unless it qualifies as an argued exception: (a) a runtime
+# primitive (identity, tenancy, routing, entitlement), or (b) no end-customer business is
+# possible. The exception is stated in the entry's own notes, and
+# `product.capability_names_its_exception` checks the citation. Catalogue claims a market and
+# meets anti-goal 6's gate on `building`; capability claims none, and is now the door that has
+# to be argued. "Absolutely hard" means the ground is impossible, never inconvenient —
+# MKT-0005 exists because reel's market was measured rather than assumed away.
+# ════════════════════════════════════════════════════════════════════════════════════════
+#
 # Schema: product-registry.schema.json. Validated by knowledge.product_registry_valid.
 # Sorted by product.
 
@@ -232,6 +244,15 @@ products:
       registering at a stage that understates reality — CLAUDE.md's rule for an unimplemented
       check is to behave as though it were running.
 
+      ⚖ ADR-0112: RE-REVIEW OWED, 2026-09-27. This entry predates the catalogue-by-default
+      rule and is one of the two ADR-0112 names. It has plausible end customers and an
+      operating story already written — RFC-0044's docket-as-a-service, "a tenant spins up
+      under its own domain" — and its capability rationale ("every tenant gets it by holding a
+      tenant") is a test true of every product. Whether docket is a vertical Paridyum operates
+      is a decision with its own artifact (ADR-0112 decision 4), not a kind edited in passing;
+      until it is taken, this line is the entry's required ADR-0112 citation, and the
+      `building` stage stands as earned under the rule that existed.
+
   - product: hiring
     name: Hiring
     kind: capability
@@ -258,6 +279,11 @@ products:
       THE SLOT IS FILLED by web-hiring itself, which is both the public surface and the
       operator's. ⛔ THE REQ- IS OWED, as for docket, and recorded in DECISION-DEBT.md.
 
+      ⚖ ADR-0112: RE-REVIEW OWED, 2026-09-27. As with docket, this entry predates the
+      catalogue-by-default rule: a public recruiting surface with its own hostname is at least
+      plausibly a business, and the re-review is its own artifact (ADR-0112 decision 4). This
+      line is the entry's required ADR-0112 citation until that decision is taken.
+
   - product: entitlement
     name: Entitlement
     kind: capability
@@ -270,6 +296,10 @@ products:
       is, not only the parts that are populated, which is the rule artifact-registry.yaml
       already applies to `pattern`.
 
+      ⚖ ADR-0112 ground (a), 2026-09-27: a runtime primitive — there is no separate market and
+      no end-customer business to operate; C-0008 makes it a product anyway, and `capability`
+      is the kind that keeps that honest.
+
   - product: identity
     name: Identity
     kind: capability
@@ -281,6 +311,10 @@ products:
       not Paridyum's authentication that tenants are permitted to borrow, it is a product, and
       Paridyum happens to be the first tenant to buy it.
 
+      ⚖ ADR-0112 ground (a), 2026-09-27: a runtime primitive — there is no separate market and
+      no end-customer business to operate; C-0008 makes it a product anyway, and `capability`
+      is the kind that keeps that honest.
+
   - product: routing
     name: Routing
     kind: capability
@@ -288,6 +322,10 @@ products:
     declared: 2026-08-17
     notes: >
       Domain, tenant resolution and the request path into a product. ADR-0042, first wave.
+
+      ⚖ ADR-0112 ground (a), 2026-09-27: a runtime primitive — there is no separate market and
+      no end-customer business to operate; C-0008 makes it a product anyway, and `capability`
+      is the kind that keeps that honest.
 
   - product: tenancy
     name: Tenancy
@@ -323,6 +361,10 @@ products:
       be stored. ADR-0068 §6 records that the destination is now an independent open
       decision, because the document-store choice that ADR-0064 expected to supply it is a
       consumer cloud drive and cannot receive WAL archives.
+
+      ⚖ ADR-0112 ground (a), 2026-09-27: a runtime primitive — there is no separate market and
+      no end-customer business to operate; C-0008 makes it a product anyway, and `capability`
+      is the kind that keeps that honest.
 
   - product: hosting
     name: Managed application hosting
@@ -431,6 +473,41 @@ products:
       beneficiaries, permanently, which is a constitutional constraint rather than a pricing
       decision — so the `operated` dossier's BET- obligation, when this ever reaches that stage,
       is satisfied by recording that the price is fixed elsewhere and why.
+
+  - product: reel
+    name: Reel
+    kind: catalogue
+    stage: proposed
+    declared: 2026-09-27
+    notes: >
+      Media custody for media-producing businesses: shoot ingest, the archive grammar,
+      chain-of-custody manifests, upload to the account's own destination (Sync or
+      S3-compatible), and reconciliation. The service holds metadata only — never media bytes,
+      never destination credentials; the tenant's own machines execute the work as workers
+      (RFC-0054, REQ-0023).
+
+      `kind: catalogue` IS THE OPERATOR'S DECISION OF 2026-09-27, taken after the capability
+      route was tabled and compared, and this line accepts the consequences rather than
+      describing them away. **C-0006 anti-goal 6 gates entry to `building`** until hosting —
+      vertical one, `building` since 2026-08-23 — has a paying customer who RENEWED. reel
+      joins `veer-entitlements` as a registered candidate that cannot move yet; the registry
+      counts, and it now counts three catalogue products where at most one may advance.
+
+      THE DOSSIER OBLIGATION IS MET AT THIS STAGE. `catalogue` at `proposed` owes MKT-
+      artifacts naming the evidence that selected the market, and C-0006 requires the evidence
+      not be tenant-derived. MKT-0005 is external, dated and bounded — the operator's own need
+      is why this was attempted, not why the market is claimed. Entry to `building` would
+      additionally owe a REQ- (REQ-0023 serves until a product-specific one replaces it) and
+      the `product-contract` slot.
+
+      WHAT IS NOT GATED: the runbook, the evidence and the design. RFC-0054 accepted that split
+      explicitly — the product build waits on the gate; the operating discipline starts with
+      the next shoot. Operate-before-franchise (anti-goal 1) is the sequencing: Paridyum's own
+      media estate is the vertical's first operation, then real end customers, then — if ever —
+      founder-tenants.
+
+      ⚠️ THIS ENTRY DOES NOT MAKE IT VERTICAL TWO, AND MOVING IT WOULD. `hosting` remains
+      vertical one; this records a candidate, exactly as `veer-entitlements` records one.
 
 # THE FIRST CATALOGUE PRODUCT IS NOW REGISTERED — see `hosting` above, added 2026-08-18. The
 # paragraph below is preserved because its argument is what made that registration legitimate

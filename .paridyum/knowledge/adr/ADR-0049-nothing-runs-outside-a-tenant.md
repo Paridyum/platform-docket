@@ -2,11 +2,11 @@
 id: ADR-0049
 title: Nothing in the runtime resolves without a tenant, and no capability ships without a buyer
 type: adr
-status: locked
+status: superseded
 created: 2026-08-17
 locked_at: 2026-08-17
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0116
 scope: [platform, service, library, spec]
 applies_to: ["platform-*", "svc-*", "lib-*", "spec-*"]
 tags: [tenancy, dogfooding, resale, self-preferencing, request-path, manifest]

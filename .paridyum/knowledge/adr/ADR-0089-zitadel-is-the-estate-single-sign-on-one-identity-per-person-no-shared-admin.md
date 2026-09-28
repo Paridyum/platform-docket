@@ -16,6 +16,10 @@ enforced_by: []
 
 # ADR-0089 — Zitadel is the estate's single sign-on; one identity per person, never a shared admin
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0119.** The staff instance holds **staff only** (RFC-0017,
+> ADR-0119 D1). Org members hold a portal credential in their org's region, and staff reach an org or
+> a tenant **only by a grant** it can see and revoke (ADR-0120). Estate SSO is unchanged.
+
 ## Status
 
 **Accepted**, 2026-09-13. Answers an operator question — *"wire Zitadel everywhere to log in, and use

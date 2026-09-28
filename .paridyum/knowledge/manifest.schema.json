@@ -20,6 +20,7 @@
     },
     "class": {
       "enum": [
+        "agent",
         "console",
         "infra",
         "library",

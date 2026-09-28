@@ -249,3 +249,15 @@ won, applied before there are three of these rather than after there are thirty.
   estate has now rejected four times — C-0005's classes, ADR-0022's artifact types, ADR-0048's
   externally-cadenced values, ADR-0066's tools. Each time the defect was a list held somewhere
   extending it was expensive.
+
+## Amendment — 2026-09-27
+
+**Decision 3's mapping table gains one row, added by ADR-0111, and the `tool-` row is
+untouched.** A distributed agent — a client on machines the estate does not control, acting for
+one tenant — is class `agent-`, Zitadel type **Native**, auth **Device Code (device authorization,
+RFC 8628)**, with a session revocable per station and no client secret.
+
+This is deliberately **not** a widening of `tool-`. Giving a tool a client is still how a tool
+becomes a service without an ADR (decision 3's own sentence), which is exactly why the station
+got a class of its own. RFC-0054's `agent-reel` is the first instance; the class registry entry
+landed with ADR-0111.

@@ -24,6 +24,11 @@ enforced_by:
 
 # GLO-0005 — Operator scope
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0120.** Where this entry has an operator owning several
+> tenants, read an **org member** holding a separate **per-tenant grant** in each (ADR-0120), never
+> simultaneously in one session. The deferred support access is decided: it is the same grant, asked
+> for and approved like anyone's (ADR-0120 D2, D9).
+
 ## Definition
 
 **Operator scope is a session that may read every account within one tenant. It is a grant,

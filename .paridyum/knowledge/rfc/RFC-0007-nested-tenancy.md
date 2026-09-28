@@ -17,6 +17,11 @@ enforced_by: []
 
 # RFC-0007 — How the inner silo is isolated when tenants are themselves multi-tenant
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0115.** The tree below puts an **operator** above the tenant.
+> That party is the **org** (GLO-0012), and it is not a silo: business data carries `tenant_id` and
+> `account_id` only, and an org's own rows are a separate `org` scope (ADR-0115 D1, D9). The
+> comparison of mechanisms below is unchanged and still the basis of ADR-0115.
+
 ## Status
 
 **ACCEPTED**, resolved by ADR-0024.

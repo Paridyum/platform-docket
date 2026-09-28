@@ -1,10 +1,34 @@
 -- paridyum:scope platform
 -- paridyum:plane control
 CREATE TABLE regions (
+    id          uuid PRIMARY KEY,         -- internal
+    code        text NOT NULL,            -- public
+    created_at  timestamptz NOT NULL      -- internal
+);
+
+-- ADR-0114 D1: the org registry is personless control-plane data; the org's people are org-scoped
+-- rows in its region, isolated from every other org by their own predicate (ADR-0115 D3).
+-- paridyum:scope platform
+-- paridyum:plane control
+CREATE TABLE orgs (
+    id          uuid PRIMARY KEY,         -- internal
+    region      text NOT NULL,            -- internal
+    created_at  timestamptz NOT NULL      -- internal
+);
+
+-- paridyum:scope org
+-- paridyum:plane regional
+CREATE TABLE org_members (
     id          uuid PRIMARY KEY,
-    code        text NOT NULL,
+    org_id      uuid NOT NULL,
+    subject     text NOT NULL,            -- internal
+    role        text NOT NULL,
     created_at  timestamptz NOT NULL
 );
+ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE org_members FORCE ROW LEVEL SECURITY;
+CREATE POLICY org_members_org ON org_members
+    USING (org_id = paridyum.current_org());
 
 -- paridyum:scope tenant
 -- paridyum:plane regional

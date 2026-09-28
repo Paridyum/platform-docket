@@ -2,7 +2,7 @@
 id: REQ-0019
 title: Search, sorting and comparison over user text are language-aware, not byte-aware
 type: requirement
-status: deferred
+status: accepted
 created: 2026-08-08
 locked_at: null
 supersedes: null
@@ -19,6 +19,9 @@ enforced_by: []
 ---
 
 # REQ-0019 — Search, sorting and comparison over user text are language-aware
+
+> **Accepted 2026-09-28 by ADR-0122 D9 — its trigger has fired:** the portal sorts user text — tenants, members, orgs — across more than one row. What follows
+> binds from today; the trigger below is kept as the record of why.
 
 ## Status
 

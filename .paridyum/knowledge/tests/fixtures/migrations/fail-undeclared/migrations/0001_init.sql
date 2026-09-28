@@ -1,9 +1,9 @@
 -- paridyum:scope platform
 -- paridyum:plane control
 CREATE TABLE regions (
-    id          uuid PRIMARY KEY,
-    code        text NOT NULL,
-    created_at  timestamptz NOT NULL
+    id          uuid PRIMARY KEY,  -- internal
+    code        text NOT NULL,  -- internal
+    created_at  timestamptz NOT NULL  -- internal
 );
 
 -- The plane is declared and the SCOPE deliberately is not, so this fixture fails for exactly

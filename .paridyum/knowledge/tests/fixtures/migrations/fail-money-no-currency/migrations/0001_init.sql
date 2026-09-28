@@ -3,7 +3,7 @@
 -- paridyum:scope platform
 -- paridyum:plane control
 CREATE TABLE prices (
-    id            uuid PRIMARY KEY,
-    amount_minor  bigint NOT NULL,
-    created_at    timestamptz NOT NULL
+    id            uuid PRIMARY KEY,  -- internal
+    amount_minor  bigint NOT NULL,  -- internal
+    created_at    timestamptz NOT NULL  -- internal
 );

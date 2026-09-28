@@ -17,6 +17,11 @@ enforced_by: []
 
 # RFC-0009 — Decomposing the business runtime into bounded contexts
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0114.** Where this RFC gives `platform-tenancy` an
+> "operator → tenant → account" hierarchy and an `Operator` entity, read **org → tenant → account**
+> (GLO-0012): the org owns tenants through `tenants.owner_org_id` and is not a silo (ADR-0114,
+> ADR-0115). *Operator* now means only breadth within one tenant (GLO-0001).
+
 
 > **Resolved by ADR-0042 (2026-08-08), then by ADR-0101 (2026-09-20).** ADR-0042 fixed the first
 > wave at five contexts and omitted `platform-deployment` — the context §7 of this RFC named and

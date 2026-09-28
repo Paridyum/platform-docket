@@ -17,6 +17,11 @@ enforced_by: []
 
 # RFC-0012 — Identity is a product built on Zitadel
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0119.** Read *the control region* wherever this RFC uses the
+> name GLO-0007 retired. The Paridyum plane's instance holds **staff** only; the people of orgs sign
+> in at a portal instance in their org's region, and each tenant signs in on its own domain (ADR-0119
+> D1, D2). D2's separate issuers are kept.
+
 ## Status
 
 **ACCEPTED** as of 2026-08-08, resolved by ADR-0047. Opened and closed the same day, so the

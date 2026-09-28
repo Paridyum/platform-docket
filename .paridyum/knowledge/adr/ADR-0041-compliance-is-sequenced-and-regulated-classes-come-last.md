@@ -40,6 +40,10 @@ enforced_by:
 
 # ADR-0041 — Compliance is sequenced
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0117.** D3's rule — a region chosen explicitly and never
+> changed except by migration and contract amendment — **extends to an org's region** (ADR-0117 D1).
+> A tenant's region and its owner org's region are chosen independently.
+
 ## Status
 
 **ACCEPTED** as of 2026-08-08. Created `accepted` per `new-decision` §5b.

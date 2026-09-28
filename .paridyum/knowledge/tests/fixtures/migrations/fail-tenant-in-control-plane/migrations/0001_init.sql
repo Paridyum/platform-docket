@@ -6,10 +6,10 @@
 -- paridyum:scope account
 -- paridyum:plane control
 CREATE TABLE invoices (
-    id          uuid PRIMARY KEY,
-    tenant_id   uuid NOT NULL,
-    account_id  uuid NOT NULL,
-    created_at  timestamptz NOT NULL
+    id          uuid PRIMARY KEY,  -- internal
+    tenant_id   uuid NOT NULL,  -- internal
+    account_id  uuid NOT NULL,  -- internal
+    created_at  timestamptz NOT NULL  -- internal
 );
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices FORCE ROW LEVEL SECURITY;

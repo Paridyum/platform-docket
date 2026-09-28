@@ -9,7 +9,7 @@ supersedes: null
 superseded_by: null
 scope: [org]
 applies_to: ["*"]
-tags: [strategy, franchise, operator-as-tenant, catalogue, conflict-of-interest, isolation]
+tags: [strategy, franchise, paridyum-as-tenant, catalogue, conflict-of-interest, isolation]
 breaking: false
 trigger: >
   Any ONE of the three kills the bet; they are ordered by how early each can fire.
@@ -78,9 +78,23 @@ should be checked before use.
 
 ADR-0024's nested tenancy already provides the structure. This bet names what occupies it.
 
+> **Corrected 2026-09-26 by ADR-0109.** The top row of the table below said `Operator | Paridyum`
+> and the dogfooding paragraph called Paridyum "a paying operator of its own runtime". Both used
+> `operator` in the sense GLO-0001 no longer carries — the commercial party above a tenant — while
+> this same bet uses the *runtime* sense eleven lines later ("operator scope is a grant, never an
+> absence"). One word, two levels, in one document.
+>
+> The top row is now **Platform**, which is what Paridyum is in GLO-0004's corrected tree and is not
+> a silo. The commercial party is unnamed on purpose: ADR-0024 D9 defers it, and this bet's
+> structural claim — that a tenant may be a founder's business or Paridyum's own — is unaffected,
+> because it was never about that level.
+>
+> The `operator-as-tenant` tag went the same way, to `paridyum-as-tenant`: a tag is a search term,
+> and one carrying the ambiguity is how the ambiguity keeps getting found and copied.
+
 | Level | Who | How Paridyum earns |
 | --- | --- | --- |
-| Operator | Paridyum — builds and operates the runtime and the catalogue | — |
+| Platform | Paridyum — builds and operates the runtime and the catalogue | — |
 | Tenant | (a) founders and agencies running a catalogue product as their business<br>(b) **Paridyum itself**, running catalogue products directly | (a) flat fee + commission, per BET-0007<br>(b) direct revenue from end customers |
 | Account | (a) a founder's end users · (b) **Paridyum's own end customers** | — |
 
@@ -107,8 +121,8 @@ engaged: this is one market with two levels, not two markets.
    available to the company and it is the main reason to accept this bet.
 
 4. **Dogfooding stops being a practice and becomes structural.** Every failure mode a
-   founder-tenant would hit is hit first by Paridyum, as a paying operator of its own runtime,
-   with its own customers affected. BET-0006 cost 2 — that solo founders tolerate an immature
+   founder-tenant would hit is hit first by Paridyum, as a tenant of its own runtime paying the
+   same way, with its own customers affected. BET-0006 cost 2 — that solo founders tolerate an immature
    runtime — stops being load-bearing, because the runtime is proven against a real business
    before anyone else's depends on it.
 
@@ -214,7 +228,9 @@ trigger clause 2 approaches**, because it is the strongest available response to
 - BET-0006 — the wedge, re-derived on this structure
 - BET-0007 — the price shape, which this makes coherent
 - C-0006 — amended 2026-08-15; anti-goal 1 and the non-commodity list both move because of this
-- RFC-0022 — the operator-tenant conflict, which cost 1 and cost 2 make urgent
+- RFC-0022 — the conflict of the platform competing with its own tenants, which cost 1 and cost 2
+  make urgent. **Its title still says "operator" in the pre-ADR-0109 sense**; it is `proposed` and
+  outside ADR-0109 D5's correction list, so it is noted here rather than edited in passing.
 - ADR-0024, GLO-0004, GLO-0005 — the nested tenancy this occupies, and operator scope as a grant
 - ANTI-0007 — the hard filter on which verticals Paridyum may operate
 - ADR-0022 — why this is a bet rather than an ADR

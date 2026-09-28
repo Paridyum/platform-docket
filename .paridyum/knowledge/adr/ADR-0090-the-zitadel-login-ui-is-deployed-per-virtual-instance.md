@@ -16,6 +16,11 @@ enforced_by: []
 
 # ADR-0090 — The Zitadel login UI is deployed once per virtual instance
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0119.** Read *the control region* wherever this ADR uses the
+> name GLO-0007 retired. The `paridyum` instance at `id.paridyum.com` is the **staff instance**, and
+> holds staff only (ADR-0119 D1). A **portal instance** per region, with its own login deployment on
+> this ADR's pattern, is added with the portal (ADR-0117 D10, ADR-0118 D3).
+
 ## Status
 
 **Accepted**, 2026-09-13. Refines the implementation of **RFC-0012 D2** (resolved by ADR-0047):

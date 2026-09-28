@@ -2,7 +2,7 @@
 id: REQ-0009
 title: A user interface is accessible, translatable and locale-correct from its first screen
 type: requirement
-status: deferred
+status: accepted
 created: 2026-08-07
 locked_at: null
 supersedes: null
@@ -15,10 +15,14 @@ trigger: >
   The first user-facing interface is written — the first screen, page or component a
   person outside the organisation will look at.
 review_date: 2027-02-01
+verified_by: [TST-0050, TST-0051]
 enforced_by: []
 ---
 
 # REQ-0009 — A user interface is accessible, translatable and locale-correct from its first screen
+
+> **Accepted 2026-09-28 by ADR-0122 D9 — its trigger has fired:** careers and the landing are public interfaces a person outside the organisation looks at. What follows
+> binds from today; the trigger below is kept as the record of why.
 
 ## Status
 

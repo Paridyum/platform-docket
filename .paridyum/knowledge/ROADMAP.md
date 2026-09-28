@@ -113,7 +113,7 @@ accepted cost 1.
 | **Payment path research** | ⛔ T-0.10 — split settlement through a licensed aggregator is assumed and unresearched. Gates BET-0007's royalty and nothing else, so start it early and let it run |
 | **Vertical one** | ⛔ T-0.6 — criterion fixed by BET-0005; the choice is not made |
 | **Floor and royalty numbers** | T-0.7 — needs fully-loaded idle-tenant cost, which is unmeasured. See §6 |
-| **RFC-0022** | ⛔ T-0.11 — questions 2–5 open; question 2 decides whether the access log is a guarantee or a partial one |
+| **RFC-0022** | Accepted 2026-09-27. Question 2 answered: the access log is **partial** (§D5a). Still owed under T-0.11: D2a's check; questions 3–5 open |
 | D1 thesis · D2 harness | T-0.3, T-0.4 — owed, and both expire |
 | Incorporation sequence | T-0.8 — build and measure → incorporate → DPIIT → file |
 

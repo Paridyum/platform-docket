@@ -913,6 +913,64 @@ else
   printf '%s✔%s hardcoded registry counts at %s, not above the baseline of %s\n' "$GRN" "$RST" "$cnt_n" "$cnt_baseline"
 fi
 
+# --- knowledge.retired_terms_absent (ADR-0113 D5) ---------------------------
+# On 2026-09-28 an agent reading this repository met three models of who owns a tenant at once:
+# "operator → tenant → account" in accepted artifacts, "home region" after GLO-0007 had retired
+# it, and a draft that stored an org as an account of a tenant running the portal. Each phrase is
+# one an agent would act on. The list lives in ADR-0113's enforced_by args (ADR-0036), never here.
+#
+# A file may keep a retired phrase only under a dated note naming ADR-0113 — a blockquote line
+# beginning `> **Superseded in part, <date>` — because a note is how an accepted artifact is
+# corrected without rewriting its record (ADR-0113 D7). The waiver is per file, so a NEW use of a
+# retired phrase in an already-noted file passes; that is the price of the method, stated in the
+# registry rather than discovered.
+#
+# Not scanned: superseded artifacts (immutable), the artifacts in args.exempt (they define the
+# retirement), CHANGELOG.md (a dated record), the generated DECISION-DEBT.md, research logs and
+# test fixtures. Markdown only: a registry note that quotes a phrase is describing the check.
+rt_adr="$(ls adr/ADR-0113-*.md 2>/dev/null | head -1)"
+if [[ -z "$rt_adr" ]]; then
+  err "knowledge.retired_terms_absent: ADR-0113 is missing, so the retired-terms list has no home (ADR-0036) — the check cannot run"
+else
+  rt_args="$(awk '
+    /^enforced_by:/                                  { f = 1; next }
+    f && /^[a-z_]+:/                                 { f = 0 }
+    f && /- check: knowledge.retired_terms_absent/   { c = 1; next }
+    c && /- check:/                                  { c = 0 }
+    c && /^[[:space:]]+terms:/  { s = $0; sub(/^[[:space:]]+terms:[[:space:]]*/,  "", s); print "T\t" s }
+    c && /^[[:space:]]+exempt:/ { s = $0; sub(/^[[:space:]]+exempt:[[:space:]]*/, "", s); print "E\t" s }
+  ' "$rt_adr")"
+  mapfile -t RT_TERMS < <(grep '^T' <<<"$rt_args" | cut -f2- | grep -o '"[^"]*"' | tr -d '"')
+  RT_EXEMPT=" $(grep '^E' <<<"$rt_args" | cut -f2- | tr -d '[],') "
+  if [[ ${#RT_TERMS[@]} -eq 0 ]]; then
+    # ABSENT IS NOT PASS: an empty list would scan for nothing and print a tick.
+    err "knowledge.retired_terms_absent: no terms declared in ADR-0113's enforced_by args (ADR-0036) — the check cannot run"
+  else
+    rt_greps=(); for t in "${RT_TERMS[@]}"; do rt_greps+=(-e "$t"); done
+    rt_files=0; rt_noted=0; rt_err0=$ERRORS
+    while IFS= read -r f; do
+      f="${f#./}"
+      case "$f" in
+        CHANGELOG.md|DECISION-DEBT.md|research/*|tests/*) continue ;;
+      esac
+      rt_id="$(awk 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit} /^id: /{print $2; exit}' "$f")"
+      [[ -n "$rt_id" && "$RT_EXEMPT" == *" $rt_id "* ]] && continue
+      awk 'NR==1 && $0!="---"{exit 1} NR>1 && $0=="---"{exit 1} /^status: superseded$/{exit 0}' "$f" && continue
+      rt_files=$((rt_files+1))
+      if grep -qE '^> \*\*Superseded in part, [0-9]{4}-[0-9]{2}-[0-9]{2}.*ADR-0113' "$f"; then
+        rt_noted=$((rt_noted+1)); continue
+      fi
+      while IFS= read -r hit; do
+        err "$f:${hit%%:*}: uses a phrase ADR-0113 retires — '$(grep -oiF "${rt_greps[@]}" <<<"${hit#*:}" | head -1)'. Use the current term (ADR-0113 D5's table), or, if this file must keep it, add a dated '> **Superseded in part, <date>' note at the top that names ADR-0113"
+      done < <(grep -niF "${rt_greps[@]}" "$f")
+    done < <(grep -rIilF --include='*.md' --exclude-dir=.git "${rt_greps[@]}" . 2>/dev/null | sort)
+    if [[ $ERRORS -eq $rt_err0 ]]; then
+      printf '%s✔%s retired terms: %d phrase(s) from ADR-0113; %d file(s) still quote one, every one under a dated note\n' \
+        "$GRN" "$RST" "${#RT_TERMS[@]}" "$rt_files"
+    fi
+  fi
+fi
+
 # --- 5. declared-checks manifest (knowledge.declared_checks_manifest_valid) --
 # check-registry.yaml is the id-space ADR-0014 requires.
 #

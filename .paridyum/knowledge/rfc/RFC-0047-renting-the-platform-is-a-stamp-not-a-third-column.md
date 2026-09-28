@@ -38,6 +38,12 @@ sources:
 
 # RFC-0047 — Renting the platform is a stamp, not a third column
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0115, ADR-0118.** The tree below puts an **operator** above
+> the tenant; that party is the **org** (GLO-0012). Renting the platform is therefore a party
+> **above orgs**, and stays this RFC's gated stamp (ADR-0115 D9). Where this RFC puts the control
+> plane inside tenant zero, read ADR-0118: the portal at paridyum.in is the platform's own surface,
+> and tenant zero is Paridyum's tenant only.
+
 > ## ⚠ TRIGGER NOT FIRED — DESIGN ONLY, NOT BUILDABLE
 >
 > **ADR-0024 decision 9 is locked and reads:**

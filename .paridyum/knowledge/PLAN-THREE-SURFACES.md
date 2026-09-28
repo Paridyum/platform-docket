@@ -1,5 +1,11 @@
 # Plan — landing, dashboard, and docket as a service
 
+> **Superseded in part, 2026-09-28 — ADR-0113 to ADR-0122.** A 2026-09-16 sprint record, kept as
+> written. Its dashboard is now **the portal at paridyum.in** — the platform's own surface, serving
+> orgs — and tenant zero is Paridyum's tenant only (ADR-0118). ADR-0049 is superseded by ADR-0116,
+> so T-E3's list reads ADR-0116. T-G.5's `operator` ambiguity is closed by ADR-0114 and ADR-0113:
+> the party above a tenant is the **org** (GLO-0012).
+
 > ## ⚠️ SPRINT MARKED RISKY — 2026-09-16
 >
 > **This sprint is authorised to change a running estate.** Nine Helm releases are serving on a

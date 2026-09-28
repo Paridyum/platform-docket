@@ -16,6 +16,10 @@ enforced_by: []
 
 # GLO-0002 — Tenant
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0114.** A tenant is **owned by exactly one org**
+> (GLO-0012), recorded as `tenants.owner_org_id` — read *org* wherever this entry says a tenant is
+> owned by an *operator*. An org owns tenants and is not one; "business" on screen means a tenant.
+
 ## Definition
 
 **A tenant is one business running on Paridyum: the unit of isolation, of branding, of custom

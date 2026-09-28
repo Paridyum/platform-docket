@@ -16,6 +16,12 @@ enforced_by: []
 
 # RFC-0044 — docket as a service completes the platform against ADR-0042
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0118, ADR-0121.** Tenants are provisioned **for an org**,
+> through the portal at paridyum.in — not by tenant zero through `/app` (ADR-0118). **Stage B's
+> `<tenant>.paridyum.in` is retired**: a tenant's default host is `<slug>.<app zone>`, and its own
+> domain becomes canonical once verified (ADR-0121). The owed custom-domain routing ADR is ADR-0121.
+> The 2026-09-27 qualification note below still stands (RFC-0055 D4).
+
 ## Problem
 
 docket's multi-tenant *backend* is built (ADR-0099: tenant-from-token, per-request RLS store,
@@ -32,6 +38,12 @@ The request states the shape in the operator's words:
 - `/` is tenant zero's first app (docket for Paridyum).
 - every other tenant app is provisioned by tenant zero through `/app`.
 - tenants run under their own domain.
+
+> **Qualified 2026-09-27 by RFC-0055.** "Docket as a service" here is **tenant zero operating the
+> vertical for consuming tenants** — the seller in *"to sell docket"* is Paridyum, and the tenant
+> that spins up under its own domain is the consumer. Nothing in this RFC authorises a tenant to
+> run docket-as-a-service for others: a client with its own tenancy is the platform recursion
+> (RFC-0047, gated), and the separation of the consume and operate flows is RFC-0055's subject.
 
 ## What already decides this — do not rebuild
 

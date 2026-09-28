@@ -16,6 +16,13 @@ enforced_by: []
 
 # ADR-0100 — The provisioning surface is tenant zero's control plane, served at `/dashboard`
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0118.** **Decisions 2, 3, 4 and 6 are amended by ADR-0118.**
+> The provisioning surface is the **portal at paridyum.in**, the platform's own surface, serving
+> **orgs** in the org context (ADR-0116 D1); it runs in no tenant. **Tenant zero is Paridyum's tenant
+> only**, and `paridyum.com/dashboard` is that tenant's console, identical in kind to any tenant's.
+> The control plane is reachable on no tenant host. Decision 1 (a served surface, a BFF, never an
+> owner) and decision 5 (its buyer is named) stand.
+
 ## Status
 
 **ACCEPTED** as of 2026-09-15. Settles the surface question RFC-0044 raised. Builds on ADR-0042

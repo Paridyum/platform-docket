@@ -325,3 +325,39 @@ rename D-64 describes — is not readable from that checkout at all.
 rewrite (`knowledge.hardcoded_registry_counts`, ADR-0035 D5), taking the estate's total above its
 baseline of 48. Removed by naming the sets instead of counting them — which reads better, and is
 the rule the check exists to teach. The gate is green: zero errors, 41 warnings.
+
+## 2026-09-27 — the gate that reported `n/a` on itself, and the class it cost four times
+
+`check-repo.sh` and `check-migrations.sh` both derive their target from their own location:
+`dirname $0/..`. In this repository that is right. In every other repository they live at
+`.paridyum/knowledge/scripts/` — a read-only vendored snapshot (ADR-0001) — so run without `--root`
+they inspected **the snapshot** and reported `n/a` for almost everything.
+
+**`n/a` is indistinguishable from a pass to everyone who has ever read one.** In two days it cost:
+
+| Repository | Real errors standing behind a run that said it passed |
+| --- | --- |
+| `platform-tenancy` | **11** — no CLAUDE.md, no CHANGELOG, no ARCHITECTURE, no API, no RUNBOOK, no TESTING, **no CI at all** |
+| `lib-auth-typescript` | **8** — and an empty `.github/workflows/` directory |
+| `infra-kubernetes` | **3** — including no CI, in the repository that defines the cluster |
+| `infra-terraform` | unmeasured |
+
+`check-migrations.sh`'s own header had already named this class: *"A gate that prints 'passed' over an
+empty input set is the defect class the ADR-0014 audit found four times. `n/a` is not a pass."* It was
+true of the script's **inputs** and nobody applied it to the script's own **invocation**.
+
+**The fix is a refusal, not a warning.** Both scripts now exit 2 when their own location is a
+`.paridyum/knowledge` path and `--root` was not given, and the message names the command that works —
+because a reader who now knows something is wrong and not what to type is only slightly better off.
+
+**And the guard immediately found a live bug**, which is the part worth remembering. Grepping for call
+sites that would break under it turned up `rust-ci.yml` calling `check-migrations.sh` with no `--root`:
+for any repository with a `migrations/` directory that step scanned this snapshot's
+`tests/fixtures/migrations/fail-*` — fixtures that exist *in order to fail* — so **it could never have
+passed.** Nobody saw it because no repository with migrations had CI until this week.
+
+Both templates had drifted the same way while the live `infra-ci` workflow already passed `--root .`,
+so a repository scaffolded from a template inherited the blind spot.
+
+**The ordering is the lesson.** A guard that lands without its call sites fixed breaks CI the moment the
+Actions allowance resets. Guard, then grep for what it breaks, then fix that — in the same change.

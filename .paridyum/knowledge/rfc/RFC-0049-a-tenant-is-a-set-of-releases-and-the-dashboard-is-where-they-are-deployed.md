@@ -16,6 +16,12 @@ breaking: false
 
 # RFC-0049 — A tenant is a set of releases, and the dashboard is where they are deployed
 
+> **Superseded in part, 2026-09-28 — ADR-0113, ADR-0118, ADR-0121.** **§B and §D are amended by ADR-0118.**
+> Tenant zero holds Paridyum's business Releases — landing, careers, docket, its console — and
+> **not** the control plane: the portal (`web-dashboard`) is the platform's own surface at
+> paridyum.in, deployed at genesis (ADR-0118 D3). `/dashboard` on every tenant host is that tenant's
+> console. Default hosts follow ADR-0121.
+
 ## Problem
 
 **There is no noun in this estate for "docket, running, for tenant X, at version Y."** Every other

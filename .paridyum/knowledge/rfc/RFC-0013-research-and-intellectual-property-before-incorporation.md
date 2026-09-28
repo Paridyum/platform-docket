@@ -18,6 +18,10 @@ enforced_by: []
 
 # RFC-0013 — How research becomes intellectual property before there is a company
 
+> **Superseded in part, 2026-09-28 — ADR-0113.** Where this RFC writes the nesting as "operator → tenant →
+> account", read **org → tenant → account** (GLO-0012). The inner silo is still the account, and
+> isolating it is still ours (ADR-0115).
+
 ## Status
 
 **ACCEPTED** on 2026-08-18, closing T-0.2. Proposed 2026-08-11.

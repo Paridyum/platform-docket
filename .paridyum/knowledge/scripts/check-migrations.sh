@@ -19,7 +19,7 @@
 # declare one of three categories and deliberately does not fix the syntax. This script chooses
 # a line comment immediately above the CREATE TABLE:
 #
-#   -- paridyum:scope platform | tenant | account
+#   -- paridyum:scope platform | org | tenant | account
 #   -- paridyum:plane control | regional
 #
 # That convention binds every future migration, so it belongs in a standard rather than in a
@@ -30,6 +30,11 @@
 # tenancy spans more than one database, `scope` says WHOSE a row is and `plane` says WHERE the
 # table lives. Neither answers the other, and a pii column landing in the control plane instead
 # of a region is a residency breach that every existing check reports as green.
+#
+# BOTH ARE RATIFIED NOW, AND `scope` HAS A FOURTH VALUE. STD-0023 (superseding STD-0006) fixes
+# the syntax this script chose, and ADR-0115 adds `org`: the customer of paridyum.in, whose own
+# rows carry `org_id` and whose ownership of a tenant is a key on the tenant registry, never a
+# column on business data (ADR-0114, ADR-0115 D9).
 
 set -uo pipefail
 
@@ -51,13 +56,46 @@ fi
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCAN="$ROOT"
 EXPECT_FAIL=false
+ROOT_GIVEN=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --root) SCAN="$2"; shift 2 ;;
+    --root) SCAN="$2"; ROOT_GIVEN=true; shift 2 ;;
     --expect-fail) EXPECT_FAIL=true; shift ;;
     *) shift ;;
   esac
 done
+
+VENDORED_SELF="$ROOT"
+
+# ── A VENDORED COPY MUST NOT INSPECT ITSELF ───────────────────────────────────────────────────
+#
+# `SCAN` defaults to this script's own parent. That is right when the script is run from the
+# `knowledge` repository, and WRONG in every other repository — where the script lives at
+# `.paridyum/knowledge/scripts/`, a read-only vendored snapshot (ADR-0001). Run without `--root`
+# there, it inspects the snapshot instead of the repository and reports a cheerful `n/a`.
+#
+# ⛔ THAT COST FOUR REPOSITORIES IN TWO DAYS. `platform-tenancy` was carrying 11 real errors,
+# `lib-auth-typescript` 8, `infra-kubernetes` 3 — every one of them behind a run that said it had
+# passed. `n/a` is indistinguishable from a pass to everybody who has ever read one, which is the
+# defect ADR-0014's audit found four separate times and which this script's own header names.
+#
+# So this refuses rather than reporting. The message names the command that works, because the
+# alternative is a reader who now knows something is wrong and not what to type.
+if [[ "$VENDORED_SELF" == */.paridyum/knowledge && "$ROOT_GIVEN" != true ]]; then
+  printf '%s✘%s refusing to inspect a vendored snapshot of itself.\n' "${RED:-}" "${RST:-}" >&2
+  printf '\n' >&2
+  printf '  This script is at %s, which is\n' "$VENDORED_SELF/scripts" >&2
+  printf '  a read-only copy of the knowledge repository (ADR-0001) — not the repository you meant.\n' >&2
+  printf '\n' >&2
+  printf '  Without --root it would inspect that copy and report `n/a` for almost everything, which\n' >&2
+  printf '  reads exactly like a pass. Four repositories in this estate carried real errors behind\n' >&2
+  printf '  such a run. Pass the repository instead:\n' >&2
+  printf '\n' >&2
+  printf '      %s --root "$PWD"\n' "$0" >&2
+  printf '\n' >&2
+  exit 2
+fi
+
 
 if [[ -t 1 ]]; then
   RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; RST=$'\033[0m'
@@ -92,13 +130,14 @@ normalise() {
   sed -E 's/[[:space:]]+$//' "$1"
 }
 
-declare -A TBL_SCOPE=() TBL_PLANE=() TBL_FILE=() TBL_COLS=() TBL_COLTYPE=()
+declare -A TBL_SCOPE=() TBL_PLANE=() TBL_FILE=() TBL_COLS=() TBL_COLTYPE=() TBL_CLASS=()
 declare -A RLS_ENABLED=() RLS_FORCED=() POLICY_BODY=()
 
 for f in "${MIGRATIONS[@]}"; do
   rel="${f#"$SCAN"/}"
   pending_scope=""
   pending_plane=""
+  pending_regclass=""
   cur=""
   while IFS= read -r line; do
     # our directives
@@ -107,6 +146,11 @@ for f in "${MIGRATIONS[@]}"; do
     fi
     if [[ "$line" =~ ^[[:space:]]*--[[:space:]]*paridyum:plane[[:space:]]+([a-z]+) ]]; then
       pending_plane="${BASH_REMATCH[1]}"; continue
+    fi
+    # A regulated class directive on its own line inside a table body belongs to the next column
+    # (STD-0023 rule 5). Recorded so the control-plane check below can refuse it there.
+    if [[ -n "$cur" && "$line" =~ ^[[:space:]]*--[[:space:]]*paridyum:class[[:space:]]+([a-z-]+) ]]; then
+      pending_regclass="${BASH_REMATCH[1]}"; continue
     fi
     # CREATE TABLE
     if [[ "$line" =~ ^[[:space:]]*CREATE[[:space:]]+TABLE[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
@@ -134,8 +178,17 @@ for f in "${MIGRATIONS[@]}"; do
           # Lowercased, whitespace-collapsed, trailing comma stripped. Constraint keywords
           # stay in the string: `text NOT NULL` matching on `text` is what the checks want,
           # and stripping them would need a type grammar this parser deliberately does not have.
-          rest="$(tr '[:upper:]' '[:lower:]' <<<"${BASH_REMATCH[2]}" | tr -s '[:space:]' ' ' | sed -E 's/,[[:space:]]*$//; s/[[:space:]]+$//')"
+          # A trailing `-- class` comment is stripped from the type: the last column of a table has
+          # no comma to stop the capture, and its class used to end up inside its type.
+          rest="$(tr '[:upper:]' '[:lower:]' <<<"${BASH_REMATCH[2]}" | tr -s '[:space:]' ' ' | sed -E 's/[[:space:]]*--.*$//; s/,[[:space:]]*$//; s/[[:space:]]+$//')"
           TBL_COLTYPE["$cur.$col"]="$rest"
+          # The column's classification (STD-0023 rule 5): a regulated directive above it, or the
+          # class in its trailing comment. Absent stays absent — the control-plane check reads that.
+          if [[ -n "$pending_regclass" ]]; then
+            TBL_CLASS["$cur.$col"]="regulated:$pending_regclass"; pending_regclass=""
+          elif [[ "$line" =~ --[[:space:]]*(pii|confidential|internal|public)([^a-z]|$) ]]; then
+            TBL_CLASS["$cur.$col"]="${BASH_REMATCH[1]}"
+          fi
           ;;
       esac
       continue
@@ -196,8 +249,8 @@ for f in "${MIGRATIONS[@]}"; do
     if [[ "$line" =~ ^[[:space:]]*--[[:space:]]*paridyum:rescope[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]+([a-z]+) ]]; then
       rt="${BASH_REMATCH[1]}"; rs="${BASH_REMATCH[2]}"
       case "$rs" in
-        platform|tenant|account) ;;
-        *) err "$rel: rescope of '$rt' names '$rs', which is not one of platform|tenant|account (ADR-0024)"; continue ;;
+        platform|org|tenant|account) ;;
+        *) err "$rel: rescope of '$rt' names '$rs', which is not one of platform|org|tenant|account (ADR-0115, STD-0023)"; continue ;;
       esac
       [[ -n "${TBL_FILE[$rt]:-}" ]] \
         || { err "$rel: rescopes '$rt', which no migration creates (ADR-0024)"; continue; }
@@ -217,19 +270,34 @@ for f in "${MIGRATIONS[@]}"; do
     if [[ "$line" =~ ALTER[[:space:]]+TABLE[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]+ADD[[:space:]]+COLUMN[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
       at="${BASH_REMATCH[1]}"; ac="${BASH_REMATCH[3]}"
       [[ -n "${TBL_FILE[$at]:-}" ]] && TBL_COLS[$at]="${TBL_COLS[$at]:-} $ac"
+      if [[ "$line" =~ --[[:space:]]*(pii|confidential|internal|public)([^a-z]|$) ]]; then
+        TBL_CLASS["$at.$ac"]="${BASH_REMATCH[1]}"
+      fi
     fi
   done < <(normalise "$f")
 done
 
 # --- db.tenant_scoped_tables_declare_tenancy --------------------------------
-# ADR-0024 decision 1. Exactly one of three categories, declared and never inferred:
-# `invoices` is account-scoped, the `plans` a product offers is tenant-scoped, `regions` is
-# platform-owned, and no naming rule separates them.
+# ADR-0115 decision 1 (was ADR-0024's three). Exactly one of four categories, declared and never
+# inferred: `invoices` is account-scoped, the `plans` a product offers is tenant-scoped,
+# `org_members` is org-scoped, `regions` is platform-owned, and no naming rule separates them.
+#
+# The discriminator names are reserved for their categories (STD-0023 rule 1). A platform table
+# that must point at an org or a tenant does it through a named key — `tenants.owner_org_id` — so a
+# reader can never mistake a relationship for a scope. An org's own rows name no tenant: a fact
+# relating the two is registry data.
 for t in "${!TBL_FILE[@]}"; do
   scope="${TBL_SCOPE[$t]}"
   case "$scope" in
     platform)
       has_col "$t" tenant_id && err "${TBL_FILE[$t]}: table '$t' is declared platform-owned but carries tenant_id — the declaration and the schema disagree (ADR-0024)"
+      has_col "$t" org_id && err "${TBL_FILE[$t]}: table '$t' is declared platform-owned but carries org_id — a platform table references an org by a named key such as owner_org_id, never by the org scope's discriminator (STD-0023 rule 1, ADR-0115 D2)"
+      has_col "$t" account_id && err "${TBL_FILE[$t]}: table '$t' is declared platform-owned but carries account_id — the declaration and the schema disagree (ADR-0115 D2)"
+      ;;
+    org)
+      has_col "$t" org_id || err "${TBL_FILE[$t]}: table '$t' is declared org-scoped but has no org_id column — without it no policy can confine a row to one org, so the table belongs to every org at once (ADR-0115 D1)"
+      has_col "$t" tenant_id && err "${TBL_FILE[$t]}: table '$t' is declared org-scoped but carries tenant_id — an org's own rows name no tenant; a fact relating an org to a tenant is registry data, tenants.owner_org_id (ADR-0115 D2)"
+      has_col "$t" account_id && err "${TBL_FILE[$t]}: table '$t' is declared org-scoped but carries account_id — an org is never an account (ADR-0115 D2, ADR-0113)"
       ;;
     tenant)
       has_col "$t" tenant_id || err "${TBL_FILE[$t]}: table '$t' is declared tenant-scoped but has no tenant_id column (ADR-0024)"
@@ -240,7 +308,7 @@ for t in "${!TBL_FILE[@]}"; do
       has_col "$t" account_id || err "${TBL_FILE[$t]}: table '$t' is declared account-scoped but has no account_id column (ADR-0024)"
       ;;
     *)
-      err "${TBL_FILE[$t]}: table '$t' declares no tenancy category — add '-- paridyum:scope platform|tenant|account' above the CREATE TABLE. The default is not inferred, because a schema cannot say whether a table belongs to the platform, a business, or one of that business's customers (ADR-0024)"
+      err "${TBL_FILE[$t]}: table '$t' declares no tenancy category — add '-- paridyum:scope platform|org|tenant|account' above the CREATE TABLE. The default is not inferred, because a schema cannot say whether a table belongs to the platform, an org, a business, or one of that business's customers (ADR-0115)"
       ;;
   esac
 done
@@ -274,6 +342,16 @@ for t in "${!TBL_FILE[@]}"; do
   fi
 done
 
+# --- db.org_scoped_tables_are_regional --------------------------------------
+# ADR-0115 D10, ADR-0117. An org's own rows are its people — members, invitations, names — and
+# RFC-0017 keeps a customer's people in the customer's region. The org's registry row is
+# platform-scoped and control-plane, and passes: it is personless by the check further down.
+for t in "${!TBL_FILE[@]}"; do
+  if [[ "${TBL_PLANE[$t]}" == "control" && "${TBL_SCOPE[$t]}" == "org" ]]; then
+    err "${TBL_FILE[$t]}: table '$t' is declared org-scoped AND control-plane — an org's own rows are its people, and they live in the org's region (ADR-0117 D3, RFC-0017). One of the two declarations is wrong"
+  fi
+done
+
 # --- db.account_scoped_tables_carry_tenant_id -------------------------------
 # The schema half. The query half needs a typed query builder or SQL parsing and is
 # tool-forge's; that split is recorded in the registry rather than implied by silence.
@@ -288,7 +366,7 @@ done
 # can have RLS enabled, policies defined, and no isolation for the role the application
 # connects as. Every dashboard reports healthy.
 for t in "${!TBL_FILE[@]}"; do
-  [[ "${TBL_SCOPE[$t]}" == "platform" ]] && continue
+  case "${TBL_SCOPE[$t]}" in platform|org) continue ;; esac
   has_col "$t" tenant_id || continue
   [[ -n "${RLS_ENABLED[$t]:-}" ]] || err "${TBL_FILE[$t]}: table '$t' carries tenant_id but never ENABLEs ROW LEVEL SECURITY (ADR-0024)"
   [[ -n "${RLS_FORCED[$t]:-}" ]] || err "${TBL_FILE[$t]}: table '$t' does not FORCE ROW LEVEL SECURITY — ENABLE alone exempts the table owner, and migrations run as the owner (ADR-0024)"
@@ -300,6 +378,19 @@ for t in "${!TBL_FILE[@]}"; do
     grep -qE 'account_id[[:space:]]*=' <<<"$body" \
       || err "${TBL_FILE[$t]}: '$t' is account-scoped but no policy constrains account_id — an outer-only policy isolates businesses from each other and nobody's customers (ADR-0024)"
   fi
+done
+
+# The org half of the same rule (ADR-0115 D3). An org table with RLS and a policy that names no
+# org reads as isolated on every dashboard and isolates nobody: each org sees every org's members.
+for t in "${!TBL_FILE[@]}"; do
+  [[ "${TBL_SCOPE[$t]}" == "org" ]] || continue
+  has_col "$t" org_id || continue
+  [[ -n "${RLS_ENABLED[$t]:-}" ]] || err "${TBL_FILE[$t]}: org-scoped table '$t' never ENABLEs ROW LEVEL SECURITY (ADR-0115 D3)"
+  [[ -n "${RLS_FORCED[$t]:-}" ]] || err "${TBL_FILE[$t]}: org-scoped table '$t' does not FORCE ROW LEVEL SECURITY — ENABLE alone exempts the table owner, and migrations run as the owner (ADR-0115 D3)"
+  body="${POLICY_BODY[$t]:-}"
+  [[ -n "$body" ]] || { err "${TBL_FILE[$t]}: org-scoped table '$t' has RLS but no policy (ADR-0115 D3)"; continue; }
+  grep -qE 'org_id[[:space:]]*=' <<<"$body" \
+    || err "${TBL_FILE[$t]}: no policy on org-scoped table '$t' constrains org_id — every org would read every other org's rows (ADR-0115 D3, STD-0023 rule 2)"
 done
 
 # --- db.operator_scope_is_an_explicit_grant ---------------------------------
@@ -315,6 +406,54 @@ for t in "${!TBL_FILE[@]}"; do
   fi
   grep -qE 'operator_scope|is_operator|has_operator' <<<"$body" \
     || wrn "${TBL_FILE[$t]}: no policy on '$t' names an operator-scope predicate. If the tenant's own console never reads across accounts this is correct; if it does, the grant is being expressed somewhere this check cannot see (GLO-0005)"
+done
+
+# --- db.no_org_discriminator_on_business_data --------------------------------
+# ADR-0115 D9's signed reading made mechanical: the org is not a third silo because no row of
+# business data names it. Ownership is `tenants.owner_org_id` on the platform-scoped registry,
+# which this deliberately does not inspect. Keyed on the name, so `owner_org_id` and `org_ref`
+# fail as surely as `org_id`; the vendor object is `zitadel_org*` and is not an org (ADR-0113 D2).
+for t in "${!TBL_FILE[@]}"; do
+  case "${TBL_SCOPE[$t]}" in tenant|account) ;; *) continue ;; esac
+  for col in ${TBL_COLS[$t]}; do
+    [[ "$col" == zitadel_org* ]] && continue
+    if [[ "$col" =~ (^|_)org(_|$) ]]; then
+      err "${TBL_FILE[$t]}: ${TBL_SCOPE[$t]}-scoped table '$t' carries '$col' — business data never names its org. That column is the third silo ADR-0115 D9 defers; an org owns a tenant through tenants.owner_org_id alone (ADR-0114 D4)"
+    fi
+  done
+  grep -qE 'current_org' <<<"${POLICY_BODY[$t]:-}" \
+    && err "${TBL_FILE[$t]}: a policy on ${TBL_SCOPE[$t]}-scoped table '$t' calls current_org() — an org context never reaches tenant data; a person reaches a tenant by a per-tenant grant (ADR-0116 D1, ADR-0120)"
+done
+
+# --- db.no_personal_data_in_the_control_plane -------------------------------
+# ADR-0117 D3. RFC-0014 cost 2 in its own words: "a pii column landing in the control plane instead
+# of a region is a residency breach that every check reports as green." The plane directive and
+# the column's class are both in the migration, so this is decidable here. An UNCLASSIFIED column
+# is refused as well: absence is the permission-by-default shape GLO-0005 forbids, one level over,
+# and the gate cannot tell it from a breach. It cannot see a column classified `internal` that
+# really holds a name — classification is the author's claim, and review is the defence there.
+for t in "${!TBL_FILE[@]}"; do
+  [[ "${TBL_PLANE[$t]}" == "control" ]] || continue
+  for col in ${TBL_COLS[$t]}; do
+    cls="${TBL_CLASS["$t.$col"]:-}"
+    case "$cls" in
+      internal|public) ;;
+      "") err "${TBL_FILE[$t]}: control-plane table '$t' has an unclassified column '$col' — every control-plane column states its class, because the control plane holds no person and an unstated class cannot be told from a residency breach (ADR-0117 D3, STD-0023 rule 5)" ;;
+      *)  err "${TBL_FILE[$t]}: control-plane table '$t' has '$col' classified '$cls' — personal and confidential data live in a region, never in the control plane (ADR-0117 D3, RFC-0017)" ;;
+    esac
+  done
+done
+
+# --- db.localized_content_matches_its_tenant_locales ------------------------
+# ADR-0122 D4. `v ? 'en' AND v ? 'ar'` — in a CHECK, or in a helper a CHECK or trigger calls, as
+# 0007 and 0016 had it — writes one tenant's languages into every tenant's schema. Completeness is
+# checked against the owning tenant's declared content locales instead. Reads SQL text: a two- or
+# three-letter jsonb key that is not a locale is reported too, which is the right side to err on.
+for f in "${MIGRATIONS[@]}"; do
+  rel="${f#"$SCAN"/}"
+  hits="$(sed 's/--.*$//' "$f" | tr '\n' ' ' \
+    | grep -oiE "\?[&|]?[[:space:]]*(array[[:space:]]*\[)?[[:space:]]*'[a-z]{2,3}(-[a-z0-9]{2,8})*'" | head -3 | tr '\n' ' ')"
+  [[ -n "$hits" ]] && err "$rel tests a jsonb value for literal locale codes (${hits% }) — one tenant's languages written as every tenant's. Validate against the owning tenant's declared content locales, in a row trigger (ADR-0122 D4)"
 done
 
 # --- db.tables_are_plural_snake_case ----------------------------------------
@@ -397,6 +536,27 @@ fi
 # Four checks, added 2026-08-08. They share the tenancy gate rather than getting a script of
 # their own because they read the same migrations, and a second scanner over one input set is
 # how the two drift. All four are TYPE checks, which is why the parser above now records types.
+
+# --- db.tenant_declares_its_locale_fields -----------------------------------
+# ADR-0122 D4, STD-0010 §1. Keyed on the presence of `tenants`, as the region checks above are, so a
+# repository that defines no tenants is not asked. A DEFAULT is refused for the reason 0011 refuses
+# one for `region`: a default here is a declaration nobody made (ADR-0034 D2).
+if [[ -n "${TBL_FILE[tenants]:-}" ]]; then
+  if [[ -z "${TBL_FILE[tenant_settings]:-}" ]]; then
+    err "migrations define 'tenants' but no 'tenant_settings' — a tenant must declare its content locales and its locale, timezone and currency defaults, or every one inherits a set nobody chose (ADR-0122 D4, STD-0010 §1)"
+  else
+    for col in supported_locales content_locale locale timezone currency; do
+      ty="${TBL_COLTYPE["tenant_settings.$col"]:-}"
+      if ! has_col tenant_settings "$col"; then
+        err "${TBL_FILE[tenant_settings]}: 'tenant_settings' has no '$col' column (ADR-0122 D4)"
+      elif [[ "$ty" != *"not null"* ]]; then
+        err "${TBL_FILE[tenant_settings]}: 'tenant_settings.$col' is nullable — a tenant with no declared value falls through to a default nobody made (ADR-0122 D4)"
+      elif [[ "$ty" == *"default"* ]]; then
+        err "${TBL_FILE[tenant_settings]}: 'tenant_settings.$col' carries a DEFAULT — provisioning that forgets to ask then succeeds, and the tenant acquires a language, locale, timezone or currency by accident (ADR-0122 D4, ADR-0034 D2)"
+      fi
+    done
+  fi
+fi
 
 col_type() { printf '%s' "${TBL_COLTYPE["$1.$2"]:-}"; }
 
