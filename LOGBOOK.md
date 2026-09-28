@@ -1751,3 +1751,28 @@ branch is checked with `git branch --show-current` before every commit.
 Skills used: code-review (high, after the fact). Governance retrieved: ADR-0078 D1/D2, C-0004,
 tenancy migrations 0010/0012/0014, platform-tenancy AGENTS.md.
 
+
+## 2026-09-28 — the seed's default tenant, after the rebuild from empty
+
+The estate was rebuilt from empty on 2026-09-28 (infra-kubernetes#10). Paridyum's tenant is re-derived
+from its new Zitadel organization — `392737556011156703` → `451ce2e0-b82f-59ad-ad54-ab02ad9811cb`, the
+row `tenant-provision` wrote — so `seed-config.py`'s default named a tenant that no longer exists.
+The derivation tests in `src/` keep `68445ee9-…`: they prove the function, not the estate.
+
+**Still owed for docket to run again, and not done here:** the operator registry's `subject` is the
+destroyed control plane's user, and `DOCKET_OIDC_AUDIENCE` its operations project — both wait on the
+control-plane instance being recreated (infra-kubernetes#10). docket's configuration is not re-seeded
+until then; the operator said docket may stay down while the estate is made right.
+
+## 2026-09-28 (second entry) — re-bound to the rebuilt control plane
+
+The control plane was rebuilt the same day through the first ADR-0123 window (infra-kubernetes#10),
+so what the first entry listed as owed is done here: rohan's operator entry is bound to the new
+subject `392752909697746075` — read from the rebuilt instance, where `provision-control.py` resolves
+the owner by email — and `tests/served_api.rs`, which loads the real registry, changes with it. The
+SOP's audience is the new `paridyum-operations` project `392754455717610538`.
+
+**Not re-run:** `scripts/probe-audit-writer.sh`, the only runner of `served_api`, needs a full build of
+this crate, and the workstation had 4.4 GiB free after the build directory was cleared. The change is
+two literals that must agree, and they do; the probe is the check that proves it, and it is owed.
+The derivation and verifier tests in `src/` keep their old ids — they are vectors, not the estate.

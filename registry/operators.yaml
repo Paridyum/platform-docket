@@ -19,7 +19,9 @@ operators:
     role: Chief Technology Officer
     active: true
     # The control-plane Zitadel subject rohan signs in as through the served console (ADR-0092).
-    subject: '390506086174098663'
+    # Re-bound 2026-09-28: the control plane was rebuilt from empty, and a rebuilt owner is a new
+    # subject — which is the property ADR-0092's opaque-subject binding exists for.
+    subject: '392752909697746075'
 
   - id: ruhani
     name: RUHANI KHURANA

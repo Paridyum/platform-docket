@@ -27,8 +27,9 @@ use tool_docket::config::Paths;
 
 const ISS: &str = "https://id.test";
 const AUD: &str = "ops-project";
-// rohan's control-plane subject, bound in registry/operators.yaml (ADR-0092 §2).
-const ROHAN_SUB: &str = "390506086174098663";
+// rohan's control-plane subject, bound in registry/operators.yaml (ADR-0092 §2). The two change
+// together: this test loads the real registry and signs a token for this subject.
+const ROHAN_SUB: &str = "392752909697746075";
 
 /// Sign an operator token for `subject` with the test key.
 fn token(enc: &EncodingKey, subject: &str) -> String {

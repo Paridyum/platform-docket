@@ -82,7 +82,7 @@ jobs:
   # be testing something nobody ships. See DECISION-DEBT D-57.
   render:
     name: rendering
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, paridyum]   # the estate runner, ADR-0124
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 

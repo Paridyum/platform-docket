@@ -40,6 +40,15 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **`seed-config.py` defaults to the rebuilt Paridyum tenant.** The estate was rebuilt from empty on
+  2026-09-28, so the default tenant `68445ee9-…` no longer exists and seeding against it fails a
+  foreign key; the default is `451ce2e0-b82f-59ad-ad54-ab02ad9811cb`, derived from the new Zitadel
+  organization. The help text and the multi-tenant design's Stage 4 name `make tenant-provision`,
+  which replaced `provision-org` the same day.
+- **The operator registry is re-bound to the rebuilt control plane.** Rebuilding `id.paridyum.com`
+  made rohan a new subject (`392752909697746075`); `registry/operators.yaml` and the served-API test
+  that loads it change together, and the SOP's audience is the new `paridyum-operations` project.
+
 - **The database suites can prove docket against the schema it is deployed into, not only the full
   stream.** Against the live schema (0001–0009, 0011–0013) the eight store tests (the factory test
   now among them) and the served end-to-end test pass. With no `audit_events` (0010) replayed the

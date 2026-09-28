@@ -25,9 +25,10 @@ from pathlib import Path
 
 import yaml
 
-# Paridyum's tenant id (ADR-0082 derivation of its Zitadel org). The default because Paridyum is the
-# first tenant; any other tenant passes its own uuid.
-PARIDYUM_TENANT = "68445ee9-175a-58a9-834e-a2f0c9c9b124"
+# Paridyum's tenant id — the ADR-0082 derivation of its Zitadel organization, `392737556011156703`
+# since the estate was rebuilt from empty on 2026-09-28 (infra-kubernetes zitadel/organizations.yaml).
+# The default because Paridyum's tenant is the first; any other tenant passes its own uuid.
+PARIDYUM_TENANT = "451ce2e0-b82f-59ad-ad54-ab02ad9811cb"
 
 REGISTRY = Path(__file__).resolve().parent.parent / "registry"
 
@@ -89,7 +90,7 @@ def main() -> int:
     ap.add_argument(
         "--operator",
         metavar="id|name|role|subject",
-        help="also seed one operator row (the tenant's first, whom provision-org granted the role): "
+        help="also seed one operator row (the tenant's first, whom tenant-provision granted the role): "
         "its docket_operators row supplies the name/title a document is attributed to and the "
         "Zitadel subject operator::resolve binds by (ADR-0092). Without it a granted operator can "
         "sign in but cannot act, having no row to resolve to.",

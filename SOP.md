@@ -874,8 +874,10 @@ dependency" below). You do NOT need `DOCKET_DATABASE_URL` and must not set it.
 Point docket at the remote and sign in once:
 
     export DOCKET_API_URL="https://docket.paridyum.com"
-    export DOCKET_OIDC_CLIENT_ID="<the CLI device-flow client id>"   # no default; refused if unset
-    export DOCKET_OIDC_PROJECT_ID="390606436373103770"              # audiences the token (ADR-0092)
+    export DOCKET_OIDC_CLIENT_ID="<the CLI device-flow client id>"   # no default; refused if unset —
+                                                                     # docket-cli, printed by infra-kubernetes
+                                                                     # `make zitadel-control-operations`
+    export DOCKET_OIDC_PROJECT_ID="392754455717610538"              # audiences the token (ADR-0092)
     # DOCKET_OIDC_ISSUER defaults to https://id.paridyum.com
     docket login
 

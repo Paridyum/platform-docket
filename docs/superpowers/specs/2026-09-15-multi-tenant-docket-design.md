@@ -80,18 +80,19 @@ history until retired.
 
 ### Stage 4 — onboarding a tenant  — DONE
 
-`provision-org` already does the org → derived tenant row (ADR-0082) → `operator`
-role grant. Rather than couple it across repos to docket's config, onboarding is
+`make tenant-provision` (infra-kubernetes; `provision-org` until 2026-09-28) already does the
+tenant's Zitadel organization → derived tenant row (ADR-0082) → `operator` role grant — and, since
+the org model, the owning org's row and the tenant's declarations first (ADR-0114, ADR-0122). Rather than couple it across repos to docket's config, onboarding is
 that step followed by docket's own seed:
 
-    provision-org --apply
+    make tenant-provision        # in infra-kubernetes
     seed-config.py --tenant <new> --defaults --operator "<id>|<name>|<role>|<subject>" --apply
 
 `--defaults` seeds only the generic document machinery (fields, classes,
 lifecycle + stages, messages, retention) — the reusable model, not another
 tenant's companies/operators/signatories, which stay empty until it configures
 them. `--operator` seeds the first operator's `docket_operators` row so the
-subject `provision-org` granted resolves (ADR-0092). Companies and signatories
+subject `tenant-provision` granted resolves (ADR-0092). Companies and signatories
 the tenant adds via Stage 5's admin surface. Idempotent (`ON CONFLICT`).
 
 ### Stage 5 — the web-docket admin surface (ADR-0098)
