@@ -25,75 +25,6 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   Three implementations of this contract now exist in the estate. That is priced and recorded, with
   the trigger that turns it into a shared crate, in DECISION-DEBT D-71.
 
-### Changed
-
-- **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag
-  (ADR-0107).** `src/adapters/auth.rs` was the estate's second in-crate RSA/JWKS verifier and
-  ADR-0092 §3 recorded it as debt *"until a third consumer"*; `platform-tenancy` became the third, so
-  the debt is paid. What stays here is docket's own policy, which a shared library must not hold
-  (ANTI-0004): the single-plane issuer and `paridyum-operations` audience pins, the `operator` role
-  requirement, and the `resourceowner` → tenant uuid derivation (ADR-0082/ADR-0099). Behaviour is
-  unchanged, including the lenient `Bearer ` prefix this adapter has always accepted — the shared
-  `strip_bearer` is strict, and tightening this caller while moving its code would have been a
-  behaviour change disguised as a refactor. `OperatorVerifier::new` keeps its signature, so no call
-  site in `serve.rs`, `router.rs`, `server.rs` or `operator.rs` changed.
-
-### Fixed
-
-- **`seed-config.py` defaults to the rebuilt Paridyum tenant.** The estate was rebuilt from empty on
-  2026-09-28, so the default tenant `68445ee9-…` no longer exists and seeding against it fails a
-  foreign key; the default is `451ce2e0-b82f-59ad-ad54-ab02ad9811cb`, derived from the new Zitadel
-  organization. The help text and the multi-tenant design's Stage 4 name `make tenant-provision`,
-  which replaced `provision-org` the same day.
-- **The operator registry is re-bound to the rebuilt control plane.** Rebuilding `id.paridyum.com`
-  made rohan a new subject (`392752909697746075`); `registry/operators.yaml` and the served-API test
-  that loads it change together, and the SOP's audience is the new `paridyum-operations` project.
-
-- **The database suites can prove docket against the schema it is deployed into, not only the full
-  stream.** Against the live schema (0001–0009, 0011–0013) the eight store tests (the factory test
-  now among them) and the served end-to-end test pass. With no `audit_events` (0010) replayed the
-  harness skips the audit sink's test by name and says why — a docket deployed into that schema
-  serves every request while its audit writes fail, logged — and every other test still gates the
-  exit code. The deploy order this proves: account row, this image, then the migrations, with the
-  last two minutes apart, because audit rows written between them are lost. (No regression: the
-  image running today, from 2026-09-15, writes none.) Seeds name `accounts.id` with a v7 key only
-  because it has no default before 0014 — ADR-0078's own case, stated where it happens.
-
-- **Every docket transaction sets all four session values, through one function — and applying
-  tenancy migration 0015 would otherwise have taken docket down.** `enter()` read `accounts` with
-  three values set, under a comment that the lookup was "legal with two of the four". Tenancy 0015
-  adds `accounts_read`, whose predicate calls `current_account()`; measured on a replay of 0001–0016,
-  the three-value lookup raised `paridyum.account_id is not set` on every call — every chain append,
-  every read, every config load. `set_session` now sets tenant, account (the nil `NO_ACCOUNT` for
-  the lookup, then the resolved one), operator scope and correlation id, as tenancy's `Db::begin()`
-  does. **This must be deployed before 0015 is applied.**
-- **Correction to #25:** the audit sink uses the same four values, with `operator_scope` read off
-  the verified token. #25 narrowed that session on the premise that the nil account was a widening
-  sentinel; tenancy documents it as *"not a sentinel that widens anything"*, and two values made the
-  write depend on today's append policy. (The store path's operator scope is still `true` by
-  construction — D-75.)
-- **docket's Postgres integration suites run again.** `tests/pg_store.rs` and `tests/served_api.rs`
-  seeded tenants with no `region` and no docket account, and skipped silently without a database, so
-  they had not run against the current schema since 0011. They now seed correctly through an admin
-  connection, say `SKIPPED` when they skip, and `scripts/probe-audit-writer.sh` runs all ten
-  database tests against every tenancy migration as an RLS-bound role. With the three-value
-  `enter()` planted back, nine of the ten fail — every one that goes through `enter()`; the tenth
-  is the audit sink's, which does not. With the sink's session made to ignore its scope, the audit
-  test fails ("the sink's scope-less session read rows it holds no grant for").
-
-- **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close
-  `RUSTSEC-2026-0285` (TLS 1.3 handshake messages accepted at the wrong encryption level) on docket's
-  live TLS path, and cleared a `.gitleaksignore` self-finding by allowlisting the documented
-  placeholder value `unused` in `.gitleaks.toml` (ADR-0017-compliant value allowlist). Postgres CI
-  still needs a `contents:read` token (DECISION-DEBT D-69).
-
-- **`engines` test is isolated from an ambient store URL.** With the Postgres CI job exporting
-  `DOCKET_DATABASE_URL`, the file-mode engine test's `docket` subprocess inherited it and routed to
-  PgStore instead of the file store it set up, so `docket new` failed. The test now `env_remove`s
-  `DOCKET_DATABASE_URL` and `DOCKET_API_URL`, exercising file mode as intended regardless of the
-  ambient environment.
-
-### Added
 
 - **The deployment surface for the served backend.** ADR-0093 §3. A Helm chart (`helm/` —
   Deployment + Service, `/healthz` liveness/readiness probes, resource limits, digest-only image,
@@ -271,7 +202,317 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   libc. The refusal names the holder's host, pid and operator, so a stale lock is a decision
   rather than a guess.
 
+
+- **Write routes on `docket serve`,** so the console can do the job rather than
+  only describe it: `POST /api/person` (enrol), `/onboard`, `/sign`, `/advance`,
+  plus `GET /api/form/{class}` for the enrolment questions.
+
+  **Every write resolves an operator or is refused with 403.** An
+  `X-Docket-Operator` header, checked against `registry/operators.yaml`. This is
+  attribution exactly as strong as the CLI's `--by` — a claimed identifier that
+  must name a real operator, proven by SSH rather than by us — and it is refused
+  rather than defaulted, because a default is what made every event in the log say
+  "docket". It doubles as the CSRF defence: a cross-site form cannot set a custom
+  header, so the token the original design specified is unnecessary.
+
+  **A refusal is 409, not 400 and not 500.** 400 means the request was wrong, 500
+  means we are broken, 409 means it was understood and the domain declined. Only
+  the third is information an operator can act on, and flattening them is how a UI
+  comes to render a refusal as an error and invite a retry. Refusals carry the same
+  `blockers` shape the person page renders, so a refused write and a held person
+  read identically.
+
+  **The routes do not expose `--force`.** `onboard` cannot be forced at all from
+  here; §8 forbids an interface that offers a way past a refusal, and a console
+  button that issues defective documents is worse than no button. `advance` accepts
+  `force` because the CLI has it and the boundary mirrors the CLI, but it defaults
+  off, so a console that does not send it can never skip a gate.
+
+  `sign` checks the serial was issued to the person in the URL. Without that a
+  request could file a signature against anybody's document through anybody's URL,
+  and the signature ledger would be correct while the audit trail lied.
+
+- **`docket serve` — the operator API `console-docket` consumes.** Read-only:
+  `/api/health`, `/api/roster` (with `?standing=`), `/api/person/{slug}`,
+  `/api/check`, `/api/retention`, `/api/emails/{slug}`. Every route calls the
+  same `application::` function the CLI calls, so the console and the command line
+  cannot disagree about what a person owes, and **no route writes anything** —
+  asserted by a test over every route rather than argued from the absence of write
+  handlers.
+
+  **Binds `127.0.0.1` and refuses anything else**, as a function with tests rather
+  than a default. There is no login: SSH keys are the authentication and the
+  operating system is the identity (ADR-0047 gives this tool no identity system of
+  its own, so it must not be reachable without one). Verified live that the
+  listening socket is `127.0.0.1` only and that the LAN address refuses the
+  connection — the property `next dev` in `console-docket` fails.
+
+  The HTTP implementation is ours, on `std::net`, adding **no dependency**. The
+  obvious crate for the job last published in 2022, and the needed surface is one
+  client over loopback with no TLS and no keep-alive. It is strict by choice:
+  chunked encoding, absolute-form targets, HTTP/2 and unparsable `Content-Length`
+  are refused rather than guessed at, with bounds on the request line, header
+  count and body size, and a read/write timeout so a silent client cannot hold the
+  accept loop.
+
+  Connections are handled **one at a time, deliberately**. This process is the only
+  writer to four append-only hash chains, and that is what makes them safe without
+  file locking; a thread per connection would make two concurrent writes possible
+  and a torn chain the failure.
+
+  Wire types live in `adapters::http::dto` rather than `#[derive(Serialize)]` on
+  the `application::` types, so renaming an internal field cannot silently rename a
+  field in a published API.
+
+- `docket` CLI in Rust: `status`, `onboard`, `issue`, `render`, `verify`, `check`.
+- `latex/paridyum.cls`, the single typesetting authority. Absorbs the
+  letterhead, boxes, footer, page numbering and signature blocks that were
+  duplicated across eleven separate `.tex` files.
+- Fourteen document templates. Ten transcribed from the `.docx` originals,
+  which are the source of truth for content.
+- Four documents that did not exist: POSH policy, Data Protection Notice,
+  Internship Offer, and an intern acknowledgement on the offboarding
+  checklist.
+- `registry/` — `org`, `signatories`, `lifecycle`, `retention`. One home per
+  fact; `check` fails any template that restates one.
+- Tamper-evident register: hash-chained JSONL, outside git so that erasure
+  remains possible.
+- Personnel record keeping: `docket new`, `record`, `roster`, `event`,
+  `separate`, `erase`. Permanent identifiers (`PAR-INT-2026-0001`), never
+  reused, including after erasure.
+- `registry/person-classes.yaml` and `registry/fields.yaml`: 3 person
+  classes, 54 declared fields, each with a stated purpose and a store.
+- Class-gated collection. An unpaid student intern is not an employee, so
+  no statute requires their PAN, Aadhaar, UAN or bank account; the `intern`
+  class forbids them and `check` refuses a record that holds one.
+- Hash-chained identity ledger and personnel event log, alongside the
+  document register. The chain logic is one implementation shared by all
+  three.
+- DPDP erasure that actually deletes: the record file and the person's event
+  detail go; the identifier, class and dates survive as a tombstone so
+  issued serials still resolve.
+- 96 tests.
+- Vector logo, built from source at `latex/assets/paridyum-logo.tex`.
+- `identity.date_of_birth` required for interns, a `guardian` field group,
+  and `GRD` (Parent / Guardian Consent) owed whenever the person is under
+  eighteen on their start date — DPDP s2(f) and s9.
+- Verification code in the footer of every issued document, derived from
+  serial + recipient + issue date + template hash. `docket verify`
+  recomputes it. A lookup check, not a signature.
+- The offboarding checklist now names the systems the event log records as
+  still granted, and lists the documents on record with their serials. Both
+  derived, so the paper cannot disagree with the register.
+- **Two identifiers (ADR-0051).** `PAR-P-000001-X` is opaque, permanent and
+  names the archive folder; `PAR-INT-2026-0001` carries class and year and
+  names the engagement. Class is mutable for a person and immutable for an
+  engagement, which is the whole distinction.
+- ISO 7064 MOD 11-2 check character on the person identifier, because it is
+  typed into folder names and read aloud. Catches every single-digit error
+  and every adjacent transposition; both properties are swept in tests.
+- `docket reengage` — an intern who is hired keeps their person identifier
+  and gets a new engagement identifier, so the archive stays whole.
+- The register keys on `person_id` + `engagement_id`. A slug is a filename
+  and nothing keys off it.
+- Issued PDFs are stored under the person identifier, not the slug: a folder
+  named after a person discloses who Paridyum engages from the listing alone.
+- **PDF/A-2b (ISO 19005-2)** via `pdfx`, with the sRGB OutputIntent the
+  standard requires. Output is still byte-identical.
+- **PDF metadata** — `/Title`, `/Author`, `/Subject`, `/Keywords` written from
+  a generated `.xmpdata`. A file pulled out of the store is no longer
+  anonymous.
+- `docket index` — generated `roster.csv`, `documents.csv`, `README.txt` and a
+  BagIt-style `manifest-sha256.txt`. The archive verifies with plain
+  `shasum -a 256 -c`, with no Paridyum tooling. Generated output under C-0004;
+  `docket check` fails if it is stale (ADR-0040's pattern).
+- `docket retention` — reports documents past their period, and reports classes
+  whose prose period it cannot parse rather than assuming them compliant.
+- `docket erase` now names what it could NOT reach: the cloud folder, backups,
+  mail, printouts. A tool that reports a complete erasure it did not perform
+  is worse than one that states its boundary.
+- `access.cloud_folder` field, so erasure can name the remote folder.
+- `SOP.md` (STD-0013), six tasks with real pasted output.
+- `provides` block in `manifest.yaml` — required by `manifest.schema.json` and
+  absent before.
+- `docket sign <serial>` — records that a document came back executed, in its
+  own hash-chained ledger. Never by mutating the issuance entry: the register
+  is append-only so what was issued cannot be rewritten, and a signature is a
+  later fact.
+- Refuses wet-ink with no scan (the scan is the only evidence that method
+  leaves), a signing date before issuance, a received date before signing, a
+  second signature for the same serial, and an unissued serial.
+- Scans are copied into the store and hashed. `docket check` reports a scan
+  that has gone missing or no longer matches its hash.
+- `docket advance <slug>` — moves a person to the next stage and **refuses**
+  while the stage's `requires_signed` documents are merely issued. That gate
+  was prose in `lifecycle.yaml` and nothing checked it, which is how access
+  gets granted before the NDA comes back. `--force` overrides and says so.
+- `docket status` now distinguishes issued (`[~]`) from executed (`[x]`) and
+  lists what is awaiting return. "Nothing outstanding" previously meant
+  *issued*, which is not the question onboarding turns on.
+- Signature state is a column in `documents.csv`.
+- `tests/signing.rs`, 16 cases.
+- `docket pack <slug>` — assembles a person's documents into a folder grouped
+  by **what they must do with each**: sign and return, complete and return, for
+  your records, optional. Derived from `lifecycle.yaml`, so a new document lands
+  in the right folder without editing a list. Ships a `MANIFEST-sha256.txt` that
+  verifies with plain `shasum -a 256 -c`, and is a copy — the store stays
+  authoritative.
+- **PCK** Read Me First — a cover sheet generated from the register, so it
+  cannot describe a pack it was not built from. Says explicitly not to sign
+  anything unread, and lists where to take each kind of question including the
+  one that must not go through the supervisor.
+- **INS** Institution Confirmation, **PUB** Publicity Consent (owed by no stage,
+  deliberately — a consent a stage requires is not freely given), **COC** Code of
+  Conduct, **GRV** Grievance Policy, **EXF** Exit Feedback.
+- COC and GRV join the preboarding signature gate.
+- `retention.yaml` classes now declare `from:` — the epoch a period is counted
+  from.
+- `.github/workflows/ci.yml` calling `infra-ci`'s reusable workflow, and the
+  vendored `.paridyum/knowledge/` snapshot ADR-0001 requires and the workflow
+  reads. `check-repo.sh` now passes.
+- `CLAUDE.md`, `.claude/settings.json`, `.gitattributes`, and the `Not tested`
+  / `Quarantine` / `Evidence` sections STD-0008 requires in `TESTING.md` — all
+  four were missing and all four were caught by the repository check.
+- `registry/communications.yaml` — the seven messages Paridyum sends, each
+  naming its documents by code, so a message cannot reference a document the
+  lifecycle does not have. `docket check` verifies it.
+- `docket emails <slug>` — renders the messages due at a person's stage with
+  placeholders filled and attachments resolved to serials. Reports an
+  attachment that has not been issued and exits 1. Does not send mail.
+- `HR-CHECKLIST.md` — one page, 34 checkboxes, every step a command.
+- **Operator identity.** `--by <id>` or `DOCKET_OPERATOR`, validated against
+  the new `registry/operators.yaml`. Every write records who made it; a write
+  without an operator is refused rather than defaulted. Before this, every
+  event in the log said `recorded_by: "docket"`, so the trail could say access
+  was granted and never by whom — and that is not fixable in retrospect.
+- **Tectonic as a second typesetter (ADR-0054).** `pdflatex` is preferred when
+  present; Tectonic is used when it is not. Neither replaces the other. Each
+  register entry now records `engine` and `engine_version`.
+- `docket next <slug>` — the single next thing to do and the command that does
+  it, ordered so that following it from the top requires no knowledge of the
+  lifecycle. Exit 0 only when nothing remains.
+- `tests/engines.rs` — verifies the Tectonic invocation with a shim, since
+  Tectonic is not installed here: a wrong flag would otherwise surface only on
+  the machine that has no pdflatex, which is the machine least able to debug it.
+- `docket new --interactive` — asks the questions instead of handing over a
+  YAML file. Prompts are generated from `registry/fields.yaml`: only what the
+  class permits, only what belongs in the personnel store, the stated purpose
+  as help, required first with an offer to stop there. Writes a
+  self-documenting record that passes `check` unedited.
+- `adapters/console` — prompt and confirm, with the closed-input case handled
+  so a required question cannot spin forever.
+- `docket --tui` — full-screen, read-only: roster, then a person's documents
+  with signature state and their `next` steps. **No new dependency.** Reading a
+  keypress needs raw mode, which needs `unsafe`, which is `forbid` here, so
+  line-based navigation is the only permitted shape — and it avoids fourteen
+  transitive crates. Read-only by construction: no input reaches a write path.
+- `adapters/screen` — clear, heading, and character-counted fit/pad so a
+  non-ASCII name is not cut mid-codepoint or thrown out of column.
+- `issue::unrenderable` — reports fields a document prints that the record does
+  not supply, as record paths rather than TeX commands, before issuing is
+  attempted. Surfaced in `docket next`.
+
+### Changed
+
+- **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag
+  (ADR-0107).** `src/adapters/auth.rs` was the estate's second in-crate RSA/JWKS verifier and
+  ADR-0092 §3 recorded it as debt *"until a third consumer"*; `platform-tenancy` became the third, so
+  the debt is paid. What stays here is docket's own policy, which a shared library must not hold
+  (ANTI-0004): the single-plane issuer and `paridyum-operations` audience pins, the `operator` role
+  requirement, and the `resourceowner` → tenant uuid derivation (ADR-0082/ADR-0099). Behaviour is
+  unchanged, including the lenient `Bearer ` prefix this adapter has always accepted — the shared
+  `strip_bearer` is strict, and tightening this caller while moving its code would have been a
+  behaviour change disguised as a refactor. `OperatorVerifier::new` keeps its signature, so no call
+  site in `serve.rs`, `router.rs`, `server.rs` or `operator.rs` changed.
+
+
+- **A document routed to its own subject is now SUBSTITUTED rather than refused.**
+
+  Officer documents route to the Director (RFC-0042 decision 4), so the Director's own routed to
+  himself and issuance refused — correct, and unhelpful, since his documents still had to exist.
+  The routed signatory is now replaced by the first active signatory in registry order who is
+  not the subject.
+
+  **Registry order rather than anything cleverer**, because the substitute must be the same
+  person every time: who signed a legal document must not depend on hash order or on how many
+  documents came before it. Refusal survives for the one case no ordering fixes — every
+  eligible signatory being the subject.
+
+  Verified end to end: the Director's own NDA renders with **RUHANI KHURANA, Chief Executive
+  Officer (CEO)** in the Paridyum signature block and PRIYANSHU SHARMA countersigning as
+  Officer. Asserted against `pdftotext` output, not the register, because the register can be
+  right while the paper is wrong and the paper is what somebody signs.
+
+- **`Entry.signed_by`** records who actually signed, since after substitution it is no longer
+  derivable from `lifecycle.yaml`. `skip_serializing_if` keeps existing entries byte-identical,
+  and therefore their sealed digests.
+
+
+- Person records now use the field paths declared in `fields.yaml`
+  (`identity.legal_name`, `engagement.role`) rather than the ad-hoc shape
+  the first version grew. Templates and the record template were migrated
+  together.
+
 ### Fixed
+
+- **The image build fetches the private `paridyum-auth`.** It is named by an SSH URL and a build has
+  no SSH key, so every image build failed to authenticate. The Dockerfile mounts the BuildKit secret
+  `git_token` (infra-ci#7) on the one RUN that builds, and rewrites the URL to HTTPS through
+  environment-only git config — the token is in no layer.
+
+- **`seed-config.py` defaults to the rebuilt Paridyum tenant.** The estate was rebuilt from empty on
+  2026-09-28, so the default tenant `68445ee9-…` no longer exists and seeding against it fails a
+  foreign key; the default is `451ce2e0-b82f-59ad-ad54-ab02ad9811cb`, derived from the new Zitadel
+  organization. The help text and the multi-tenant design's Stage 4 name `make tenant-provision`,
+  which replaced `provision-org` the same day.
+- **The operator registry is re-bound to the rebuilt control plane.** Rebuilding `id.paridyum.com`
+  made rohan a new subject (`392752909697746075`); `registry/operators.yaml` and the served-API test
+  that loads it change together, and the SOP's audience is the new `paridyum-operations` project.
+
+- **The database suites can prove docket against the schema it is deployed into, not only the full
+  stream.** Against the live schema (0001–0009, 0011–0013) the eight store tests (the factory test
+  now among them) and the served end-to-end test pass. With no `audit_events` (0010) replayed the
+  harness skips the audit sink's test by name and says why — a docket deployed into that schema
+  serves every request while its audit writes fail, logged — and every other test still gates the
+  exit code. The deploy order this proves: account row, this image, then the migrations, with the
+  last two minutes apart, because audit rows written between them are lost. (No regression: the
+  image running today, from 2026-09-15, writes none.) Seeds name `accounts.id` with a v7 key only
+  because it has no default before 0014 — ADR-0078's own case, stated where it happens.
+
+- **Every docket transaction sets all four session values, through one function — and applying
+  tenancy migration 0015 would otherwise have taken docket down.** `enter()` read `accounts` with
+  three values set, under a comment that the lookup was "legal with two of the four". Tenancy 0015
+  adds `accounts_read`, whose predicate calls `current_account()`; measured on a replay of 0001–0016,
+  the three-value lookup raised `paridyum.account_id is not set` on every call — every chain append,
+  every read, every config load. `set_session` now sets tenant, account (the nil `NO_ACCOUNT` for
+  the lookup, then the resolved one), operator scope and correlation id, as tenancy's `Db::begin()`
+  does. **This must be deployed before 0015 is applied.**
+- **Correction to #25:** the audit sink uses the same four values, with `operator_scope` read off
+  the verified token. #25 narrowed that session on the premise that the nil account was a widening
+  sentinel; tenancy documents it as *"not a sentinel that widens anything"*, and two values made the
+  write depend on today's append policy. (The store path's operator scope is still `true` by
+  construction — D-75.)
+- **docket's Postgres integration suites run again.** `tests/pg_store.rs` and `tests/served_api.rs`
+  seeded tenants with no `region` and no docket account, and skipped silently without a database, so
+  they had not run against the current schema since 0011. They now seed correctly through an admin
+  connection, say `SKIPPED` when they skip, and `scripts/probe-audit-writer.sh` runs all ten
+  database tests against every tenancy migration as an RLS-bound role. With the three-value
+  `enter()` planted back, nine of the ten fail — every one that goes through `enter()`; the tenth
+  is the audit sink's, which does not. With the sink's session made to ignore its scope, the audit
+  test fails ("the sink's scope-less session read rows it holds no grant for").
+
+- **First green CI on `main` after the go-live merges.** Bumped `rustls` 0.23.44 → 0.23.45 to close
+  `RUSTSEC-2026-0285` (TLS 1.3 handshake messages accepted at the wrong encryption level) on docket's
+  live TLS path, and cleared a `.gitleaksignore` self-finding by allowlisting the documented
+  placeholder value `unused` in `.gitleaks.toml` (ADR-0017-compliant value allowlist). Postgres CI
+  still needs a `contents:read` token (DECISION-DEBT D-69).
+
+- **`engines` test is isolated from an ambient store URL.** With the Postgres CI job exporting
+  `DOCKET_DATABASE_URL`, the file-mode engine test's `docket` subprocess inherited it and routed to
+  PgStore instead of the file store it set up, so `docket new` failed. The test now `env_remove`s
+  `DOCKET_DATABASE_URL` and `DOCKET_API_URL`, exercising file mode as intended regardless of the
+  ambient environment.
+
 
 - **A ceased officer went on signing new documents.** Routing names an *office*; only the register
   knows who holds it. `resolve_signatories` substituted only when the routed signatory was the
@@ -541,30 +782,6 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   issue` refuses a record still holding a placeholder, so pass two cannot quietly succeed on an
   unfilled one.
 
-### Changed
-
-- **A document routed to its own subject is now SUBSTITUTED rather than refused.**
-
-  Officer documents route to the Director (RFC-0042 decision 4), so the Director's own routed to
-  himself and issuance refused — correct, and unhelpful, since his documents still had to exist.
-  The routed signatory is now replaced by the first active signatory in registry order who is
-  not the subject.
-
-  **Registry order rather than anything cleverer**, because the substitute must be the same
-  person every time: who signed a legal document must not depend on hash order or on how many
-  documents came before it. Refusal survives for the one case no ordering fixes — every
-  eligible signatory being the subject.
-
-  Verified end to end: the Director's own NDA renders with **RUHANI KHURANA, Chief Executive
-  Officer (CEO)** in the Paridyum signature block and PRIYANSHU SHARMA countersigning as
-  Officer. Asserted against `pdftotext` output, not the register, because the register can be
-  right while the paper is wrong and the paper is what somebody signs.
-
-- **`Entry.signed_by`** records who actually signed, since after substitution it is no longer
-  derivable from `lifecycle.yaml`. `skip_serializing_if` keeps existing entries byte-identical,
-  and therefore their sealed digests.
-
-### Fixed
 
 - **`people/_TEMPLATE-officer.yaml` was gitignored, and would not have reached a clone.**
   `people/*` is ignored so personal data never enters history, with one negation per template.
@@ -732,225 +949,6 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   — a declared stage nobody offers — is a warning, since not being able to open a record
   at `alumni` is a reasonable thing to decide on purpose.
 
-### Added
-
-- **Write routes on `docket serve`,** so the console can do the job rather than
-  only describe it: `POST /api/person` (enrol), `/onboard`, `/sign`, `/advance`,
-  plus `GET /api/form/{class}` for the enrolment questions.
-
-  **Every write resolves an operator or is refused with 403.** An
-  `X-Docket-Operator` header, checked against `registry/operators.yaml`. This is
-  attribution exactly as strong as the CLI's `--by` — a claimed identifier that
-  must name a real operator, proven by SSH rather than by us — and it is refused
-  rather than defaulted, because a default is what made every event in the log say
-  "docket". It doubles as the CSRF defence: a cross-site form cannot set a custom
-  header, so the token the original design specified is unnecessary.
-
-  **A refusal is 409, not 400 and not 500.** 400 means the request was wrong, 500
-  means we are broken, 409 means it was understood and the domain declined. Only
-  the third is information an operator can act on, and flattening them is how a UI
-  comes to render a refusal as an error and invite a retry. Refusals carry the same
-  `blockers` shape the person page renders, so a refused write and a held person
-  read identically.
-
-  **The routes do not expose `--force`.** `onboard` cannot be forced at all from
-  here; §8 forbids an interface that offers a way past a refusal, and a console
-  button that issues defective documents is worse than no button. `advance` accepts
-  `force` because the CLI has it and the boundary mirrors the CLI, but it defaults
-  off, so a console that does not send it can never skip a gate.
-
-  `sign` checks the serial was issued to the person in the URL. Without that a
-  request could file a signature against anybody's document through anybody's URL,
-  and the signature ledger would be correct while the audit trail lied.
-
-- **`docket serve` — the operator API `console-docket` consumes.** Read-only:
-  `/api/health`, `/api/roster` (with `?standing=`), `/api/person/{slug}`,
-  `/api/check`, `/api/retention`, `/api/emails/{slug}`. Every route calls the
-  same `application::` function the CLI calls, so the console and the command line
-  cannot disagree about what a person owes, and **no route writes anything** —
-  asserted by a test over every route rather than argued from the absence of write
-  handlers.
-
-  **Binds `127.0.0.1` and refuses anything else**, as a function with tests rather
-  than a default. There is no login: SSH keys are the authentication and the
-  operating system is the identity (ADR-0047 gives this tool no identity system of
-  its own, so it must not be reachable without one). Verified live that the
-  listening socket is `127.0.0.1` only and that the LAN address refuses the
-  connection — the property `next dev` in `console-docket` fails.
-
-  The HTTP implementation is ours, on `std::net`, adding **no dependency**. The
-  obvious crate for the job last published in 2022, and the needed surface is one
-  client over loopback with no TLS and no keep-alive. It is strict by choice:
-  chunked encoding, absolute-form targets, HTTP/2 and unparsable `Content-Length`
-  are refused rather than guessed at, with bounds on the request line, header
-  count and body size, and a read/write timeout so a silent client cannot hold the
-  accept loop.
-
-  Connections are handled **one at a time, deliberately**. This process is the only
-  writer to four append-only hash chains, and that is what makes them safe without
-  file locking; a thread per connection would make two concurrent writes possible
-  and a torn chain the failure.
-
-  Wire types live in `adapters::http::dto` rather than `#[derive(Serialize)]` on
-  the `application::` types, so renaming an internal field cannot silently rename a
-  field in a published API.
-
-- `docket` CLI in Rust: `status`, `onboard`, `issue`, `render`, `verify`, `check`.
-- `latex/paridyum.cls`, the single typesetting authority. Absorbs the
-  letterhead, boxes, footer, page numbering and signature blocks that were
-  duplicated across eleven separate `.tex` files.
-- Fourteen document templates. Ten transcribed from the `.docx` originals,
-  which are the source of truth for content.
-- Four documents that did not exist: POSH policy, Data Protection Notice,
-  Internship Offer, and an intern acknowledgement on the offboarding
-  checklist.
-- `registry/` — `org`, `signatories`, `lifecycle`, `retention`. One home per
-  fact; `check` fails any template that restates one.
-- Tamper-evident register: hash-chained JSONL, outside git so that erasure
-  remains possible.
-- Personnel record keeping: `docket new`, `record`, `roster`, `event`,
-  `separate`, `erase`. Permanent identifiers (`PAR-INT-2026-0001`), never
-  reused, including after erasure.
-- `registry/person-classes.yaml` and `registry/fields.yaml`: 3 person
-  classes, 54 declared fields, each with a stated purpose and a store.
-- Class-gated collection. An unpaid student intern is not an employee, so
-  no statute requires their PAN, Aadhaar, UAN or bank account; the `intern`
-  class forbids them and `check` refuses a record that holds one.
-- Hash-chained identity ledger and personnel event log, alongside the
-  document register. The chain logic is one implementation shared by all
-  three.
-- DPDP erasure that actually deletes: the record file and the person's event
-  detail go; the identifier, class and dates survive as a tombstone so
-  issued serials still resolve.
-- 96 tests.
-- Vector logo, built from source at `latex/assets/paridyum-logo.tex`.
-- `identity.date_of_birth` required for interns, a `guardian` field group,
-  and `GRD` (Parent / Guardian Consent) owed whenever the person is under
-  eighteen on their start date — DPDP s2(f) and s9.
-- Verification code in the footer of every issued document, derived from
-  serial + recipient + issue date + template hash. `docket verify`
-  recomputes it. A lookup check, not a signature.
-- The offboarding checklist now names the systems the event log records as
-  still granted, and lists the documents on record with their serials. Both
-  derived, so the paper cannot disagree with the register.
-- **Two identifiers (ADR-0051).** `PAR-P-000001-X` is opaque, permanent and
-  names the archive folder; `PAR-INT-2026-0001` carries class and year and
-  names the engagement. Class is mutable for a person and immutable for an
-  engagement, which is the whole distinction.
-- ISO 7064 MOD 11-2 check character on the person identifier, because it is
-  typed into folder names and read aloud. Catches every single-digit error
-  and every adjacent transposition; both properties are swept in tests.
-- `docket reengage` — an intern who is hired keeps their person identifier
-  and gets a new engagement identifier, so the archive stays whole.
-- The register keys on `person_id` + `engagement_id`. A slug is a filename
-  and nothing keys off it.
-- Issued PDFs are stored under the person identifier, not the slug: a folder
-  named after a person discloses who Paridyum engages from the listing alone.
-- **PDF/A-2b (ISO 19005-2)** via `pdfx`, with the sRGB OutputIntent the
-  standard requires. Output is still byte-identical.
-- **PDF metadata** — `/Title`, `/Author`, `/Subject`, `/Keywords` written from
-  a generated `.xmpdata`. A file pulled out of the store is no longer
-  anonymous.
-- `docket index` — generated `roster.csv`, `documents.csv`, `README.txt` and a
-  BagIt-style `manifest-sha256.txt`. The archive verifies with plain
-  `shasum -a 256 -c`, with no Paridyum tooling. Generated output under C-0004;
-  `docket check` fails if it is stale (ADR-0040's pattern).
-- `docket retention` — reports documents past their period, and reports classes
-  whose prose period it cannot parse rather than assuming them compliant.
-- `docket erase` now names what it could NOT reach: the cloud folder, backups,
-  mail, printouts. A tool that reports a complete erasure it did not perform
-  is worse than one that states its boundary.
-- `access.cloud_folder` field, so erasure can name the remote folder.
-- `SOP.md` (STD-0013), six tasks with real pasted output.
-- `provides` block in `manifest.yaml` — required by `manifest.schema.json` and
-  absent before.
-- `docket sign <serial>` — records that a document came back executed, in its
-  own hash-chained ledger. Never by mutating the issuance entry: the register
-  is append-only so what was issued cannot be rewritten, and a signature is a
-  later fact.
-- Refuses wet-ink with no scan (the scan is the only evidence that method
-  leaves), a signing date before issuance, a received date before signing, a
-  second signature for the same serial, and an unissued serial.
-- Scans are copied into the store and hashed. `docket check` reports a scan
-  that has gone missing or no longer matches its hash.
-- `docket advance <slug>` — moves a person to the next stage and **refuses**
-  while the stage's `requires_signed` documents are merely issued. That gate
-  was prose in `lifecycle.yaml` and nothing checked it, which is how access
-  gets granted before the NDA comes back. `--force` overrides and says so.
-- `docket status` now distinguishes issued (`[~]`) from executed (`[x]`) and
-  lists what is awaiting return. "Nothing outstanding" previously meant
-  *issued*, which is not the question onboarding turns on.
-- Signature state is a column in `documents.csv`.
-- `tests/signing.rs`, 16 cases.
-- `docket pack <slug>` — assembles a person's documents into a folder grouped
-  by **what they must do with each**: sign and return, complete and return, for
-  your records, optional. Derived from `lifecycle.yaml`, so a new document lands
-  in the right folder without editing a list. Ships a `MANIFEST-sha256.txt` that
-  verifies with plain `shasum -a 256 -c`, and is a copy — the store stays
-  authoritative.
-- **PCK** Read Me First — a cover sheet generated from the register, so it
-  cannot describe a pack it was not built from. Says explicitly not to sign
-  anything unread, and lists where to take each kind of question including the
-  one that must not go through the supervisor.
-- **INS** Institution Confirmation, **PUB** Publicity Consent (owed by no stage,
-  deliberately — a consent a stage requires is not freely given), **COC** Code of
-  Conduct, **GRV** Grievance Policy, **EXF** Exit Feedback.
-- COC and GRV join the preboarding signature gate.
-- `retention.yaml` classes now declare `from:` — the epoch a period is counted
-  from.
-- `.github/workflows/ci.yml` calling `infra-ci`'s reusable workflow, and the
-  vendored `.paridyum/knowledge/` snapshot ADR-0001 requires and the workflow
-  reads. `check-repo.sh` now passes.
-- `CLAUDE.md`, `.claude/settings.json`, `.gitattributes`, and the `Not tested`
-  / `Quarantine` / `Evidence` sections STD-0008 requires in `TESTING.md` — all
-  four were missing and all four were caught by the repository check.
-- `registry/communications.yaml` — the seven messages Paridyum sends, each
-  naming its documents by code, so a message cannot reference a document the
-  lifecycle does not have. `docket check` verifies it.
-- `docket emails <slug>` — renders the messages due at a person's stage with
-  placeholders filled and attachments resolved to serials. Reports an
-  attachment that has not been issued and exits 1. Does not send mail.
-- `HR-CHECKLIST.md` — one page, 34 checkboxes, every step a command.
-- **Operator identity.** `--by <id>` or `DOCKET_OPERATOR`, validated against
-  the new `registry/operators.yaml`. Every write records who made it; a write
-  without an operator is refused rather than defaulted. Before this, every
-  event in the log said `recorded_by: "docket"`, so the trail could say access
-  was granted and never by whom — and that is not fixable in retrospect.
-- **Tectonic as a second typesetter (ADR-0054).** `pdflatex` is preferred when
-  present; Tectonic is used when it is not. Neither replaces the other. Each
-  register entry now records `engine` and `engine_version`.
-- `docket next <slug>` — the single next thing to do and the command that does
-  it, ordered so that following it from the top requires no knowledge of the
-  lifecycle. Exit 0 only when nothing remains.
-- `tests/engines.rs` — verifies the Tectonic invocation with a shim, since
-  Tectonic is not installed here: a wrong flag would otherwise surface only on
-  the machine that has no pdflatex, which is the machine least able to debug it.
-- `docket new --interactive` — asks the questions instead of handing over a
-  YAML file. Prompts are generated from `registry/fields.yaml`: only what the
-  class permits, only what belongs in the personnel store, the stated purpose
-  as help, required first with an offer to stop there. Writes a
-  self-documenting record that passes `check` unedited.
-- `adapters/console` — prompt and confirm, with the closed-input case handled
-  so a required question cannot spin forever.
-- `docket --tui` — full-screen, read-only: roster, then a person's documents
-  with signature state and their `next` steps. **No new dependency.** Reading a
-  keypress needs raw mode, which needs `unsafe`, which is `forbid` here, so
-  line-based navigation is the only permitted shape — and it avoids fourteen
-  transitive crates. Read-only by construction: no input reaches a write path.
-- `adapters/screen` — clear, heading, and character-counted fit/pad so a
-  non-ASCII name is not cut mid-codepoint or thrown out of column.
-- `issue::unrenderable` — reports fields a document prints that the record does
-  not supply, as record paths rather than TeX commands, before issuing is
-  attempted. Surfaced in `docket next`.
-
-### Changed
-
-- Person records now use the field paths declared in `fields.yaml`
-  (`identity.legal_name`, `engagement.role`) rather than the ad-hoc shape
-  the first version grew. Templates and the record template were migrated
-  together.
-
-### Fixed
 
 - **An unedited record was issuable, and looked filled in.** `docket new` copied a
   template carrying realistic example values, so two freshly enrolled people
@@ -1063,3 +1061,4 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 Supersedes the Python implementation, archived at
 `archived/docket-python-2026-08-19/`. Output verified byte-identical.
+

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage build for the `serve` binary (ADR-0093 — the docket served backend). Pinned to the
 # estate toolchain (1.97.1, toolchain-registry / STD-0003) and Debian trixie, matching the rest of
 # the estate (ADR-0006, the PMG host). TLS is rustls, never openssl (deny.toml, ADR-0005): sqlx and
@@ -12,7 +13,7 @@ WORKDIR /build
 # Absent, the build fails deep inside a dependency with an error that names neither this image nor
 # the crate.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential cmake perl pkg-config \
+  && apt-get install -y --no-install-recommends build-essential cmake perl pkg-config git \
   && rm -rf /var/lib/apt/lists/*
 
 # Cargo.lock is committed and the build is --locked: the image is built from the exact graph the
@@ -20,7 +21,16 @@ RUN apt-get update \
 # runtime query API (no `macros` feature), so no DATABASE_URL is needed at build time.
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release --locked --bin serve \
+# THE PRIVATE CRATE. `paridyum-auth` is named by an SSH URL, and a build has no SSH key: every image
+# build failed to fetch it until 2026-09-28. The BuildKit secret `git_token` (infra-ci image-publish,
+# PARIDYUM_PACKAGES_TOKEN) is mounted for THIS RUN ONLY, and git's environment-only config rewrites the
+# Paridyum SSH URL to HTTPS with it — no ~/.gitconfig, no ENV, no ARG, so it is in no layer.
+RUN --mount=type=secret,id=git_token \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/git_token 2>/dev/null)@github.com/Paridyum/.insteadOf" \
+    GIT_CONFIG_VALUE_0="ssh://git@github.com/Paridyum/" \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    cargo build --release --locked --bin serve \
   && strip target/release/serve
 
 FROM debian:trixie-slim AS runtime
