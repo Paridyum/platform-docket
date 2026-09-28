@@ -103,8 +103,13 @@ BEGIN
   END LOOP;
 END $g$;
 EOS
+# An owning org first (knowledge ADR-0114 D4), then the personless registry row, then the tenant's
+# declarations, where its name now lives (ADR-0117 D3, ADR-0122 D4).
+ORG="0d0d0d0d-0000-4000-8000-000000000001"
 psql -q -v ON_ERROR_STOP=1 -d "$DB" \
-  -c "INSERT INTO tenants (id, slug, name, zitadel_org_id, region) VALUES ('$TENANT','probe','Probe','1','in')" \
+  -c "INSERT INTO orgs (id, region) VALUES ('$ORG','in')" \
+  -c "INSERT INTO tenants (id, owner_org_id, slug, zitadel_org_id, region) VALUES ('$TENANT','$ORG','probe','1','in')" \
+  -c "INSERT INTO tenant_settings (tenant_id, display_name, supported_locales, content_locale, locale, timezone, currency) VALUES ('$TENANT','Probe',ARRAY['en','ar'],'en','en-IN','Asia/Kolkata','INR')" \
   || { printf '✘ seeding the tenant failed\n'; exit 1; }
 
 # The same server psql used: PGHOST/PGPORT when set, else the local socket's defaults.

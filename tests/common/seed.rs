@@ -35,16 +35,36 @@ pub async fn seed_tenant(test_url: &str, name: &str) -> Uuid {
         );
     }
     let tenant = Uuid::new_v4();
+    // Every tenant has an owning org since tenancy's 2026-09-28 rebuild (knowledge ADR-0114 D4), so
+    // the org comes first. Both registry rows are personless (ADR-0117 D3): the tenant's display name
+    // lives with the tenant, in `tenant_settings`, beside its locale declarations (ADR-0122 D4).
+    let org = Uuid::new_v4();
+    sqlx::query("INSERT INTO orgs (id, region) VALUES ($1, 'in')")
+        .bind(org)
+        .execute(&mut admin)
+        .await
+        .expect("seed a fresh org");
     sqlx::query(
-        "INSERT INTO tenants (id, slug, name, zitadel_org_id, region) VALUES ($1, $2, $3, $4, 'in')",
+        "INSERT INTO tenants (id, owner_org_id, slug, zitadel_org_id, region) \
+         VALUES ($1, $2, $3, $4, 'in')",
     )
     .bind(tenant)
+    .bind(org)
     .bind(format!("test-{tenant}"))
-    .bind(name)
     .bind(tenant.simple().to_string())
     .execute(&mut admin)
     .await
     .expect("seed a fresh tenant");
+    sqlx::query(
+        "INSERT INTO tenant_settings \
+           (tenant_id, display_name, supported_locales, content_locale, locale, timezone, currency) \
+         VALUES ($1, $2, ARRAY['en', 'ar'], 'en', 'en-IN', 'Asia/Kolkata', 'INR')",
+    )
+    .bind(tenant)
+    .bind(name)
+    .execute(&mut admin)
+    .await
+    .expect("seed the tenant's declarations");
     // ADR-0078 D2 says no INSERT names the surrogate key — the column's `uuidv7()` default mints it.
     // `accounts.id` HAS no default until tenancy 0014, and these suites must run against the schema
     // docket is deployed into (0014 pending on the cluster today), so this is the ADR's own case of a
