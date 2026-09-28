@@ -1125,6 +1125,7 @@ from SOPS at deploy — the chart references it and creates none:
     helm upgrade --install docket ./helm -n platform \
       -f helm/values-staging.yaml --set image.digest=sha256:<from the publish run>
 
-The chart REFUSES to render without `image.digest` (ADR-0060). Fill the
-`SET_FROM_zitadel-apps_OUTPUT` / `SET_FROM_tenancy_OUTPUT` placeholders in
-`values-staging.yaml` with the real project id and tenant uuid before deploying.
+The chart REFUSES to render without `image.digest` (ADR-0060). `values-staging.yaml` names the
+real `paridyum-operations` project id and tenant uuid. When the estate is rebuilt and they change,
+edit them there and commit before deploying; never `--set` them, or the next deploy from the
+repository silently undoes the fix.

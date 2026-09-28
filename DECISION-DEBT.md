@@ -1423,3 +1423,13 @@ ran with operator-wide width.
 **Closes when:** `TenantStores::build` receives the verified scope and `enter()` binds it — the change
 that relaxes the role check must carry this with it.
 
+
+## D-76 — served issuance writes documents to the pod, not to Garage  (OPEN, 2026-09-28)
+
+The staging chart sets no `DOCKET_S3_*`, so `serve` falls back to the filesystem backend at
+`DOCKET_STORE`. The `docket-s3` Secret already exists in the `platform` namespace, but nothing
+references it. A document issued through the served API lives only as long as the pod does, which
+contradicts ADR-0094 and design §11.
+
+**Closes when:** the chart takes the `DOCKET_S3_*` variables from `docket-s3`, as `secretKeyRef` or
+`envFrom`, and an issuance through the served API is read back from the bucket after a pod restart.

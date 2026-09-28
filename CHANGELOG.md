@@ -455,6 +455,13 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **`helm/values-staging.yaml` names the rebuilt estate's ids, not placeholders** (2026-09-28). The
+  audience is `paridyum-operations` on the rebuilt control-plane instance (`392754455717610538`) and
+  the tenant is Paridyum's (`451ce2e0-…`). The live release still carried the pre-rebuild audience
+  and tenant, set by hand, so every token was refused as `wrong_audience`. It also ran as an
+  undeclared `LoadBalancer` (10.1.1.106), which nothing routes to. The release now takes the
+  committed values, which say `ClusterIP`.
+
 - **The image build fetches the private `paridyum-auth`.** It is named by an SSH URL and a build has
   no SSH key, so every image build failed to authenticate. The Dockerfile mounts the BuildKit secret
   `git_token` (infra-ci#7) on the one RUN that builds, and rewrites the URL to HTTPS through

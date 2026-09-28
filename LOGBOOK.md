@@ -4,6 +4,24 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-28 — the staging values carry the rebuilt estate's ids
+
+**The estate was rebuilt from empty** (ADR-0113 to ADR-0123), so every Zitadel id and the tenant
+uuid changed. The live release named the old ones: `DOCKET_OIDC_AUDIENCE=390606436373103770` and
+`DOCKET_TENANT_ID=68445ee9-…`. Both had been typed at `helm upgrade` time, because
+`values-staging.yaml` held `SET_FROM_…` placeholders. The upshot was that docket refused every token.
+
+**Placeholders in a committed values file were the mistake.** They made the real deploy
+unreproducible from the repository, and let a stale id outlive the estate it came from. The file
+now holds the ids themselves. The release also carried `service.type=LoadBalancer`, another hand
+`--set` with no address-registry entry and no edge route. Deploying from the committed values
+returns it to `ClusterIP`. When docket.paridyum.com is routed (GO-LIVE), the route goes through the
+edge like every other host, not through a bare LoadBalancer.
+
+**Still open:** the chart does not wire `DOCKET_S3_*` from the existing `docket-s3` Secret, so
+served issuance stores documents on the pod's filesystem, not in Garage (ADR-0094). This is
+recorded in DECISION-DEBT, not fixed here.
+
 ## 2026-09-15 — onboarding a tenant with default config (ADR-0099 stage 4)
 
 A tenant that `provision-org` has created (Zitadel org → derived tenant row → operator role grant)

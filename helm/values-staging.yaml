@@ -20,9 +20,11 @@ env:
   - name: DOCKET_OIDC_ISSUER
     value: "https://id.paridyum.com"
   - name: DOCKET_OIDC_AUDIENCE
-    value: "SET_FROM_zitadel-apps_OUTPUT"   # the paridyum-operations project id
+    value: "392754455717610538"   # paridyum-operations, control-plane instance (rebuilt 2026-09-28, ADR-0123)
   - name: DOCKET_TENANT_ID
-    value: "SET_FROM_tenancy_OUTPUT"        # the Paridyum tenant uuid (platform-tenancy)
+    value: "451ce2e0-b82f-59ad-ad54-ab02ad9811cb"   # Paridyum's tenant (tenant zero), rebuilt 2026-09-28
+  - name: PARIDYUM_REGION
+    value: "in"   # on every audit event; serve refuses to start without it (ADR-0044 D6)
   - name: DOCKET_DATABASE_URL
     valueFrom:
       secretKeyRef:
