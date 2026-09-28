@@ -455,6 +455,12 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **Issued documents go to Garage, and docket is reachable at the edge** (2026-09-29, D-76). The staging
+  values pass `DOCKET_S3_*` from the `docket-s3` Secret, so a served issuance is written to the `docket`
+  bucket instead of the pod's filesystem. The service is a `LoadBalancer` again, now for a stated
+  reason: the edge routes `/api/docket` on each tenant's host to it, the API each tenant's console and
+  the remote CLI use (ADR-0126, ADR-0127, ADR-0097). There is no `docket.paridyum.com`.
+
 - **`helm/values-staging.yaml` names the rebuilt estate's ids, not placeholders** (2026-09-28). The
   audience is `paridyum-operations` on the rebuilt control-plane instance (`392754455717610538`) and
   the tenant is Paridyum's (`451ce2e0-…`). The live release still carried the pre-rebuild audience

@@ -4,6 +4,27 @@ How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
 this says what was decided, what was wrong on the way, and what it cost.
 
+## 2026-09-29 — documents to Garage, and the API behind the edge
+
+**A correction first.** The 2026-09-28 entry called the release's `LoadBalancer` *undeclared*,
+because the address registry had no row for it. The registry records the VIP **pool**, not each
+assignment; its own comment says an assignment is cluster state. The accurate finding was narrower:
+nothing routed to it, and the committed values said `ClusterIP`.
+
+**Now there is a route to give it.** The first draft of this change named `docket.paridyum.com`.
+ADR-0126 and ADR-0127, accepted the same night, put docket's API at `/api/docket` on each tenant's
+host and its screens in each tenant's console, so the route is a path, not a host. It is the API
+each tenant's console and the remote CLI (ADR-0097) call, and in this cluster the edge
+reaches a service only through a VIP. So `service.type: LoadBalancer` is back in the committed values,
+with the reason written beside it. Exposing it exposes nothing unauthenticated: every route except
+`/api/health` refuses a request with no control-plane token, which was checked from inside the cluster.
+
+**D-76 wired.** Before touching docket, the `docket-s3` credential and bucket were proven with a
+throwaway pod that wrote, read and deleted a probe object. Garage was emptied in the rebuild; the key
+survived and the bucket is empty. The served path opens its blob store per request from
+`DOCKET_S3_*` (`PgTenantStores::build`), so setting them is the whole change. The issuance round
+trip that closes D-76 waits on the backup gate, since issuing writes a person.
+
 ## 2026-09-28 — the staging values carry the rebuilt estate's ids
 
 **The estate was rebuilt from empty** (ADR-0113 to ADR-0123), so every Zitadel id and the tenant

@@ -1424,7 +1424,7 @@ ran with operator-wide width.
 that relaxes the role check must carry this with it.
 
 
-## D-76 — served issuance writes documents to the pod, not to Garage  (OPEN, 2026-09-28)
+## D-76 — served issuance writes documents to the pod, not to Garage  (WIRED 2026-09-29; proof waits on the backup gate)
 
 The staging chart sets no `DOCKET_S3_*`, so `serve` falls back to the filesystem backend at
 `DOCKET_STORE`. The `docket-s3` Secret already exists in the `platform` namespace, but nothing
@@ -1433,3 +1433,10 @@ contradicts ADR-0094 and design §11.
 
 **Closes when:** the chart takes the `DOCKET_S3_*` variables from `docket-s3`, as `secretKeyRef` or
 `envFrom`, and an issuance through the served API is read back from the bucket after a pod restart.
+
+**2026-09-29 — wired.** `values-staging.yaml` passes the five `DOCKET_S3_*` variables from `docket-s3`,
+and revision 7 runs with them. The credential and bucket were proven first by a throwaway in-cluster
+pod: write, read and delete of `docket/_probe/s3-wiring`. The closes-when issuance cannot run yet,
+because issuing writes a person record and person writes answer 503 until the backup gate opens.
+The first issuance after the gate opens is the proof, and this entry closes then.
+
