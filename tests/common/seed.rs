@@ -55,6 +55,20 @@ pub async fn seed_tenant(test_url: &str, name: &str) -> Uuid {
     .execute(&mut admin)
     .await
     .expect("seed a fresh tenant");
+    // `tenant_settings` and `accounts` are tenant-scoped and FORCE row-level security, which binds the
+    // table owner too — so the admin connection writes them in the new tenant's operator session, as
+    // provisioning does. Session-level (`is_local = false`) on this one connection, closed below, so
+    // it cannot leak into a pooled connection. Without it every suite failed here with "paridyum.
+    // tenant_id is not set" as soon as CI first reached a real database (2026-09-30).
+    sqlx::query(
+        "SELECT set_config('paridyum.tenant_id', $1, false), \
+                set_config('paridyum.account_id', '00000000-0000-0000-0000-000000000000', false), \
+                set_config('paridyum.operator_scope', 'true', false)",
+    )
+    .bind(tenant.to_string())
+    .execute(&mut admin)
+    .await
+    .expect("enter the new tenant's operator session");
     sqlx::query(
         "INSERT INTO tenant_settings \
            (tenant_id, display_name, supported_locales, content_locale, locale, timezone, currency) \

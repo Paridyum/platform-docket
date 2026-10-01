@@ -414,9 +414,18 @@ mod tests {
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { continue };
-                let mut buf = vec![0u8; 65536];
-                let n = stream.read(&mut buf).unwrap_or(0);
-                let req = &buf[..n];
+                // Read until the head is complete: one read can return part of it (seen in CI,
+                // 2026-09-30), and a head cut short parsed as no method at all.
+                let mut buf = Vec::new();
+                let mut chunk = vec![0u8; 65536];
+                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+                let req = &buf[..];
                 // Split head/body on the blank line.
                 let split = req.windows(4).position(|w| w == b"\r\n\r\n");
                 let (head, body) = match split {
@@ -453,32 +462,32 @@ mod tests {
                 let response: Vec<u8> = match method {
                     "PUT" => {
                         map.insert(path, body);
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()
+                        b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec()
                     }
                     "GET" => match map.get(&path) {
                         Some(bytes) => {
                             let mut r = format!(
-                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
                                 bytes.len()
                             )
                             .into_bytes();
                             r.extend_from_slice(bytes);
                             r
                         }
-                        None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec(),
+                        None => b"HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec(),
                     },
                     "HEAD" => {
                         if map.contains_key(&path) {
-                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()
+                            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec()
                         } else {
-                            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec()
+                            b"HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec()
                         }
                     }
                     "DELETE" => {
                         map.remove(&path);
-                        b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n".to_vec()
+                        b"HTTP/1.1 204 No Content\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec()
                     }
-                    _ => b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n".to_vec(),
+                    _ => b"HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_vec(),
                 };
                 drop(map);
                 let _ = stream.write_all(&response);

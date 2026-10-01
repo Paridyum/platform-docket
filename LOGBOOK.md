@@ -1815,3 +1815,43 @@ SOP's audience is the new `paridyum-operations` project `392754455717610538`.
 this crate, and the workstation had 4.4 GiB free after the build directory was cleared. The change is
 two literals that must agree, and they do; the probe is the check that proves it, and it is owed.
 The derivation and verifier tests in `src/` keep their old ids — they are vectors, not the estate.
+
+## 2026-09-30 — cargo-deny and the secret scan, red on main since the runner move
+
+main's last run failed in licences-and-advisories, the secret scan, test, coverage and docs:
+
+- **cargo-deny** reported `wildcard` and `source-not-allowed` on `paridyum-auth`.
+  - A git dependency with no version reads as a wildcard, so it now states `version = "0.1.0"`.
+  - `allow-git = ["https://github.com/Paridyum"]` never matched the dependency's source,
+    `ssh://git@github.com/Paridyum/lib-auth-rust.git`. It now names that exact source.
+  - On sitar, `cargo deny check` passes advisories, bans, licenses and sources.
+- **The secret scan** flagged `scripts/probe-audit-writer.sh:100`, a connect string built from the
+  shell variables `$LOGIN` and `$PASS`. The rule matches the variable reference. The role behind it
+  is created and dropped by the probe itself, on its own scratch database. Two fingerprints are
+  tracked in `.gitleaksignore`: `4593506` on main, and `4bda046`, its twin on an unmerged branch,
+  because the scan reads every ref CI fetches. `secret-scan.sh --history` is clean afterwards.
+- **test, coverage and docs** lost the compiler mid-build because the two runner processes shared one
+  rustup home. That was fixed and applied in infra-terraform#7.
+
+On sitar, `cargo clippy --all-targets --locked -- -D warnings` passes. The same fix went into
+platform-tenancy#35 and platform-identity#7.
+
+**The rendering job, too.** It is this repository's own job, not rust-ci's, so it never got
+rust-ci's git URL rewrite, and `cargo test` failed with `failed to get paridyum-auth`. It now carries
+the same three variables rust-ci uses, `CARGO_NET_GIT_FETCH_WITH_CLI` and `GIT_CONFIG_*`, with the
+packages token.
+
+**Then the suites themselves.** Once CI first reached a real database, it found two test defects:
+
+- **The seed wrote tenant rows outside the tenant's session.** `tests/common/seed.rs` inserted
+  `tenant_settings` and `accounts` through the admin connection with no tenant set. Both tables
+  force row-level security, which binds the owner too, so every Postgres suite failed with
+  "paridyum.tenant_id is not set". Reproduced locally with CI's own shape: a non-superuser
+  `paridyum` role owning the database and applying platform-tenancy's migrations, and the suites
+  run on sitar through an SSH reverse tunnel. 7 database tests fail without the fix. With it, the
+  seed sets the new tenant's operator session on its one connection, which is closed straight
+  after, and every suite passes.
+- **The mock S3 read a request in one `read` and kept the connection open.** It served one
+  request per connection without saying so, so reqwest reused the pooled connection and got
+  "connection closed before message completed". It now reads until the head is complete and sends
+  `Connection: close`. It passed three runs in a row on sitar.

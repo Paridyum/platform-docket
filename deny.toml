@@ -42,4 +42,4 @@ deny = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/Paridyum"]
+allow-git = ["ssh://git@github.com/Paridyum/lib-auth-rust.git"]

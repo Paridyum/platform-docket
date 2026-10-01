@@ -8,3 +8,12 @@
 # fingerprint. (The example URL is not spelled out here: written in full, this comment itself trips
 # the same rule on every commit that carries the file.)
 e25db0b4f178e9d43db466bbce837863586701e6:src/served.rs:paridyum-db-url-with-password:156
+
+# scripts/probe-audit-writer.sh builds a connect string from the SHELL VARIABLES `$LOGIN` and `$PASS`,
+# and the rule matches the variable reference, not a value. The role behind it is throwaway: the probe
+# creates it on its own scratch database and drops it, with the database, from its EXIT trap, so it
+# exists only while the probe runs. It is a credential to nothing that persists. Pinned to the commit
+# that added the line: 4593506 on main, and 4bda046, its twin on branch fix/audit-session-follows-the-estate-convention (the scan reads
+# every ref CI fetches). The same shape in any NEW commit still fails the scan.
+4593506634451793ac14f9cc36368c570bb606ef:scripts/probe-audit-writer.sh:paridyum-db-url-with-password:100
+4bda046e6b195ec01dd1f10968c66a6cf010c68f:scripts/probe-audit-writer.sh:paridyum-db-url-with-password:100

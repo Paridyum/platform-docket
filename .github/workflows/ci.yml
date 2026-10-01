@@ -83,6 +83,14 @@ jobs:
   render:
     name: rendering
     runs-on: [self-hosted, linux, x64, paridyum]   # the estate runner, ADR-0124
+    # The private paridyum-auth crate, fetched as rust-ci.yml fetches it: git's URL rewrite sends the
+    # ssh:// dependency through HTTPS with the packages token. This job is ours, not rust-ci's, so it
+    # needs its own copy; without it `cargo test` fails `failed to get paridyum-auth`.
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.PARIDYUM_PACKAGES_TOKEN }}@github.com/Paridyum/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/Paridyum/
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 

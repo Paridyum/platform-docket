@@ -455,6 +455,11 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Fixed
 
+- **cargo-deny accepts the private crate, and the secret scan is green.** `paridyum-auth` states
+  `version = "0.1.0"` beside its tag, so the wildcard ban no longer reads it as unpinned, and
+  `deny.toml` allows exactly its ssh source; the old `https://github.com/Paridyum` entry never
+  matched it. The probe's connect string, built from shell variables for a throwaway role, is
+  tracked by fingerprint in `.gitleaksignore` (ADR-0017).
 - **Issued documents go to Garage, and docket is reachable at the edge** (2026-09-29, D-76). The staging
   values pass `DOCKET_S3_*` from the `docket-s3` Secret, so a served issuance is written to the `docket`
   bucket instead of the pod's filesystem. The service is a `LoadBalancer` again, now for a stated
