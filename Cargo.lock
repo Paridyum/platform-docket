@@ -1231,8 +1231,8 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "paridyum-auth"
-version = "0.1.0"
-source = "git+ssh://git@github.com/Paridyum/lib-auth-rust.git?tag=v0.1.0#0c7dde8621e7cd06a9710d5c0bca42602e5a59a2"
+version = "0.2.0"
+source = "git+ssh://git@github.com/Paridyum/lib-auth-rust.git?tag=v0.2.0#f210e42223bd5373655f35992d3a2deb2c40225d"
 dependencies = [
  "jsonwebtoken",
  "serde_json",
