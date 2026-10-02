@@ -1855,3 +1855,9 @@ packages token.
   request per connection without saying so, so reqwest reused the pooled connection and got
   "connection closed before message completed". It now reads until the head is complete and sends
   `Connection: close`. It passed three runs in a row on sitar.
+
+## 2026-10-02 — paridyum-auth 0.2.0
+
+The shared verifier moves from v0.1.0 to v0.2.0, the tag platform-tenancy, -routing, -deployment and
+-identity already pin. 0.2.0 adds `Plane::Portal`; docket does not match on `Plane`, so no code changed.
+The lockfile changes only paridyum-auth's version and source. On sitar: clippy clean, 488 tests pass.

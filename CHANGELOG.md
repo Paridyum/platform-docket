@@ -414,6 +414,7 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Changed
 
+- `paridyum-auth` 0.1.0 → 0.2.0 (`Plane::Portal`), the version every other service runs; no code change.
 - **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag
   (ADR-0107).** `src/adapters/auth.rs` was the estate's second in-crate RSA/JWKS verifier and
   ADR-0092 §3 recorded it as debt *"until a third consumer"*; `platform-tenancy` became the third, so
