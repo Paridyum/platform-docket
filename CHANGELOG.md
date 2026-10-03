@@ -424,6 +424,7 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Changed
 
+- **Image builds reuse cargo's caches.** The cargo registry and this crate's `target/` are BuildKit cache mounts in the runner host's persistent builder (infra-ci#16), so a source change recompiles this crate, not every dependency (platform-routing trial: 37 s against 316 s cold).
 - `paridyum-auth` 0.1.0 → 0.2.0 (`Plane::Portal`), the version every other service runs; no code change.
 - **The operator token verifier now calls `paridyum-auth` (`lib-auth-rust`), pinned to a tag
   (ADR-0107).** `src/adapters/auth.rs` was the estate's second in-crate RSA/JWKS verifier and
