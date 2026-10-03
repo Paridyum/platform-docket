@@ -7,6 +7,11 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **A tenant's own members are served** (ADR-0127 D2, PLAN-TENANT-HOSTS D1). With `DOCKET_TENANT_ISSUER`
+  set, a token from the tenant instance is verified against that instance's keys, audienced for the
+  docket project that `paridyum.resolve_surface(<X-Forwarded-Host>, 'docket')` names, issued in that
+  surface's organization, and carrying `operator`. The host only selects what the token must already be
+  signed for. Control-plane tokens are served as before.
 - **Only Paridyum's own staff fall back to the git registry** (ADR-0130 D6, ADR-0099 D2). A tenant
   without configuration rows, on any other plane, gets `Registry::empty()`: no company, signatory or
   operator, so an empty roster and no writes. The git registry is Paridyum's configuration. Today only

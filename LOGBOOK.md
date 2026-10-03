@@ -1872,3 +1872,33 @@ any tenant without rows would have seen Paridyum's companies, signatories and op
 every other plane gets `Registry::empty()`, ADR-0130 D6's default. Nothing changes for today's tokens.
 **Watched failing:** with every plane falling back to the git registry. 302/302.
 
+## 2026-10-03 — a tenant's own members (D1b, ADR-0127 D2)
+
+ADR-0127 D2 has the tenant console relay the user's own token, obtained through that tenant's docket
+client. So docket serves tenant-instance tokens now, alongside its staff's control-plane tokens.
+
+- **Choosing the verifier.** The token's claimed `iss` picks it (`claimed_issuer`, read and unverified).
+  The chosen verifier then checks everything, the issuer included.
+- **The tenant path.** The console forwards the host (`X-Forwarded-Host`).
+  `paridyum.resolve_surface(host, 'docket')`, which `docket_app` may execute, gives the tenant, its
+  organization and its docket project. `TenantVerifier` pins the tenant instance, with that project as
+  the audience. The token must be issued in that organization and derive that tenant, and it must carry
+  `operator` in that project. **The host is not trusted:** it selects what the token must already be
+  signed for, so naming another tenant's host fails the audience check.
+- **The answers:** 400 without a host, 404 for a host with no docket, 401 for any failed check.
+- **Configuration.** D1a gives a tenant without rows the empty default, never Paridyum's git registry.
+
+**Tests.** A fake that knows two tenants' surfaces, and tokens from a second keypair, cover these cases:
+
+- the owner is served on their own host, gets `[]` for operators, and the audit names their tenant;
+- their token is 401 on the other tenant's host;
+- no host is 400;
+- a host with no docket is 404;
+- a member without `operator` is 401;
+- a token for A's project issued in B's organization is 401;
+- Paridyum's staff still get the git registry;
+- without `DOCKET_TENANT_ISSUER`, a tenant token is refused as before.
+
+**Watched failing:** with the role check removed, and with the tenant path switched off. 304/304.
+`DOCKET_TENANT_ISSUER` is set to `https://auth.paridyum.com` in staging.
+

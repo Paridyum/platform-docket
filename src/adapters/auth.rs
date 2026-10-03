@@ -51,6 +51,100 @@ pub struct VerifiedOperator {
     pub plane: Plane,
 }
 
+/// What a host's docket is, from `paridyum.resolve_surface(host, 'docket')` (migration 0020): the tenant,
+/// the Zitadel organization its people sign in to, and the project its docket client lives in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Surface {
+    /// The tenant the host serves.
+    pub tenant: Uuid,
+    /// Its Zitadel organization.
+    pub zitadel_org_id: String,
+    /// The tenant's own docket project: the audience a token for this host must carry.
+    pub project_id: String,
+}
+
+/// Validates a tenant's own members' tokens (ADR-0127 D2): the tenant console relays the token it got
+/// through that tenant's docket client, so the audience is that tenant's project, known only once the
+/// host is resolved. One set of keys (the tenant instance's), and pins built per request from the
+/// surface.
+pub struct TenantVerifier {
+    keys: BTreeMap<String, DecodingKey>,
+    issuer: String,
+}
+
+impl TenantVerifier {
+    /// A verifier for the tenant instance `issuer`, with its published keys.
+    #[must_use]
+    pub fn new(keys: BTreeMap<String, DecodingKey>, issuer: String) -> Self {
+        Self { keys, issuer }
+    }
+
+    /// The tenant instance this verifier pins.
+    #[must_use]
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    /// Verify `token` for the host whose docket is `surface`: signed by the tenant instance, audienced
+    /// for THAT tenant's docket project, issued in THAT tenant's organization, and carrying `operator`
+    /// in that project. A token for another tenant fails here whatever host the caller names, because
+    /// its audience and organization are signed.
+    ///
+    /// # Errors
+    /// On any failed check, naming the first.
+    pub fn verify(&self, token: &str, surface: &Surface) -> Result<VerifiedOperator> {
+        let token = token.strip_prefix(BEARER).unwrap_or(token).trim();
+        let pins = Pins::single_plane(
+            Plane::Tenant,
+            self.issuer.clone(),
+            surface.project_id.clone(),
+        );
+        let principal = JwksVerifier::new(self.keys.clone(), pins)
+            .verify(token)
+            .map_err(|e| anyhow::anyhow!("{e}"))
+            .context("the token was rejected")?;
+        if !principal.has_role(OPERATOR_ROLE) {
+            bail!(
+                "the token does not carry the '{OPERATOR_ROLE}' role in this tenant's docket project"
+            );
+        }
+        let org = principal
+            .organization_id()
+            .context("the token carries no resourceowner (org id)")?;
+        if org != surface.zitadel_org_id {
+            bail!("the token was issued in another organization than this host's tenant");
+        }
+        let tenant = derive_tenant_id(org)?;
+        if tenant != surface.tenant {
+            bail!("the token's organization does not derive this host's tenant");
+        }
+        Ok(VerifiedOperator {
+            subject: principal.subject().to_owned(),
+            tenant,
+            operator_scope: true,
+            plane: Plane::Tenant,
+        })
+    }
+}
+
+/// The `iss` a token CLAIMS, unverified: only to choose which verifier checks it, which then checks
+/// everything, the issuer included. `None` for anything that is not a JWT with a string `iss`.
+#[must_use]
+pub fn claimed_issuer(token: &str) -> Option<String> {
+    let token = token.strip_prefix(BEARER).unwrap_or(token).trim();
+    let header = jsonwebtoken::decode_header(token).ok()?;
+    let mut read = jsonwebtoken::Validation::new(header.alg);
+    // Read, not verify: the verifier this selects verifies the signature and every claim.
+    read.insecure_disable_signature_validation();
+    read.validate_exp = false;
+    read.validate_aud = false;
+    read.required_spec_claims.clear();
+    let data =
+        jsonwebtoken::decode::<serde_json::Value>(token, &DecodingKey::from_secret(&[]), &read)
+            .ok()?;
+    data.claims.get("iss")?.as_str().map(str::to_owned)
+}
+
 /// Validates operator tokens against the control-plane instance's published keys.
 pub struct OperatorVerifier(JwksVerifier);
 
@@ -161,6 +255,11 @@ mod tests {
             Plane::Control,
             "this verifier pins the control plane"
         );
+        assert_eq!(
+            claimed_issuer(&format!("Bearer {}", sign(&enc, &operator_claims()))).as_deref(),
+            Some(ISS)
+        );
+        assert_eq!(claimed_issuer("not.a.jwt"), None);
         assert_eq!(
             out.tenant,
             Uuid::parse_str("68445ee9-175a-58a9-834e-a2f0c9c9b124").unwrap()

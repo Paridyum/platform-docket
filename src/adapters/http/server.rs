@@ -6,7 +6,9 @@
 //! serialisation. So the "one request at a time" loop that protected the file chains is retired.
 
 use crate::adapters::audit;
-use crate::adapters::auth::OperatorVerifier;
+use crate::adapters::auth::{
+    OperatorVerifier, Surface, TenantVerifier, VerifiedOperator, claimed_issuer,
+};
 use crate::adapters::blobs::Blobs;
 use crate::adapters::clock::Clock;
 use crate::adapters::correlation::CorrelationId;
@@ -47,6 +49,15 @@ pub trait TenantStores: Sync {
     /// Fails if the stores cannot be opened (a bad pool or missing S3 configuration) or the config
     /// cannot be read.
     fn build(&self, tenant: Uuid, correlation: &CorrelationId) -> Result<RequestStores<'_>>;
+
+    /// The docket `host` serves (`paridyum.resolve_surface(host, 'docket')`), or `None` when it serves
+    /// none. Only the tenant-plane path asks; a factory without it serves no tenant-plane token.
+    ///
+    /// # Errors
+    /// Fails if the lookup itself fails.
+    fn docket_surface(&self, _host: &str) -> Result<Option<Surface>> {
+        Ok(None)
+    }
 }
 
 /// How a request's record/blob stores are obtained.
@@ -84,6 +95,9 @@ pub struct Serving<'a> {
     pub registry: &'a Registry,
     /// Verifies operator tokens (ADR-0092). `None` on the loopback/break-glass backend.
     pub verifier: Option<&'a OperatorVerifier>,
+    /// Verifies a tenant's own members' tokens, relayed by the tenant console (ADR-0127 D2). `None`:
+    /// only control-plane operator tokens are served, as before.
+    pub tenant_verifier: Option<&'a TenantVerifier>,
     /// Injected clock (STD-0004); `Sync` so it is shared across request threads.
     pub clock: &'a (dyn Clock + Sync),
     /// Whether an off-host backup destination exists and a restore has been rehearsed
@@ -239,9 +253,9 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
             // The correlation id is resolved BEFORE the token is verified, because a refused token is
             // an attempt worth recording and it has to be joinable to the request that made it.
             let correlation = CorrelationId::from_headers(|name| req.header(name));
-            let operator = match verifier.verify(header) {
+            let operator = match verify(s, verifier, *stores, req, header) {
                 Ok(op) => op,
-                Err(e) => {
+                Err(refused) => {
                     // ⛔ AND THIS ONE CANNOT BE RECORDED. `audit_events.tenant_id` is NOT NULL, and a
                     // token that failed verification yields no tenant to attribute the attempt to — so
                     // a rejected token is a log line and not a row. The same limit `platform-tenancy`
@@ -250,9 +264,10 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                     // nothing to do with it.
                     tracing::warn!(
                         correlation_id = correlation.as_str(),
+                        status = refused.status,
                         "an operator token was rejected; no tenant resolved, so no audit row"
                     );
-                    return Response::error(401, &format!("{e:#}"));
+                    return refused;
                 }
             };
             let tenant = operator.tenant;
@@ -320,6 +335,56 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
             response
         }
     }
+}
+
+/// The verified operator a request's token proves, or the response refusing it.
+///
+/// **Which verifier is chosen by the issuer the token claims;** the chosen one then checks everything,
+/// the issuer included. A control-plane token is Paridyum's staff (ADR-0092). A tenant-instance token is
+/// one of that tenant's own members, relayed by the tenant console (ADR-0127 D2). Its audience is the
+/// tenant's own docket project, which only the host names, so the console forwards the host
+/// (`X-Forwarded-Host`). The host is not trusted: it selects the project and organization the token must
+/// already be signed for, so naming another tenant's host only makes the token fail.
+fn verify(
+    s: &Serving<'_>,
+    control: &OperatorVerifier,
+    stores: &dyn TenantStores,
+    req: &Request,
+    header: &str,
+) -> std::result::Result<VerifiedOperator, Response> {
+    let tenant_plane = s.tenant_verifier.filter(|tv| {
+        claimed_issuer(header)
+            .is_some_and(|iss| iss.trim_end_matches('/') == tv.issuer().trim_end_matches('/'))
+    });
+    let Some(tv) = tenant_plane else {
+        return control
+            .verify(header)
+            .map_err(|e| Response::error(401, &format!("{e:#}")));
+    };
+    let Some(host) = req
+        .header("x-forwarded-host")
+        .map(|h| h.trim().to_ascii_lowercase())
+        .map(|h| {
+            h.split(':')
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches('.')
+                .to_owned()
+        })
+        .filter(|h| !h.is_empty())
+    else {
+        return Err(Response::error(
+            400,
+            "a tenant's token needs the host it was used on (X-Forwarded-Host): its docket project is that host's",
+        ));
+    };
+    let surface = match stores.docket_surface(&host) {
+        Ok(Some(surface)) => surface,
+        Ok(None) => return Err(Response::error(404, &format!("{host} serves no docket"))),
+        Err(e) => return Err(Response::error(500, &format!("resolving {host}: {e:#}"))),
+    };
+    tv.verify(header, &surface)
+        .map_err(|e| Response::error(401, &format!("{e:#}")))
 }
 
 /// The configuration a request runs against: the tenant's own when it is seeded (ADR-0099), else the git
@@ -512,6 +577,7 @@ mod tests {
             paths: &paths,
             registry: &reg,
             verifier: None,
+            tenant_verifier: None,
             clock: &clock,
             backups_confirmed: true,
             region: "in",
@@ -574,6 +640,7 @@ mod tests {
             paths,
             registry: reg,
             verifier,
+            tenant_verifier: None,
             clock,
             backups_confirmed: true,
             region: "in",
@@ -598,6 +665,7 @@ mod tests {
             paths,
             registry: reg,
             verifier,
+            tenant_verifier: None,
             clock,
             // The existing suite asserts routing and auth, not the data gate, so it runs with
             // backups confirmed. The gate's own tests set it false explicitly.
@@ -864,6 +932,7 @@ mod tests {
             paths,
             registry: reg,
             verifier,
+            tenant_verifier: None,
             clock,
             backups_confirmed,
             region: "in",
@@ -984,6 +1053,7 @@ mod tests {
             paths: &paths,
             registry: &reg,
             verifier: None,
+            tenant_verifier: None,
             clock: &clock,
             backups_confirmed: true,
             region: "in",
@@ -1021,6 +1091,7 @@ mod tests {
             paths: Box::leak(Box::new(Paths::resolve(std::path::Path::new(".")))),
             registry: Box::leak(Box::new(registry())),
             verifier: None,
+            tenant_verifier: None,
             clock: Box::leak(Box::new(SystemClock)),
             backups_confirmed: true,
             region: "in",
@@ -1101,5 +1172,162 @@ mod tests {
             );
         }
         assert!(empty.operators.is_empty() && empty.org_node().is_none());
+    }
+
+    // ── A tenant's own members, relayed by the tenant console (ADR-0127 D2) ───────────────────────
+
+    const TENANT_ISS: &str = "https://auth.test";
+
+    /// Two hosts with a docket: tenant A's and tenant B's, each its own organization and project.
+    struct SurfaceStores;
+    impl TenantStores for SurfaceStores {
+        fn build(&self, _tenant: Uuid, _correlation: &CorrelationId) -> Result<RequestStores<'_>> {
+            Ok((Box::new(NullStore), Box::new(NullBlobs), None))
+        }
+        fn docket_surface(&self, host: &str) -> Result<Option<Surface>> {
+            let surface = |org: &str, project: &str| Surface {
+                tenant: crate::domain::tenant::derive_tenant_id(org).expect("derive"),
+                zitadel_org_id: org.to_owned(),
+                project_id: project.to_owned(),
+            };
+            Ok(match host {
+                "tenant-a.example" => Some(surface("111111", "p-a")),
+                "tenant-b.example" => Some(surface("222222", "p-b")),
+                _ => None,
+            })
+        }
+    }
+
+    fn tenant_verifier_and_signer() -> (TenantVerifier, EncodingKey) {
+        let key = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).expect("key");
+        let enc2 =
+            EncodingKey::from_rsa_pem(key.to_pkcs8_pem(LineEnding::LF).expect("priv").as_bytes())
+                .expect("enc");
+        let mut keys = BTreeMap::new();
+        keys.insert(
+            "k1".to_owned(),
+            DecodingKey::from_rsa_pem(
+                key.to_public_key()
+                    .to_public_key_pem(LineEnding::LF)
+                    .expect("pub")
+                    .as_bytes(),
+            )
+            .expect("dec"),
+        );
+        (TenantVerifier::new(keys, TENANT_ISS.to_owned()), enc2)
+    }
+
+    /// A tenant member's token: issued in `org`, audienced for `project`, with `roles` there.
+    fn tenant_bearer(
+        enc: &EncodingKey,
+        org: &str,
+        project: &str,
+        roles: &serde_json::Value,
+    ) -> String {
+        let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = Some("k1".to_owned());
+        let claims = json!({
+            "iss": TENANT_ISS, "sub": "owner-subject", "aud": project, "exp": 9_999_999_999u64,
+            format!("urn:zitadel:iam:org:project:{project}:roles"): roles,
+            "urn:zitadel:iam:user:resourceowner:id": org,
+        });
+        format!("Bearer {}", encode(&header, &claims, enc).expect("sign"))
+    }
+
+    fn get_operators(s: &Serving<'_>, bearer: &str, host: Option<&str>) -> Response {
+        let host = host
+            .map(|h| format!("X-Forwarded-Host: {h}\r\n"))
+            .unwrap_or_default();
+        dispatch(
+            s,
+            &parse_req(&format!(
+                "GET /api/operators HTTP/1.1\r\nAuthorization: {bearer}\r\n{host}\r\n"
+            )),
+        )
+    }
+
+    #[test]
+    fn a_tenants_owner_is_served_on_its_own_host_with_its_own_configuration_never_paridyums() {
+        let (reg, clock, paths, stores) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+            SurfaceStores,
+        );
+        let (control, control_enc) = verifier_and_signer();
+        let (tenant, enc) = tenant_verifier_and_signer();
+        let sink = RecordingSink::default();
+        let s = Serving {
+            backend: Backend::PerTenant {
+                stores: &stores,
+                audit: &sink,
+            },
+            paths: &paths,
+            registry: &reg,
+            verifier: Some(&control),
+            tenant_verifier: Some(&tenant),
+            clock: &clock,
+            backups_confirmed: true,
+            region: "in",
+        };
+        let owner = tenant_bearer(&enc, "111111", "p-a", &json!({ "operator": {} }));
+
+        let ok = get_operators(&s, &owner, Some("Tenant-A.example:443"));
+        assert_eq!(ok.status, 200, "{}", String::from_utf8_lossy(&ok.body));
+        // Tenant A has no rows: the empty default, NOT the git registry's operators.
+        assert_eq!(String::from_utf8_lossy(&ok.body), "[]");
+        let events = sink.events.lock().expect("the sink mutex");
+        assert_eq!(
+            events.last().map(|e| e.0),
+            Some(crate::domain::tenant::derive_tenant_id("111111").expect("derive"))
+        );
+        drop(events);
+
+        // Another tenant's host: the token is signed for A's project and organization.
+        assert_eq!(
+            get_operators(&s, &owner, Some("tenant-b.example")).status,
+            401
+        );
+        // No host, no project to check the audience against.
+        assert_eq!(get_operators(&s, &owner, None).status, 400);
+        // A host with no docket.
+        assert_eq!(
+            get_operators(&s, &owner, Some("nobody.example")).status,
+            404
+        );
+        // A's project, but issued in B's organization (a project granted across organizations): refused.
+        let crossed = tenant_bearer(&enc, "222222", "p-a", &json!({ "operator": {} }));
+        assert_eq!(
+            get_operators(&s, &crossed, Some("tenant-a.example")).status,
+            401
+        );
+        // A member of A without `operator`.
+        let member = tenant_bearer(&enc, "111111", "p-a", &json!({}));
+        assert_eq!(
+            get_operators(&s, &member, Some("tenant-a.example")).status,
+            401
+        );
+
+        // Paridyum's staff are unaffected: the control plane, and the git registry's operators.
+        let staff = get_operators(&s, &operator_bearer(&control_enc), None);
+        assert_eq!(staff.status, 200);
+        assert_ne!(String::from_utf8_lossy(&staff.body), "[]");
+    }
+
+    #[test]
+    fn without_a_tenant_verifier_a_tenant_token_is_refused_as_before() {
+        let (reg, clock, paths) = (
+            registry(),
+            SystemClock,
+            Paths::resolve(std::path::Path::new(".")),
+        );
+        let (control, _) = verifier_and_signer();
+        let (_tenant, enc) = tenant_verifier_and_signer();
+        let s = pertenant(Some(&control), &FakeStores, &reg, &paths, &clock);
+        let owner = tenant_bearer(&enc, "111111", "p-a", &json!({ "operator": {} }));
+        assert_eq!(
+            get_operators(&s, &owner, Some("tenant-a.example")).status,
+            401
+        );
     }
 }
