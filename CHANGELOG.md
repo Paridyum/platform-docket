@@ -7,6 +7,11 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **Only Paridyum's own staff fall back to the git registry** (ADR-0130 D6, ADR-0099 D2). A tenant
+  without configuration rows, on any other plane, gets `Registry::empty()`: no company, signatory or
+  operator, so an empty roster and no writes. The git registry is Paridyum's configuration. Today only
+  control-plane tokens are accepted, so behaviour is unchanged; this lands before the tenant-plane path
+  (PLAN-TENANT-HOSTS D1) so that path can never show a tenant Paridyum's configuration.
 - **A correlation id reaches every database transaction** (T-G.2, ADR-0041 D3 / ADR-0044 D1 /
   RFC-0045 §D1). `enter()` now sets a fourth session value, `paridyum.correlation_id`, alongside
   tenant, operator scope and account. `src/adapters/correlation.rs` reads a W3C `traceparent`'s

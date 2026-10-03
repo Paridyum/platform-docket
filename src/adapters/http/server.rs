@@ -265,9 +265,8 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
                     );
                 }
             };
-            // The tenant's own config if it is seeded (ADR-0099), else the git registry as a fallback
-            // until it is — the line that makes the git registry a seed, not the source of truth.
-            let registry = config.as_ref().unwrap_or(s.registry);
+            let empty = Registry::empty();
+            let registry = registry_for(config.as_ref(), operator.plane, s.registry, &empty);
             let ctx = Context {
                 store: store.as_ref(),
                 blobs: blobs.as_ref(),
@@ -320,6 +319,23 @@ fn dispatch(s: &Serving<'_>, req: &Request) -> Response {
             }
             response
         }
+    }
+}
+
+/// The configuration a request runs against: the tenant's own when it is seeded (ADR-0099), else the git
+/// registry — ONLY for a control-plane operator, Paridyum's own staff, whose configuration the git
+/// registry is. Any other plane's tenant without rows gets the empty default (ADR-0130 D6): falling back
+/// to the git registry would show it Paridyum's companies, signatories and operators.
+fn registry_for<'r>(
+    config: Option<&'r Registry>,
+    plane: paridyum_auth::Plane,
+    git: &'r Registry,
+    empty: &'r Registry,
+) -> &'r Registry {
+    match (config, plane) {
+        (Some(own), _) => own,
+        (None, paridyum_auth::Plane::Control) => git,
+        (None, _) => empty,
     }
 }
 
@@ -1061,5 +1077,29 @@ mod tests {
     fn every_unspecified_address_without_a_verifier_is_refused() {
         assert!(permit_bind("0.0.0.0".parse().expect("v4"), false).is_err());
         assert!(permit_bind("::".parse().expect("v6"), false).is_err());
+    }
+
+    /// ADR-0130 D6: only Paridyum's own staff (the control plane) fall back to the git registry, which
+    /// is Paridyum's configuration; any other tenant without rows gets the empty default, never it.
+    #[test]
+    fn only_a_control_plane_operator_falls_back_to_the_git_registry() {
+        use paridyum_auth::Plane;
+        let (git, own, empty) = (registry(), registry(), Registry::empty());
+        let pick = |config, plane| registry_for(config, plane, &git, &empty);
+        assert!(
+            std::ptr::eq(pick(Some(&own), Plane::Tenant), std::ptr::from_ref(&own)),
+            "a seeded tenant's own rows"
+        );
+        assert!(
+            std::ptr::eq(pick(None, Plane::Control), std::ptr::from_ref(&git)),
+            "Paridyum's staff, unseeded"
+        );
+        for plane in [Plane::Tenant, Plane::Portal] {
+            assert!(
+                std::ptr::eq(pick(None, plane), std::ptr::from_ref(&empty)),
+                "{plane:?} must never see the git registry"
+            );
+        }
+        assert!(empty.operators.is_empty() && empty.org_node().is_none());
     }
 }
