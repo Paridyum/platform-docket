@@ -17,6 +17,9 @@
 //! DOCKET_OIDC_ISSUER    the control-plane issuer, e.g. https://id.paridyum.com
 //! DOCKET_OIDC_JWKS      JWKS URL (default: {issuer}/oauth/v2/keys)
 //! DOCKET_OIDC_AUDIENCE  the paridyum-operations project id a token must be audienced for
+//! DOCKET_TENANT_ISSUER  optional: the tenant instance (https://auth.paridyum.com). Set, a tenant's own
+//!                       members' tokens are served too, audienced for that tenant's docket project
+//!                       (ADR-0127 D2); its keys come from {issuer}/oauth/v2/keys
 //! DOCKET_TENANT_ID      the tenant whose HR records this instance serves (a uuid)
 //! DOCKET_BIND           listen address (default 0.0.0.0:8080)
 //! DOCKET_ROOT           where registry/ lives (default: the current directory)
@@ -29,7 +32,7 @@
 use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::path::Path;
-use tool_docket::adapters::auth::{OperatorVerifier, keys_from_jwks};
+use tool_docket::adapters::auth::{OperatorVerifier, TenantVerifier, keys_from_jwks};
 use tool_docket::adapters::clock::SystemClock;
 use tool_docket::adapters::http::server::{self, Backend, Serving};
 use tool_docket::adapters::pg::{self, PgTenantStores};
@@ -73,21 +76,33 @@ fn main() -> Result<()> {
 
     // Fetch the signing keys once at startup, off the request path (ADR-0047 D4). A periodic refresh
     // and rotation-on-unknown-kid is the next slice (SOP). The pool is opened on the same runtime.
-    let (keys, pool) = runtime.block_on(async {
-        let jwks: serde_json::Value = reqwest::get(&jwks_url)
-            .await
-            .with_context(|| format!("fetching JWKS from {jwks_url}"))?
-            .json()
-            .await
-            .context("the JWKS response was not JSON")?;
-        let keys = keys_from_jwks(&jwks);
-        anyhow::ensure!(!keys.is_empty(), "no usable keys in the JWKS at {jwks_url}");
+    let tenant_issuer = std::env::var("DOCKET_TENANT_ISSUER")
+        .ok()
+        .map(|i| i.trim().trim_end_matches('/').to_owned())
+        .filter(|i| !i.is_empty());
+    let (keys, pool, tenant_keys) = runtime.block_on(async {
+        let keys = fetch_keys(&jwks_url).await?;
         let pool = pg::pool(&database_url).await?;
-        Ok::<_, anyhow::Error>((keys, pool))
+        let tenant_keys = match &tenant_issuer {
+            Some(issuer) => Some(fetch_keys(&format!("{issuer}/oauth/v2/keys")).await?),
+            None => None,
+        };
+        Ok::<_, anyhow::Error>((keys, pool, tenant_keys))
     })?;
     tracing::info!(key_count = keys.len(), issuer, "loaded control-plane JWKS");
 
     let verifier = OperatorVerifier::new(keys, issuer, audience);
+    let tenant_verifier = match (tenant_issuer, tenant_keys) {
+        (Some(issuer), Some(keys)) => {
+            tracing::info!(
+                key_count = keys.len(),
+                issuer,
+                "loaded the tenant instance's JWKS: tenant tokens are served"
+            );
+            Some(TenantVerifier::new(keys, issuer))
+        }
+        _ => None,
+    };
     let registry = Registry::load(&Paths::resolve(Path::new(&root)))
         .context("loading registry/ (is DOCKET_ROOT pointing at the repository?)")?;
     // The served backend's blob store is Garage/S3 (design §11, ADR-0094), the whole reason a
@@ -145,6 +160,7 @@ fn main() -> Result<()> {
         paths: &paths,
         registry: &registry,
         verifier: Some(&verifier),
+        tenant_verifier: tenant_verifier.as_ref(),
         clock: &clock,
         backups_confirmed,
         region: &region,
@@ -153,4 +169,19 @@ fn main() -> Result<()> {
     tracing::info!(addr = %bind, "docket serving the real operator API over Postgres (multi-tenant)");
     server::serve(&serving, bind).context("the server exited with an error")?;
     Ok(())
+}
+
+/// An issuer's signing keys, fetched once at startup, off the request path (ADR-0047 D4).
+async fn fetch_keys(
+    url: &str,
+) -> Result<std::collections::BTreeMap<String, jsonwebtoken::DecodingKey>> {
+    let jwks: serde_json::Value = reqwest::get(url)
+        .await
+        .with_context(|| format!("fetching JWKS from {url}"))?
+        .json()
+        .await
+        .context("the JWKS response was not JSON")?;
+    let keys = keys_from_jwks(&jwks);
+    anyhow::ensure!(!keys.is_empty(), "no usable keys in the JWKS at {url}");
+    Ok(keys)
 }

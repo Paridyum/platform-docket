@@ -30,6 +30,10 @@ env:
     value: "https://id.paridyum.com"
   - name: DOCKET_OIDC_AUDIENCE
     value: "392754455717610538"   # paridyum-operations, control-plane instance (rebuilt 2026-09-28, ADR-0123)
+  # A tenant's own members' tokens, relayed by the tenant console (ADR-0127 D2): verified against the tenant
+  # instance's keys, audienced for that tenant's docket project, which the forwarded host names.
+  - name: DOCKET_TENANT_ISSUER
+    value: "https://auth.paridyum.com"
   - name: DOCKET_TENANT_ID
     value: "451ce2e0-b82f-59ad-ad54-ab02ad9811cb"   # Paridyum's tenant (tenant zero), rebuilt 2026-09-28
   - name: PARIDYUM_REGION

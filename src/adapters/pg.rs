@@ -37,6 +37,7 @@
 //! instance's people into another's.
 
 use crate::adapters::audit;
+use crate::adapters::auth::Surface;
 use crate::adapters::blobs;
 use crate::adapters::correlation::CorrelationId;
 use crate::adapters::http::server::{RequestStores, TenantStores};
@@ -795,6 +796,24 @@ impl TenantStores for PgTenantStores {
         })
         .context("loading the tenant's configuration")?;
         Ok((Box::new(store), blobs, config))
+    }
+
+    /// `paridyum.resolve_surface(host, 'docket')` as `docket_app` (migration 0020 grants it): the tenant,
+    /// its organization and its docket project for an active binding and Release, or no row.
+    fn docket_surface(&self, host: &str) -> Result<Option<Surface>> {
+        let row: Option<(Uuid, String, String)> = self.handle.block_on(
+            sqlx::query_as(
+                "SELECT tenant_id, zitadel_org_id, oidc_project_id FROM paridyum.resolve_surface($1, 'docket')",
+            )
+            .bind(host)
+            .fetch_optional(&self.pool),
+        )
+        .context("resolving the host's docket")?;
+        Ok(row.map(|(tenant, zitadel_org_id, project_id)| Surface {
+            tenant,
+            zitadel_org_id,
+            project_id,
+        }))
     }
 }
 

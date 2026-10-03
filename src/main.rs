@@ -2380,6 +2380,7 @@ fn cmd_serve(
         paths,
         registry,
         verifier: None,
+        tenant_verifier: None,
         clock: &clock,
         // The break-glass CLI honours the same gate as the served backend. It is the same data and
         // the same ADR; a gate the operator can step around by using the other binary is not one.
