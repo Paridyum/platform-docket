@@ -46,6 +46,9 @@ pub struct VerifiedOperator {
     /// is a field anyway so that what the audit row records is what was verified, and the day the
     /// role check is relaxed the value follows the claim instead of a literal elsewhere.
     pub operator_scope: bool,
+    /// The plane the token was issued on. Only a control-plane operator — Paridyum's own staff — may
+    /// fall back to the git registry, which is Paridyum's configuration (ADR-0099 D2, ADR-0130 D6).
+    pub plane: Plane,
 }
 
 /// Validates operator tokens against the control-plane instance's published keys.
@@ -94,6 +97,7 @@ impl OperatorVerifier {
             subject: principal.subject().to_owned(),
             tenant,
             operator_scope: principal.has_role(OPERATOR_ROLE),
+            plane: Plane::Control,
         })
     }
 }
@@ -152,6 +156,11 @@ mod tests {
         let (enc, v) = keypair();
         let out = v.verify(&sign(&enc, &operator_claims())).expect("verifies");
         assert_eq!(out.subject, "390506086174098663");
+        assert_eq!(
+            out.plane,
+            Plane::Control,
+            "this verifier pins the control plane"
+        );
         assert_eq!(
             out.tenant,
             Uuid::parse_str("68445ee9-175a-58a9-834e-a2f0c9c9b124").unwrap()

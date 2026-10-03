@@ -191,6 +191,30 @@ pub struct Registry {
 impl Registry {
     /// Load every registry file.
     ///
+    /// The configuration of a tenant that has not been onboarded: no company, signatory, operator,
+    /// class, document or message (ADR-0130 D6: defaults, not seeds). Nothing can be issued and no
+    /// subject is an operator, so the tenant sees an empty roster and can write nothing until its rows
+    /// exist. Never the git registry, which is Paridyum's own.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            org: serde_yaml::to_value(serde_json::json!({ "companies": [] })).unwrap_or_default(),
+            signatories: Vec::new(),
+            lifecycle: Lifecycle {
+                documents: Vec::new(),
+                stages: Vec::new(),
+            },
+            retention: Vec::new(),
+            catalogue: Catalogue {
+                classes: Vec::new(),
+                fields: Vec::new(),
+            },
+            messages: Vec::new(),
+            operators: Vec::new(),
+            team: Vec::new(),
+        }
+    }
+
     /// # Errors
     /// Fails if any registry file is missing or malformed.
     pub fn load(paths: &Paths) -> Result<Self> {

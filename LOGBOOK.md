@@ -1861,3 +1861,14 @@ packages token.
 The shared verifier moves from v0.1.0 to v0.2.0, the tag platform-tenancy, -routing, -deployment and
 -identity already pin. 0.2.0 adds `Plane::Portal`; docket does not match on `Plane`, so no code changed.
 The lockfile changes only paridyum-auth's version and source. On sitar: clippy clean, 488 tests pass.
+
+## 2026-10-03 — the git registry is Paridyum's, so only Paridyum's staff fall back to it (D1a)
+
+The served dispatcher did `config.unwrap_or(git registry)` for every tenant without configuration rows.
+That was harmless while only control-plane operator tokens (Paridyum's staff) were accepted. ADR-0127 D2
+has the tenant console relay each tenant's own token, and PLAN-TENANT-HOSTS D1 adds that path. On it,
+any tenant without rows would have seen Paridyum's companies, signatories and operators.
+`VerifiedOperator` now carries its `plane`, and `registry_for` keeps the fallback to the control plane;
+every other plane gets `Registry::empty()`, ADR-0130 D6's default. Nothing changes for today's tokens.
+**Watched failing:** with every plane falling back to the git registry. 302/302.
+
