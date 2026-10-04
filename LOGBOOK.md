@@ -1902,3 +1902,6 @@ client. So docket serves tenant-instance tokens now, alongside its staff's contr
 **Watched failing:** with the role check removed, and with the tenant path switched off. 304/304.
 `DOCKET_TENANT_ISSUER` is set to `https://auth.paridyum.com` in staging.
 
+## 2026-10-04 — cargo cache mounts in the image build
+
+Image builds compiled every dependency on every change: `COPY src` then one `cargo build --release`, in a builder created per job whose `gha` cache was evicted (estate-wide image builds: median 18 min, max 39). infra-ci#16 makes the builder persistent per runner host; this Dockerfile mounts the cargo registry and its `target/` as caches there and copies the binary out in the same step. Measured on platform-routing: a one-line change rebuilt 1 crate in 37 s, against 189 crates in 316 s cold.
