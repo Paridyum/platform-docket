@@ -554,7 +554,7 @@ test_types:
     evidence: junit.xml
     applies_to: ["svc-*", "platform-*"]
     checks: [test.tenant_isolation_suite_covers_owned_tables]
-    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]
+    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118, ADR-0128]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["16.12"]
@@ -625,7 +625,7 @@ test_types:
     evidence: junit.xml, coverage of the role x resource matrix
     applies_to: ["svc-*", "platform-*"]
     checks: [test.authorization_matrix_has_no_untested_cell]
-    governed_by: [STD-0009, ADR-0114, ADR-0116, ADR-0118, ADR-0119, ADR-0120]
+    governed_by: [STD-0009, ADR-0114, ADR-0116, ADR-0118, ADR-0119, ADR-0120, ADR-0128]
     frameworks:
       ssdf: ["PW.8.2"]
       cis: ["6.8", "16.12"]

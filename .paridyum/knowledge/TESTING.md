@@ -13,9 +13,9 @@ counted as implemented in `check-registry.yaml` only if it appears there.
 
 | Tier | What runs | Where |
 | ---- | --------- | ----- |
-| `pr` | the whole suite — `check-knowledge.sh`, `check-repo.sh`, `check-migrations.sh`, `check-commits.sh`, `check-pr.sh`, `test-checks.sh`, secret scan, shellcheck, JSON validity | `.github/workflows/knowledge-check.yml` |
+| `pr` | the whole suite — `check-knowledge.sh`, `check-repo.sh`, `check-migrations.sh`, `check-commits.sh`, `check-pr.sh`, secret scan, shellcheck, JSON validity — and `test-checks.sh` **when the change can reach it** (`scripts/check-suite-scope.sh`: a checker, a registry or schema, this file, or an artifact the suite plants into; ADR-0124 addendum) | `.github/workflows/knowledge-check.yml` |
 | `merge` | the same set, minus the two pull-request-only gates | same workflow, `push` trigger |
-| `nightly` | — | nothing scheduled |
+| `nightly` | the suite on main's latest commit, `test-checks.sh` always, identity and regression excepted (they gate a change as it arrives) | same workflow, `schedule` trigger, 03:00 IST |
 | `pre-release` | — | nothing released |
 | `post-deploy` | — | nothing deployed |
 

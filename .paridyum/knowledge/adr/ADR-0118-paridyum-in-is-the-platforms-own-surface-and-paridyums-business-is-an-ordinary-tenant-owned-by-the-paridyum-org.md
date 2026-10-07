@@ -2,11 +2,11 @@
 id: ADR-0118
 title: paridyum.in is the platform's own surface, and Paridyum's business is an ordinary tenant owned by the Paridyum org
 type: adr
-status: accepted
+status: superseded
 created: 2026-09-28
 locked_at: null
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0128
 scope: [org, platform, web, infra]
 applies_to: ["*"]
 product: [paridyum, tenancy]

@@ -32,6 +32,16 @@
 
 version: 1
 governed_by: RFC-0037
+# IPv6 (RFC-0037 decision 8, allocated 2026-10-04 for ADR-0132). The ULA global ID is 40 bits from a
+# cryptographic random source (Python `secrets`), as RFC 4193 §3.2.2 requires — NOT derived from
+# country, region or anything addressed. Structure lives in the subnet ID only: a region's subnet ID is
+# its x and y as two hex bytes, so 10.1.1.0/24 (x=1, y=1) is subnet 0101. A host's interface ID mirrors
+# its IPv4 last octet (10.1.1.41 is ::41), so one is read off the other. Nothing is advertised: these
+# addresses are unique-local, and reach the internet only through the region gateway's NAT66.
+ipv6:
+  ula_prefix: fd51:5a10:63ce::/48
+  generated: 2026-10-04
+  method: 40 random bits (RFC 4193 §3.2.2), Python secrets
 
 # ── Country blocks ───────────────────────────────────────────────────────────────────────────
 #
@@ -83,6 +93,7 @@ regions:
     purpose: >-
       The first substrate site. One machine at stage B0 (RFC-0025), which is why this region has
       a gateway that is also its only hypervisor.
+    ipv6: fd51:5a10:63ce:101::/64
     advertised: true
     advertised_by: sitar-as-in-01-ar
     status: active
@@ -105,6 +116,7 @@ regions:
 # address from a reusable range and is not recorded (RFC-0037 D6).
 hosts:
   - address: 10.1.1.1
+    address6: fd51:5a10:63ce:101::1
     region: 10.1.1.0/24
     hostname: sitar-as-in-01-ar
     role: hypervisor-router
@@ -243,6 +255,9 @@ hosts:
   # and mail (.3x). Stable because it is a machine the operator reaches over SSH to install and
   # register it; it is reachable, so it is recorded (RFC-0037 D6).
   - address: 10.1.1.41
+    # ADR-0132: the only guest given IPv6, statically, with no router advertisement on the bridge —
+    # an advertisement would hand IPv6 to every guest on it, the cluster's nodes included.
+    address6: fd51:5a10:63ce:101::41
     region: 10.1.1.0/24
     hostname: ci-runner-01
     vmid: 1041

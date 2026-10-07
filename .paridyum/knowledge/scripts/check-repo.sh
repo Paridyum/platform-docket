@@ -446,6 +446,36 @@ else
   na "repo.no_credential_files_committed needs a git checkout"
 fi
 
+# --- repo.hosts_are_configured_only_by_ansible ------------------------------
+# ADR-0056: a machine's inside is Ansible's, and it rejects "shell scripts plus systemd units" by name —
+# "a script commands rather than reconciles". The shape that broke it twice (infra-terraform's runner
+# scripts, 2026-09-28 to 2026-10-03) is a script fed to a remote shell over SSH. Three forms are caught:
+# a remote shell told to read its program from stdin (`ssh … bash -s`), a script file redirected
+# into ssh (`ssh … < x.sh`), and a script file cat into ssh (`cat x.sh | ssh …`). Piping DATA into a remote command (`… | ssh host sendmail`) is not caught:
+# it configures nothing. Executable sources only — prose may describe the shape.
+if [[ "$IS_KNOWLEDGE" == false ]]; then
+  cmd_files="$(find "$R" -type f \( -name Makefile -o -name '*.mk' -o -name '*.sh' -o -name '*.bash' \
+                 -o -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
+                 -not -path '*/.git/*' -not -path '*/.paridyum/*' -not -path '*/node_modules/*' \
+                 -not -path '*/target/*' 2>/dev/null)"
+  if [[ -n "$cmd_files" ]]; then
+    # Backslash-continued lines are joined first: a Makefile recipe spreads one ssh command over several
+    # lines, and infra-terraform's did exactly that — a line-by-line grep saw `ssh` and `bash -s` apart.
+    hits="$(while IFS= read -r f; do
+              awk -v F="$f" '{ if (sub(/\\$/, "")) { buf = buf $0 " "; if (!start) start = FNR; next }
+                               line = buf $0; n = start ? start : FNR; buf = ""; start = 0
+                               print F ":" n ": " line }' "$f"
+            done <<<"$cmd_files" \
+            | grep -E 'ssh[^|;&#]*[^a-z](ba)?sh[[:space:]]+-s([^a-z]|$)|ssh[^|;&#]*<[[:space:]]*[^[:space:]]*\.(ba)?sh([^a-z]|$)|cat[[:space:]]+[^|]*\.(ba)?sh[^|]*\|[[:space:]]*ssh([^a-z]|$)' \
+            || true)"
+    while IFS= read -r h; do
+      [[ -n "$h" ]] && err "configures a host by piping a script to a remote shell: ${h#"$R"/} — host configuration is Ansible's (ADR-0056)"
+    done <<<"$hits"
+  fi
+else
+  na "repo.hosts_are_configured_only_by_ansible — the knowledge repository configures no host; its tests plant the shape"
+fi
+
 # --- repo.no_vendored_harness -----------------------------------------------
 # ADR-0007: the harness ships as a plugin and its content stays vendored. A hook script copied
 # into a repository is a fork that stops receiving fixes — including the guard-locked-decisions

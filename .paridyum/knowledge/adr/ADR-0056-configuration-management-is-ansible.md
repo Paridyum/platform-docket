@@ -2,16 +2,22 @@
 id: ADR-0056
 title: Configuration management is Ansible, and a host is described rather than commanded
 type: adr
-status: accepted
+status: locked
 created: 2026-08-23
-locked_at: null
+locked_at: 2026-10-04
 supersedes: null
 superseded_by: null
 scope: [org, infra]
 applies_to: ["infra-*"]
 tags: [ansible, configuration-management, opentofu, licence, req-0012, rfc-0035, reconcile]
 breaking: false
-enforced_by: []
+enforced_by:
+  - check: repo.hosts_are_configured_only_by_ansible
+    severity: error
+    rationale: >
+      The shape this decision was broken by, twice (infra-terraform's runner scripts, 2026-09-28 to
+      2026-10-03): a script fed to a remote shell over SSH from a repository. It rejects that in every
+      repository's CI. It cannot see a person typing on a host — that remains the SOPs' and reviews' job.
 sources:
   - url: https://pypi.org/pypi/ansible-core/json
     title: ansible-core — package metadata
@@ -26,7 +32,17 @@ sources:
 
 ## Status
 
-**ACCEPTED** as of 2026-08-23.
+**LOCKED** as of 2026-10-04. **ACCEPTED** as of 2026-08-23.
+
+**Locked 2026-10-04,** with `repo.hosts_are_configured_only_by_ansible` in `enforced_by`. Unlocked, it
+was broken twice without any gate noticing: infra-terraform's runner was configured by scripts piped
+over SSH for five days, each change citing a decision that quoted only this ADR's OpenTofu half (the
+investigation is `docs/2026-10-03-why-adr-0056-was-not-followed.md`). The check rejects that shape —
+`ssh … bash -s`, `ssh … < x.sh`, `cat x.sh | ssh …` — in any repository, and was watched failing on the
+real recipes before this lock. What it cannot do is the gap the paragraph below names: it reads
+repositories, not hosts, so a command typed on a machine by hand is outside it.
+
+The paragraph below is what stood here while this was accepted; it is kept because it was true then.
 
 `enforced_by` is empty and that is honest rather than an omission. Locking this needs a check
 that fails when a host is configured by something other than a playbook, and no such check

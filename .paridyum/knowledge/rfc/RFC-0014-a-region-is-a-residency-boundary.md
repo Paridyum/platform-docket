@@ -160,7 +160,7 @@ reached a registry column, which is the order GLO-0004's cost argues for.
 | | Form | Example |
 | --- | --- | --- |
 | Region | lowercase ISO 3166-1 alpha-2, or a supranational code where one governs | `in`, `eu`, `sg` |
-| Datacentre | `<region>-<IATA city>-<ordinal>` | `in-mum-1`, `in-hyd-1` |
+| Datacentre | the site's name in `address-registry.yaml` *(changed 2026-09-29; was `<region>-<IATA city>-<ordinal>`)* | `IN-BIDHOLI-01` |
 
 > **If you are reaching for a number on a region, you want a datacentre.**
 

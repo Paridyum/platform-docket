@@ -1,5 +1,9 @@
 # Plan — the self-serve tenant flow
 
+> **Build order superseded, 2026-09-29 — see [`PLAN-PARIDYUM-IN.md`](PLAN-PARIDYUM-IN.md).** paridyum.in
+> brings every tenant up through its API, and the tenant plane runs apart from it. The waves there
+> replace §4's. The decisions and audits below stand as the record of how this flow got here.
+
 > **Superseded in part, 2026-09-28 — ADR-0113 to ADR-0122 — re-scoped.** The 2026-09-28 hold below is replaced by
 > this re-scope, now that the org model has landed:
 >

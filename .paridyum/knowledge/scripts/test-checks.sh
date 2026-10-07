@@ -5,7 +5,8 @@
 # README.md's most useful sentence is "treat a green check as unproven until you have watched
 # it fail", and until now that was a discipline rather than a script. The ADR-0014 audit found
 # four checks reporting success while enforcing nothing; every one of them would have been
-# caught by planting the defect it claimed to reject. This runs that plant on every commit.
+# caught by planting the defect it claimed to reject. This runs that plant on every push to
+# main, nightly, and on every pull request that can reach it (scripts/check-suite-scope.sh).
 #
 # A check is counted as implemented only if it appears here. That is the rule that stops the
 # implemented column in check-registry.yaml drifting back into a wish.
@@ -295,13 +296,26 @@ m_two_wf_one_reusable() {
   printf 'on:\n  workflow_call:\njobs:\n  a:\n    steps:\n      - run: ./scripts/check-knowledge.sh\n' \
     > "$1/.github/workflows/reusable.yml"
 }
+# ADR-0056. Both shapes infra-terraform used, one mutator each; and two near-misses that must pass,
+# because a check that fires on `| ssh host sendmail` or on prose would be switched off within a week.
+m_ssh_bash_s()    { printf 'install:\n\tcat setup.sh | ssh root@10.0.0.9 bash -s\n' > "$1/Makefile"; }
+m_ssh_redirect()  { mkdir -p "$1/scripts"; printf '#!/bin/sh\nssh -J jump root@host < scripts/setup.sh\n' > "$1/scripts/apply.sh"; }
+# The real recipe's shape (infra-terraform, 2026-09-28): continued over lines, script cat into ssh.
+m_ssh_cat_multi() { printf 'install:\n\t{ printf "%%s\\n" "$$tok"; cat ci/install.sh; } | ssh -o X=y \\\n\t  root@$(H) \\\n\t  "bash -c '"'"'read -r T; bash -s'"'"'"\n' > "$1/Makefile"; }
+m_ssh_sendmail()  { printf 'mail:\n\tprintf "x" | ssh -J jump root@pmg "sendmail -f a b"\n' > "$1/Makefile"; }
+m_ssh_in_prose()  { printf 'Never run `ssh host bash -s < x.sh` (ADR-0056).\n' > "$1/README.md"; }
 plant_ok() { # plant_ok <label> <mutator> — the mutated repo must still PASS
   local label="$1" fn="$2" d="$TMP/case-ok"
   scaffold "$d"; "$fn" "$d"
   expect_ok "$label" bash scripts/check-repo.sh --root "$d"
 }
+plant_ok "data piped to a remote command is not host configuration (ADR-0056)" m_ssh_sendmail
+plant_ok "the shape described in prose is not caught (ADR-0056)"               m_ssh_in_prose
 plant_ok "a reusable workflow beside a triggered one still passes" m_two_wf_one_reusable
 
+plant "a script piped to ssh bash -s (ADR-0056)"      m_ssh_bash_s
+plant "a script redirected into ssh (ADR-0056)"       m_ssh_redirect
+plant "a script cat into ssh, over continued lines (ADR-0056)" m_ssh_cat_multi
 plant "SOP.md absent from a classed repo (STD-0013)" m_class_no_sop
 plant "CLAUDE.md absent"                       m_no_claude
 plant "CLAUDE.md over the line budget"         m_long_claude
@@ -478,6 +492,7 @@ PR="$TMP/pr"; mkdir -p "$PR"
     && git checkout -q -b feature \
     && seq 1 500 > big.rs \
     && seq 1 900 > Cargo.lock \
+    && seq 1 900 > pnpm-lock.yaml && mkdir -p web && seq 1 900 > web/package-lock.json \
     && mkdir -p tests/fixtures && seq 1 900 > tests/fixtures/f.txt \
     && git add -A && git commit -qm "feat: over budget"
 ) >/dev/null 2>&1
@@ -491,7 +506,8 @@ expect_ok "the same diff passes with Review-budget-exception" \
 
 # Regression: a 900-line lockfile and a 900-line fixture must NOT count. If they did, every
 # dependency bump would fail the budget and the check would be switched off within a week
-# (ADR-0008). The count must read exactly 500, not 2300.
+# (ADR-0008). The count must read exactly 500, not 4100. pnpm-lock.yaml and package-lock.json are
+# in the fixture because a `*.lock` pattern alone missed them while its comment said otherwise.
 expect_ok "lockfiles and fixtures are excluded from the count" \
   bash -c "bash scripts/check-pr.sh --root '$PR' --base main --body '$PR/body-exc.md' 2>&1 | grep -q '500 reviewable line'"
 
@@ -609,6 +625,32 @@ expect_ok "a >5MB file is kept out of the checkpoint commit" \
 expect_ok "the real work in the same checkpoint is still committed" \
   bash -c "git -C '$CP' show --name-only --format= HEAD | grep -q 'feature.txt'"
 expect_ok "the excluded file is left on disk, not deleted" test -f "$CP/big.bin"
+
+# ADR-0133 decision 9. The guard measured the file on disk, so a Git LFS asset — full-size on disk,
+# a small pointer in the index — was left out by the guard whose message recommends LFS. A clean
+# filter stands in for git-lfs, which the suite cannot assume is installed; it is the mechanism LFS
+# itself uses to put the pointer in the index. quotePath is pinned because a machine that turned it
+# off would hide the second defect: git quoted a non-ASCII path, and the quoted name slipped past.
+CL="$TMP/ckpt-lfs"; mkdir -p "$CL/plugins/paridyum-platform/hooks"
+cp plugins/paridyum-platform/hooks/checkpoint-session.sh "$CL/plugins/paridyum-platform/hooks/"
+(
+  cd "$CL" && git init -q -b main . \
+    && git config user.email t@t.t && git config user.name T && git config commit.gpgsign false \
+    && git config core.quotePath true \
+    && git config filter.pointer.clean 'cat >/dev/null; printf "pointer\n"' \
+    && printf '*.asset filter=pointer\n' > .gitattributes \
+    && echo seed > seed.txt && git add -A && git commit -qm "chore: seed"
+) >/dev/null 2>&1
+for f in level.asset scratch.bin scratch-ø.bin; do head -c 6000000 /dev/urandom > "$CL/$f"; done
+printf '{"cwd":"%s","session_id":"bulk-lfs"}' "$CL" \
+  | bash "$CL/plugins/paridyum-platform/hooks/checkpoint-session.sh" >/dev/null 2>&1
+
+expect_ok "an LFS-style asset is committed as its pointer" \
+  git -C "$CL" cat-file -e HEAD:level.asset
+expect_ok "a large file with no filter is still left out" \
+  bash -c "! git -C '$CL' cat-file -e HEAD:scratch.bin 2>/dev/null"
+expect_ok "a large file is left out whatever its name" \
+  bash -c "! git -C '$CL' cat-file -e 'HEAD:scratch-ø.bin' 2>/dev/null"
 
 printf '\n── regression gate (STD-0008) ─────────────────────────────────────\n'
 # A real git repository, because the rule is about a commit rather than about a tree: the
@@ -1015,8 +1057,8 @@ kwarn "a registered framework with no mapping and no reason (warn)" "no control 
 # ADR-0030 §3: a locked artifact CANNOT gain a verified_by entry, so a hard failure here would be
 # permanent with no legal remedy.
 kwarn "an artifact naming a type that does not name it back (warn)" "governed_by omits" \
-  test-registry.yaml "    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]" \
-  "    governed_by: [ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118]"
+  test-registry.yaml "    governed_by: [STD-0009, ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118, ADR-0128]" \
+  "    governed_by: [ADR-0024, ADR-0114, ADR-0115, ADR-0117, ADR-0118, ADR-0128]"
 # The other direction. C-0001 is `accepted` — mutable and not deferred — so it is exactly the case
 # the excuse list does NOT cover, which is what makes it a usable fixture.
 kwarn "a type claiming a mutable artifact that stays silent (warn)" "verified_by omits them" \
@@ -1098,6 +1140,27 @@ kplant "an artifact naming an unregistered product" "$MKTF" \
 
 rm -f "$KB/$MKTF"
 expect_ok "the gate is clean again once the fixture is removed" bash "$KB/scripts/check-knowledge.sh"
+
+printf '\n── check-suite scope (ADR-0124 addendum) ──────────────────────────\n'
+# The suite skips itself on a pull request that cannot reach it. A scope rule that is too wide only
+# costs minutes; one that is too narrow lets a broken gate merge. So the cases that matter are the
+# ones that must RUN, and each is a path that looks like documentation and is not.
+scope() { printf '%s\n' "$@" | bash scripts/check-suite-scope.sh 2>/dev/null; }
+# The unplanted path is assembled, never written whole: this file is what the scope rule searches,
+# so a literal path here would be "named in the suite" and the case would test itself.
+unplanted="docs/notes/an-unplanted"; unplanted="$unplanted-page.md"
+expect_ok "a docs-only change skips the suite" \
+  test "$(scope CHANGELOG.md "$unplanted" DECISION-DEBT.md README.md)" = run=false
+expect_ok "a checker change runs it" \
+  test "$(scope README.md scripts/check-knowledge.sh)" = run=true
+expect_ok "a registry change runs it" \
+  test "$(scope check-registry.yaml)" = run=true
+expect_ok "an artifact the suite plants into runs it, though it looks like documentation" \
+  test "$(scope bets/BET-0005-paridyum-operates-what-it-franchises.md)" = run=true
+expect_ok "TESTING.md runs it" \
+  test "$(scope TESTING.md)" = run=true
+expect_ok "no input runs it: skipping has to be earned" \
+  test "$(printf '' | bash scripts/check-suite-scope.sh 2>/dev/null)" = run=true
 
 printf '\n── research capture (RFC-0027) ────────────────────────────────────\n'
 # Two halves, tested two ways. The hook is DRIVEN with synthetic payloads, the way ADR-0007 says
@@ -1203,6 +1266,29 @@ if [[ -z "$(sc_out -u PARIDYUM_KNOWLEDGE_ROOT)" ]]; then
   ok "SessionStart stays silent in a directory with no connection to this repository"
 else
   bad "SessionStart stays silent in a directory with no connection to this repository" "$(sc_out -u PARIDYUM_KNOWLEDGE_ROOT | head -3)"
+fi
+
+# The class comes from class-registry.yaml. It came from a case statement holding C-0002's
+# prefixes, so a web- repository was told its name broke the scheme and shown every locked
+# artifact unfiltered — found while adding game- (ADR-0133). Each case is a directory with the
+# repository's name, vendoring this checkout the way a consuming repository does.
+sc_named() {
+  local p; p="$(mktemp -d)/$1"; mkdir -p "$p/.paridyum"; ln -s "$ROOT" "$p/.paridyum/knowledge"
+  printf '{"cwd":"%s"}' "$p" | bash "$SCHOOK" 2>/dev/null; rm -rf "$(dirname "$p")"
+}
+for spec in "web-example:web" "game-lantern:game" "svc-billing:service" "lib-auth-rust:library"; do
+  name="${spec%%:*}"; want="${spec#*:}"; sc_class_out="$(sc_named "$name")"
+  if [[ "$sc_class_out" == *"class \`$want\`"* && "$sc_class_out" != *"does not match the naming scheme"* ]]; then
+    ok "SessionStart reads $name's class from the registry: $want"
+  else
+    bad "SessionStart reads $name's class from the registry: $want" "$(head -4 <<<"$sc_class_out")"
+  fi
+done
+sc_class_out="$(sc_named "widget-example")"
+if [[ "$sc_class_out" == *"does not match the naming scheme in C-0007"* && "$sc_class_out" == *'`game-`'* ]]; then
+  ok "SessionStart lists the registry's prefixes for a name that matches none"
+else
+  bad "SessionStart lists the registry's prefixes for a name that matches none" "$(head -4 <<<"$sc_class_out")"
 fi
 
 # Ages in the ledger. The hook used to compute "now minus created", which straddled a second and

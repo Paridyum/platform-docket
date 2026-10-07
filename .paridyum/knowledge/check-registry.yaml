@@ -1512,7 +1512,7 @@ checks:
       context for a staff-instance subject — or resolves more than one, or takes the context from a
       request parameter.
     owner: tool-forge
-    blocks: [ADR-0049, ADR-0116, ADR-0118]
+    blocks: [ADR-0049, ADR-0116, ADR-0118, ADR-0128]
     declared: 2026-08-17
     notes: >
       ADR-0049 decision 1. THE HARDEST OF THE THREE TO BUILD and the one most worth building:
@@ -1530,7 +1530,7 @@ checks:
       Fails when the tenant Paridyum operates under holds a capability grant that is not
       published and available to any other tenant on the same terms.
     owner: tool-forge
-    blocks: [ADR-0049, ADR-0114, ADR-0116, ADR-0118]
+    blocks: [ADR-0049, ADR-0114, ADR-0116, ADR-0118, ADR-0128]
     declared: 2026-08-17
     notes: >
       ADR-0049 decision 2, and the check a prospective franchisee would actually ask to see.
@@ -3136,6 +3136,21 @@ checks:
       Necessary, not sufficient: whether a session actually LOADED a registered hook is Claude Code
       state and no file can answer it. ADR-0027 cost 2 records that limit.
 
+  - check: repo.hosts_are_configured_only_by_ansible
+    spec: >
+      Fails when a Makefile, shell script or workflow configures a host by feeding a script to a
+      remote shell over SSH — `ssh … bash -s` (a program read from stdin), `ssh … < x.sh`, or
+      `cat x.sh | ssh …`, after joining backslash-continued lines. ADR-0056
+      gives a machine's inside to Ansible and rejects scripts for it by name. Piping data into a remote
+      command (`| ssh host sendmail`) and prose are not caught. Found missing on 2026-10-03, when
+      infra-terraform's runner scripts had passed every gate for five days (docs/2026-10-03-why-adr-0056-
+      was-not-followed.md, cause 3).
+    owner: check-repo.sh
+    blocks: [ADR-0056]
+    declared: 2026-10-04
+    frameworks:
+      ssdf: ["PO.3.2"]
+      csf: ["PR.PS"]
   - check: repo.knowledge_snapshot_not_modified
     spec: >
       Fails when a file under .paridyum/knowledge/ differs from the upstream

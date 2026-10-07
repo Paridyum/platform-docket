@@ -122,8 +122,25 @@ So the plane is: **everything sends through PMG (control), PMG relays through a 
 
 - **ADR-0067** — the mail posture this implements: Gmail mailboxes, the relay it said was owed, the
   sending-subdomain reputation isolation.
-- **ADR-0056 / RFC-0023** — OpenTofu declares the machine; the substrate's guest budget it fits in.
+- **ADR-0056 / RFC-0023** — OpenTofu declares the machine, **and Ansible configures its inside**
+  (ADR-0056, locked 2026-10-04); the substrate's guest budget it fits in. See the 2026-10-04 addendum.
 - **ADR-0082** — the operator login whose init email is the first thing this plane carries.
 - **ADR-0049 / C-0008** — Paridyum sends as the first tenant, unprivileged.
 - **REQ-0003** — a classified field never leaves in a log; the same discipline applies to what an
   email body may carry.
+
+## Addendum — 2026-10-04: PMG's inside is Ansible's, and is not yet
+
+D5 cites ADR-0056 for *"declared in OpenTofu"* and has cloud-init install `proxmox-mailgateway`. Both
+halves of that sentence miss ADR-0056's other half: what is true inside a machine is Ansible's, and
+*"nothing in an OpenTofu module may configure the inside of one"* — which a cloud-init user-data that
+installs the product does. RUN-0008 then records that PMG is installed over SSH by hand, the shape
+ADR-0056 rejects by name. The same half-citation let infra-terraform's CI runner be configured by
+scripts (`docs/2026-10-03-why-adr-0056-was-not-followed.md`, cause 2).
+
+Corrected reading of D5: the PMG guest **exists** by OpenTofu with only what makes it reachable (its
+address and the operator's key), and **is configured** — the package, its relay and DKIM settings — by
+an Ansible role. That role does not exist yet: it is owed (DECISION-DEBT), and until it lands the hand
+steps in RUN-0008 stand as recorded debt, not as precedent. The mail-plane decisions D1–D4 and D6 are
+unchanged.
+

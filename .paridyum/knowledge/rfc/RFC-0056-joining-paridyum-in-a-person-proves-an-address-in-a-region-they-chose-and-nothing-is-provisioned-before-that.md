@@ -2,7 +2,7 @@
 id: RFC-0056
 title: Joining paridyum.in — a person proves an address in a region they chose, and nothing is provisioned before that
 type: rfc
-status: proposed
+status: accepted
 created: 2026-09-28
 locked_at: null
 supersedes: null
@@ -19,7 +19,9 @@ enforced_by: []
 
 ## Status
 
-**PROPOSED** 2026-09-28, with the org model (ADR-0113 to ADR-0122). Acceptance is the operator's act.
+**ACCEPTED** 2026-09-29 by the operator ("full portal, start now", and "accept all recommendations"
+for the five open questions, each answered below). Proposed 2026-09-28, with the org model
+(ADR-0113 to ADR-0122).
 On these screens a tenant is called a *business* (ADR-0113 D1); in this RFC it is a tenant.
 
 ## Problem
@@ -223,13 +225,18 @@ send is delivered, no org they name is created, and no handle is reserved.
 
 1. **`unverified_expiry` and `invite_expiry`.** Proposed 7 and 14 days. They belong in `args`, not
    prose.
+   **Answered 2026-09-29: 7 and 14 days, as proposed.**
 2. **Passkey-first or password-first** at the portal instance. Both are Zitadel features; the
    choice is product and support policy.
+   **Answered 2026-09-29: passkey-first, with a password as the fallback.**
 3. **Disposable addresses.** Allow them (the default here) or refuse them.
+   **Answered 2026-09-29: allowed; the §D abuse controls fail closed.**
 4. **The bot-challenge vendor**, and its exitability.
+   **Answered 2026-09-29: whichever vendor, behind an interface, with no account lock-in, so it can be exited.**
 5. **The handle namespace.** Are org handles unique per region or globally? Globally needs a
    control-plane index of handles — acceptable only if a handle is never personal data. That is not
    true for a personal org named after its person, so the proposal is **unique per region**.
+   **Answered 2026-09-29: unique per region, as proposed.**
 
 ## Related
 

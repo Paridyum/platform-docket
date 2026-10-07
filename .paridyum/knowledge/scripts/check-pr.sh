@@ -64,7 +64,10 @@ fi
 # make "large feature, no tests" the cheapest way to pass, inverting STD-0001.
 is_excluded() {
   case "$1" in
-    *.lock) return 0 ;;   # covers Cargo.lock, pnpm-lock.yaml, package-lock.json, yarn.lock, uv.lock
+    # Cargo.lock, yarn.lock, uv.lock. NOT pnpm-lock.yaml or package-lock.json, which end in .yaml and
+    # .json: this line once claimed to cover them and did not (2026-10-03), so they are named.
+    *.lock) return 0 ;;
+    pnpm-lock.yaml|*/pnpm-lock.yaml|package-lock.json|*/package-lock.json) return 0 ;;
     */.paridyum/knowledge/*|.paridyum/knowledge/*) return 0 ;;
     */tests/fixtures/*|tests/fixtures/*|*/testdata/*|*.golden|*.snap) return 0 ;;
     *.generated.*|*_generated.*|*/generated/*) return 0 ;;

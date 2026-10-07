@@ -2,11 +2,11 @@
 id: ADR-0098
 title: The HR operator interface is served, not run on a workstation (web-docket)
 type: adr
-status: accepted
+status: superseded
 created: 2026-09-15
 locked_at: null
 supersedes: [ADR-0055]
-superseded_by: null
+superseded_by: ADR-0127
 scope: [org]
 applies_to: ["*"]
 tags: [classes, naming, web, typescript, deployment, auth, adr-0020, adr-0055, adr-0070, adr-0092, adr-0093, c-0002, c-0008]
@@ -111,3 +111,13 @@ removes nothing.
   `console-docket` client) is retained for local/break-glass operator use; the
   served surface gets its own WEB client, one client per surface per environment
   (ADR-0070 D1).
+
+## Errata
+
+### 2026-09-29 — decision 3 names a callback path the console does not serve
+
+**Says:** *"redirect `https://console.paridyum.com/api/auth/callback`"*
+**Wrong:** console-docket serves its OIDC callback at `/callback` (`src/app/callback/route.ts`); it has
+no `/api/auth/callback` route. The path was carried over from `web-admin`'s layout.
+**Intended:** *"redirect `https://console.paridyum.com/callback`"*. The decision is unchanged: a WEB
+client in `paridyum-operations`, served behind the edge, with the project's role check on.

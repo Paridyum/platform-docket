@@ -13,6 +13,10 @@
 #   the edge routing table       which region serves which hostname (RFC-0016 decision 1)
 #   per-region infrastructure    one Postgres, one Zitadel, one cluster (ADR-0047)
 #   the region picker            the list an operator chooses from (RFC-0015 decision 5)
+#   the portal's sign-in host    `<region code>.paridyum.in` — `in.paridyum.in` — one per region's
+#                                portal instance (ADR-0119 D1, ADR-0121 D6; the operator, 2026-09-29).
+#                                The code is the jurisdiction, never a datacentre, so the host does not
+#                                move when a building does.
 #
 # THE ARCHIVE IS WHY THIS FILE EXISTS. `archived/paridyum-docs/REGION-MODEL.md` §7 records
 # eight regions declared in four or more places — DEFAULT_REGIONS in Python, seed SQL, three
@@ -49,7 +53,9 @@
 #
 #   region      `in`, `eu`, `us`, `sg`      a legal boundary — lowercase ISO 3166-1 alpha-2,
 #                                           or a supranational code where one governs (`eu`)
-#   datacentre  `in-mum-1`, `in-hyd-1`      <region>-<IATA city>-<ordinal>. Buildings.
+#   datacentre  `IN-BIDHOLI-01`             the site's name in address-registry.yaml. Buildings.
+#                                           (Was `<region>-<IATA city>-<ordinal>`, `in-mum-1`; changed
+#                                           2026-09-29 so one building has one name across both registries.)
 #
 # The rule that falls out is self-checking:
 #
@@ -276,14 +282,14 @@ regions:
       # region. A region never claims a framework as satisfied before an audit says so
       # (ADR-0041 decision 4) — this field records which regime the placement ADDRESSES.
     datacentres:
-      - id: in-mum-1
+      # ONE BUILDING, ONE NAME (the operator, 2026-09-29). The only datacentre that exists is the site
+      # address-registry.yaml already names IN-BIDHOLI-01, the /24 at 10.1.1.0 behind `sitar`, and this
+      # registry now uses that name rather than a second one. `in-mum-1` and `in-hyd-1` stood here as
+      # `live` and were never built; the 2026-09-24 RFC-0015 D3 review brief had already flagged them.
+      # A second datacentre, and with it RFC-0015 decision 3's synchronous standby, is declined for now
+      # (ADR-0105): this region recovers from backup, and says so.
+      - id: IN-BIDHOLI-01
         status: live
-      - id: in-hyd-1
-        status: live
-        # Two datacentres is what makes RFC-0015 decision 3 work: a synchronous standby and a
-        # near-zero recovery point without a byte crossing a border. One would return that
-        # region to restore-from-backup, which is why this count is per-region data and not a
-        # platform-wide assumption.
         #
         # Note what these two would have been called under the archive's scheme: `ap-south-1`
         # and `ap-south-2` — which AWS calls two regions. Same buildings, and a name that would
