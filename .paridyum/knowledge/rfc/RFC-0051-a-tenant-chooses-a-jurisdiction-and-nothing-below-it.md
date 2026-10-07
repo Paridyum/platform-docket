@@ -41,7 +41,9 @@ Observably:
    jurisdiction is a region that has not."*
 
 3. **Two datacentres exist inside the one region, and nothing says whether a tenant picks one.**
-   `in-mum-1` and `in-hyd-1` are both `status: live`.
+   `in-mum-1` and `in-hyd-1` are both `status: live`. *(Corrected 2026-09-29: neither was ever built.
+   The one datacentre is `IN-BIDHOLI-01`, so today the question does not arise; it returns with a
+   second.)*
 
 4. **Nothing says whether a tenant sizes anything.** The drafts RFC-0050 audits carry no sizing
    control, but every console a person has used does, and the absence in a mockup is not a

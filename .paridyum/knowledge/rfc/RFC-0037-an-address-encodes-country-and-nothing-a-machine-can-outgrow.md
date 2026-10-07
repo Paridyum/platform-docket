@@ -406,6 +406,9 @@ supersedes RFC-0023 D5.**
 
 1. **IPv6 allocation.** Decision 8 sets the rule and allocates nothing. Who generates the ULA
    global ID, and when?
+   **Answered 2026-10-04** by ADR-0132 (CI runners reach the internet dual-stack): the global ID was
+   generated then, by the rule above, and is recorded in `address-registry.yaml` (`ipv6`). The first
+   addresses are the region gateway's and `ci-runner-01`'s.
 2. **The routing peer does not exist yet, and everything is reaching the estate through a
    bastion instead.** Decision 6 describes a router that joins the mesh and advertises its
    site's routed subnets, so hosts behind it need no mesh client. Nothing advertises

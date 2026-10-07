@@ -41,17 +41,23 @@ fi
 [[ -z "$kb" ]] && exit 0   # not a Paridyum repo; stay silent
 
 repo="$(basename "$cwd")"
-case "$repo" in
-  knowledge)   class="org"      ;;
-  platform-*)  class="platform" ;;
-  svc-*)       class="service"  ;;
-  lib-*)       class="library"  ;;
-  tool-*)      class="tool"     ;;
-  infra-*)     class="infra"    ;;
-  spec-*)      class="spec"     ;;
-  template-*)  class="template" ;;
-  *)           class=""         ;;
-esac
+# THE CLASS IS THE REGISTRY'S, read from the knowledge base this hook just resolved — never a list
+# copied here (C-0007: the grammar is constitutional, the list is data). This was a case statement
+# holding C-0002's prefixes, so every `web-`, `console-`, `mobile-`, `agent-` and `sdk-` repository
+# was told at session start that its name broke the scheme, and shown every locked artifact
+# unfiltered. Found while adding `game-` (ADR-0133). The value is the class's `scope`, because
+# that is what an artifact's `scope` names.
+class=""
+if [[ "$repo" == "knowledge" ]]; then
+  class="org"
+elif [[ -f "$kb/class-registry.yaml" ]]; then
+  class="$(awk -v r="$repo" '
+    /^  - class: /  { prefix = ""; scope = "" }
+    /^    prefix: / { prefix = $2 }
+    /^    scope: /  { scope = $2 }
+    prefix != "" && scope != "" && index(r, prefix) == 1 { print scope; exit }
+  ' "$kb/class-registry.yaml")"
+fi
 
 printf '## Paridyum knowledge (injected by paridyum-platform)\n\n'
 printf 'Repository: `%s`' "$repo"
@@ -59,8 +65,9 @@ printf 'Repository: `%s`' "$repo"
 printf '\nKnowledge base: `%s`\n\n' "${kb/#$HOME/~}"
 
 if [[ -z "$class" ]]; then
-  printf '**`%s` does not match the naming scheme in C-0002.** Repositories must be\n' "$repo"
-  printf 'prefixed `platform-`, `svc-`, `lib-`, `tool-`, `infra-`, `spec-` or `template-`.\n\n'
+  prefixes="$(awk '/^    prefix: / { printf "%s`%s`", sep, $2; sep = ", " }' "$kb/class-registry.yaml" 2>/dev/null)"
+  printf '**`%s` does not match the naming scheme in C-0007.** A repository name begins with a\n' "$repo"
+  printf 'prefix from `class-registry.yaml`: %s.\n\n' "${prefixes:-none could be read from this snapshot}"
 fi
 
 # Frontmatter reader: stops at the closing delimiter, so prose containing the word
@@ -88,6 +95,47 @@ emit_section() {
 
 emit_section constitution "### Constitution — highest precedence, binding"
 emit_section adr          "### Locked decisions binding this repository"
+
+# ACCEPTED DECISIONS FOR THIS REPOSITORY — direction, one line each, newest first.
+#
+# Until 2026-10-04 a session saw only locked artifacts, and ADR-0056 ("host configuration is
+# Ansible") was accepted, not locked: no session in any infra repository was ever shown it, and
+# infra-terraform's runner was configured by scripts for five days (docs/2026-10-03-why-adr-0056-was-
+# not-followed.md, cause 1). Accepted is direction, not law (ADR-0002), but direction an agent cannot
+# see is direction nobody follows.
+#
+# Narrowed twice so it stays readable: the ADR's `scope` must NAME this repository's class (org-wide
+# ones would put every decision in every session), and its `applies_to`, when it is not "*", must
+# match this repository's name. Newest first, because a recent decision is the one least likely to be
+# known; capped, with the count of the rest and how to list them.
+emit_accepted() {
+  local cap=25 n=0 more=0 out="" f st sc ap id ti matched
+  [[ -n "$class" && -d "$kb/adr" ]] || return 0
+  while IFS= read -r f; do
+    st="$(fm "$f" status)"; [[ "$st" == "accepted" ]] || continue
+    sc="$(fm "$f" scope)";  [[ "$sc" == *"$class"* ]] || continue
+    ap="$(fm "$f" applies_to)"
+    if [[ -n "$ap" && "$ap" != *'"*"'* ]]; then
+      matched=0
+      for pat in $(tr -d '[]",' <<<"$ap"); do
+        # shellcheck disable=SC2053  # pat is a glob on purpose ("infra-*")
+        [[ "$repo" == $pat ]] && { matched=1; break; }
+      done
+      [[ $matched -eq 1 ]] || continue
+    fi
+    if (( n < cap )); then
+      id="$(fm "$f" id)"; ti="$(fm "$f" title)"
+      out+="- **${id}** — ${ti}"$'\n'; n=$((n+1))
+    else
+      more=$((more+1))
+    fi
+  done < <(find "$kb/adr" -name 'ADR-*.md' -type f 2>/dev/null | sort -r)
+  (( n > 0 )) || return 0
+  printf '### Accepted decisions for this repository — direction, newest first\n\n%s' "$out"
+  (( more > 0 )) && printf -- '- … and %d more: `grep -l "status: accepted" %s/adr/*.md`\n' "$more" "${kb/#$HOME/~}"
+  printf '\nRead the one that matches what you are about to do. Accepted is not locked, but code that\ncontradicts it needs a decision, not a pattern copied from a neighbouring file.\n\n'
+}
+emit_accepted
 
 # Open loops carried over from previous sessions (ADR-0011). This is the half of the
 # anti-forgetting mechanism that does the remembering: the Stop hook records, this

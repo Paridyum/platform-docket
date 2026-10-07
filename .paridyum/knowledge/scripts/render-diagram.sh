@@ -116,7 +116,7 @@ for IR in "$@"; do
   EXTERNAL='(src|href|xlink:href)[[:space:]]*=[[:space:]]*.?(https?:)?//|url\([[:space:]]*.?(https?:)?//'
   if grep -qiE "$EXTERNAL" "$OUT"; then
     printf 'render-diagram: %s still reaches an external origin after the strip:\n' "$OUT" >&2
-    grep -oiE "$EXTERNAL[^\"'\)[:space:]]*" "$OUT" | sort -u | sed 's/^/  /' >&2
+    grep -oiE "${EXTERNAL}[^\"'\)[:space:]]*" "$OUT" | sort -u | sed 's/^/  /' >&2
     exit 1
   fi
   printf 'rendered %s (%s, self-contained)\n' "$OUT" "$KIND"

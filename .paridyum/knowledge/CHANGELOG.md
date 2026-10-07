@@ -13,6 +13,58 @@ handle — file names may be reorganised, ids never are.
 
 ### Added
 
+- **RFC-0059 (accepted): a gaming line is a vertical; its prototypes are spikes now, and a game is
+  built only after hosting renews.** The operator asked to pilot or prototype a few game ideas, with
+  engine-agnostic naming. Under C-0006 the line is a vertical, so anti-goal 6 gates building a game
+  behind hosting's first renewal. The operator's answer, "allow for prototyping", is recorded as D3:
+  a game prototype is a C-0010 spike — a stated question, kept in `~/Developer/experiments/`, ended
+  by a dated finding, then deleted. The line registers as `games` when its first MKT- exists, earns
+  its own company on a named trigger, and until then its IP follows RFC-0013 D4.
+- **ADR-0133 (accepted): a game is a repository class, and no name in it carries the engine.**
+  `game-` joins `class-registry.yaml` and both schema enums, with stacks `rust` and `cpp` and
+  `deployable: false`. A repository is `game-<codename>`; the engine is named only in the title's
+  own ADR, and a stack suffix appears only for a port (ADR-0107). Clones live in
+  `~/Developer/paridyum/games/` (RUN-0001). A dedicated server, shared code, release governance,
+  asset storage and a native-Windows engine are deferred, each with the event that reopens it.
+
+- **ADR-0131 (proposed): a second CI runner host is a Windows 11 Pro mini PC, configured only by
+  Ansible.** CI is queue-bound, and our jobs need a Linux runner (Docker service containers). The only
+  hand step is `infra-substrate/scripts/bootstrap-windows-host.ps1`, the door for Ansible over SSH; the
+  rest is roles (ADR-0056). Recommended: WSL 2 as host configuration, conditional on runners starting
+  after a reboot without a stored password; fallback is a Hyper-V guest whose existence is OpenTofu's.
+  A `ci_runner` role replaces infra-terraform's runner scripts for every host.
+- **Why ADR-0056 was not followed** (`docs/2026-10-03-why-adr-0056-was-not-followed.md`). Two hosts,
+  the CI runner and the mail gateway, are configured by scripts and hand steps although ADR-0056 gives
+  a host's inside to Ansible. There are six verified causes; the central ones are that the session
+  hook shows only locked ADRs and that ADR-0124 and ADR-0083 quote only ADR-0056's OpenTofu half. Each
+  fix is listed in DECISION-DEBT.
+- **ADR-0130 — a tenant's products are paths on its host routed at the edge, and its owner is provisioned
+  already linked** (accepted 2026-10-02): edge path routing, `tenants.paridyum.com` for synthetic tenants,
+  own-domain certificates only for verified bindings, interim sign-in on `auth.paridyum.com` scoped to the
+  tenant's organization (amends ADR-0126's consequence), the owner's linked user and `operator` grants
+  made by the saga, defaults instead of seeds, canonical redirects.
+- **`PLAN-TENANT-HOSTS.md` — a new tenant's products work on its own host** (2026-10-02). Details S6:
+  what stands between an `active` tenant and its landing, careers and dashboard on its host, read from
+  the estate; eight decisions owed (H1–H8: the app zone, synthetic hosts, path routing at the edge,
+  own-domain certificates, the login host without a System-API window, the owner's access, defaults
+  over seeds, canonical redirects), three research items, the slices, and a scripted end-to-end test.
+- **ADR-0129: signup opens before a real off-host backup exists**, a narrow risk acceptance signed
+  by the operator on 2026-09-29. It covers portal accounts and org rows only, closes on a real off-host
+  restore, and is reviewed on 2026-10-29. `region-registry.yaml` now generates the portal's sign-in
+  host `<region code>.paridyum.in`, which is `in.paridyum.in` for region `in`.
+
+- **ADR-0128: paridyum.com is created through paridyum.in, and genesis provisions only the platform**
+  (2026-09-29). Supersedes ADR-0118, carrying decisions 1, 2, 4, 5 and 6 and replacing D3's adoption.
+  `PLAN-PARIDYUM-IN.md` §3b sets out the sprint that builds it, S1 to S8. ADR-0126's sign-in section now
+  follows ADR-0119 D2 and D4: a login host on the tenant's domain, and owners arriving through federation
+  to the portal instance.
+
+- **`PLAN-PARIDYUM-IN.md` — paridyum.in brings every tenant up; nothing is hand-spun** (2026-09-29).
+  The operator's direction recorded as three rules; provisioning as identity, records, Releases and
+  routing on shared deployments; every product mapped to its surface and its gap; six waves (W0 to
+  W5) with observed done-whens; and the eight decisions only the operator can make.
+  `PLAN-TENANT-FLOW.md` points to it.
+
 - **ADR-0125 — Postgres backups run through the Barman Cloud plugin, and cert-manager issues its
   certificates** (`accepted` 2026-09-28, the operator: "do it"). CloudNativePG 1.30 warns that native
   Barman Cloud support is removed in 1.31, and every backup here used it. The plugin (v0.15.0, manifest
@@ -149,6 +201,28 @@ handle — file names may be reorganised, ids never are.
   `lib-tenancy` and is not an answer to whether the isolation mechanism should exist twice.
 
 ### Changed
+
+- **The `paridyum-platform` plugin is 0.3.0, and `marketplace.json` now agrees with it.** Claude
+  Code refreshes an installed plugin only when its version changes, and the version had stayed
+  0.2.0 since 2026-09-24 through every hook change since — the SessionStart listing of accepted
+  ADRs, the checkpoint guard's staged-size fix (#43) and the registry-read class (#44). So no
+  workstation had received them, while `installed_plugins.json` recorded a newer commit than the
+  hooks it was running. `marketplace.json` still declared 0.1.0. Nothing yet checks that a harness
+  change advances the version.
+- **One building, one name** (the operator, 2026-09-29). `region-registry.yaml`'s only datacentre is
+  `IN-BIDHOLI-01`, the address registry's name for the one real site. `in-mum-1` and `in-hyd-1` were
+  listed as `live` and never built. The identifier convention changes with it, in the schema pattern,
+  GLO-0008 and RFC-0014, and RFC-0051's claim that both were live carries a dated correction.
+- **`PLAN-PARIDYUM-IN.md` W3 and S5 corrected** (2026-09-29). ADR-0039 D1 puts the tenant saga in
+  `platform-tenancy`, not `platform-deployment`. The saga calls `platform-deployment` for Releases and sign-in
+  clients, and `platform-routing` for host bindings. The operator chose to build both as owners, not to
+  let the saga write their tables.
+
+- **The check suite runs on a pull request only when the change can reach it** (ADR-0124 addendum,
+  2026-09-29). `scripts/check-suite-scope.sh` decides from the diff: a checker, a registry or schema,
+  `TESTING.md`, or an artifact the suite plants into. Any doubt runs it. It always runs on a push to
+  main, and nightly at 03:00 IST, a new `schedule` trigger. Six cases in `test-checks.sh` prove the
+  rule. Replayed over main's last 30 commits, it skips 17.
 
 - **ADR-0092 is dated: its ids belong to a control plane that no longer exists.** The owner subject,
   the operations project and the `console-docket` client it quotes were destroyed with the estate's
@@ -1474,6 +1548,41 @@ handle — file names may be reorganised, ids never are.
 - `README.md` and `CLAUDE.md` state the ADR-0014 resolution rules.
 
 ### Fixed
+
+- **RUN-0001's workspace layout lists a folder for every class in `class-registry.yaml`.** It still
+  held only C-0002's classes, so `web/` and `consoles/` existed on every workstation without
+  appearing in the runbook that decides where a repository is cloned, and `mobile-`, `agent-` and
+  `sdk-` had no folder at all. The paragraph under it now names the registry rather than C-0002.
+- **SessionStart reads a repository's class from `class-registry.yaml`.** It matched C-0002's
+  prefixes from a case statement, so every `web-`, `console-`, `mobile-`, `agent-` and `sdk-`
+  repository was told at the start of each session that its name broke the naming scheme, and
+  shown every locked artifact rather than those its class binds. Found while adding `game-`
+  (ADR-0133). Watched failing: the old hook says `web-hiring` does not match the scheme.
+- **The checkpoint hook's 5 MB guard measures what is committed, not what is on disk** (ADR-0133
+  decision 9). It measured the working-tree file, so a Git LFS asset — full-size on disk, a small
+  pointer in the index — was left out by the guard whose own message recommends LFS. And it read
+  quoted paths, so a large file with a non-ASCII name matched nothing and was committed. It now
+  measures the staged blob and reads paths NUL-separated. Watched failing: the old hook leaves out
+  the LFS-style asset and commits the 6 MB non-ASCII file.
+- **`pnpm-lock.yaml` and `package-lock.json` count as lockfiles in the review budget** (STD-0007,
+  `check-pr.sh`). The `*.lock` pattern's comment said it covered them, and it did not: their names end
+  in `.yaml` and `.json`, so every dependency change in a web repository spent the budget on generated
+  lines. The test fixture now carries both, and the count must read 500, not 4100. Watched failing: the
+  old script counts 2300 on the same branch.
+- **knowledge-check's commit checks read the PR's commits, not GitHub's merge commit.** On a pull
+  request, `HEAD` is the merge commit GitHub synthesises (`Merge <head> into <base>`), and the
+  identity and regression steps ended their range there. So every PR failed C-0003's Conventional
+  Commit rule on a commit no author wrote. The failure was latent because earlier runs never
+  reached the step (no Actions minutes, then no `gh` on the runner). Both ranges now end at
+  `github.event.pull_request.head.sha`.
+- **The check suite's "a type that does not name it back" case plants again** (2026-09-29). Its anchor
+  is a literal `governed_by:` line in `test-registry.yaml`, and knowledge#27 added `ADR-0128` to that line.
+  So the plant found no anchor, the expected warning never appeared, and `main`'s suite failed. The anchor
+  follows the line. #27 was merged before its own CI had run the suite, which would have caught it.
+
+- **`scripts/render-diagram.sh` passes `shellcheck -S error` again** (SC1087). `"$EXTERNAL[^…]"` read
+  as an array subscript; it is now `"${EXTERNAL}[^…]"`, the same regex. The shell-lint step had
+  failed on every push to `main` since 2026-09-28.
 
 - **A consuming repository could not commit once its knowledge snapshot was refreshed.** knowledge#16
   made `check-repo.sh` and `check-migrations.sh` refuse to inspect their own vendored snapshot, and

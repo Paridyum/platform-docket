@@ -45,6 +45,12 @@ Identical on every platform, including inside WSL2:
 │   ├── services/   clones of svc-*
 │   ├── libs/       clones of lib-*
 │   ├── tools/      clones of tool-*
+│   ├── games/      clones of game-* (ADR-0133)
+│   ├── web/        clones of web-*
+│   ├── consoles/   clones of console-*
+│   ├── mobile/     clones of mobile-*
+│   ├── agents/     clones of agent-*
+│   ├── sdks/       clones of sdk-*
 │   ├── infra/      clones of infra-*
 │   ├── specs/      clones of spec-*
 │   └── templates/  clones of template-*
@@ -54,8 +60,10 @@ Identical on every platform, including inside WSL2:
 └── scratch/        deleted without warning
 ```
 
-The `paridyum/` subdirectories mirror the repository class prefixes from C-0002, so a
-repository's name determines where it is cloned with no lookup.
+The `paridyum/` subdirectories mirror the class prefixes in `class-registry.yaml` (C-0007), so a
+repository's name determines where it is cloned with no lookup. A class added to the registry adds
+its line here; until 2026-10-07 this tree still held only C-0002's classes, while `web/` and
+`consoles/` already existed on disk.
 
 **Why `~/Developer` and not `~/Documents` (macOS).** `~/Documents` is synced by iCloud
 Drive on many Macs, and syncing a `.git` directory or a Cargo `target/` directory

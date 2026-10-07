@@ -21,8 +21,10 @@ enforced_by: []
 **A datacentre is a failure domain inside a region. A region may contain one or more; the count is a
 property of that region, not a platform-wide policy.**
 
-Identifier: `<region>-<IATA city>-<ordinal>`, e.g. `in-mum-1`. Recorded per region in
-`region-registry.yaml`. Under RFC-0019 one datacentre is one Proxmox cluster.
+Identifier: **the site's name in `address-registry.yaml`**, `<COUNTRY>-<LOCALITY>-<NN>`, e.g.
+`IN-BIDHOLI-01`, recorded per region in `region-registry.yaml`. *Changed 2026-09-29 by the operator:
+it was `<region>-<IATA city>-<ordinal>` (`in-mum-1`), which gave the one real site a second name that
+no inventory used.* Under RFC-0019 one datacentre is one Proxmox cluster.
 
 ## The rule that separates it from a region
 

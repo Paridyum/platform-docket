@@ -361,3 +361,37 @@ so a repository scaffolded from a template inherited the blind spot.
 
 **The ordering is the lesson.** A guard that lands without its call sites fixed breaks CI the moment the
 Actions allowance resets. Guard, then grep for what it breaks, then fix that — in the same change.
+
+## 2026-10-07 — a gaming line → RFC-0059, ADR-0133
+
+**What arrived.** The operator: pilot or prototype a few game ideas that may or may not ship, with
+naming that does not depend on the engine — Unreal for one title, Bevy for another — under "our
+gaming vertical". First asked for a reading of the workspace and where games fit; then, on seeing
+the recommendation, to complete the sprint.
+
+**How it was worked.** The router first, then the artifacts it routes to for naming a repository
+and proposing a vertical: C-0006, C-0007, C-0010, `class-registry.yaml`, `product-registry.yaml`,
+then ADR-0004, ADR-0005, ADR-0006, ADR-0107, ADR-0111, ADR-0112, RFC-0052 and RUN-0001. Three
+decisions went to the operator in one structured question — the gaming gate, the class, merging —
+and `paridyum-platform:new-decision` wrote both artifacts. The work happened in a worktree off
+`origin/main`, because the local `main` checkout was behind `origin/main` by a month of merges and
+ahead of it by unpushed checkpoint commits holding only research logs.
+
+**Tried and rejected here, none of it earning an ADR of its own:**
+
+1. **The company route as an exemption.** The first recommendation, in chat, was that a separate
+   company "fits better". That is right about the entity and wrong if read as lifting anti-goal 6;
+   writing D1 out exposed it. A company changes who signs, not what attention is spent on. RFC-0059
+   keeps the correction as a rejected alternative rather than letting the chat version stand.
+2. **One pull request per artifact.** RFC-0059 and ADR-0133 cite each other, and `check-knowledge.sh`
+   fails a dangling reference as an error, so either split leaves a branch red. They shipped
+   together, with the review-budget exception saying why.
+3. **Reading "allow for prototyping" as an amendment to C-0006.** Recorded instead as the narrowest
+   reading the answer supports: spikes now, the gate untouched. The wider reading would have
+   written a constitutional amendment on an inference.
+
+**Found on the way, each queued as its own change:** the checkpoint guard measured the working-tree
+size, so it left out exactly the Git LFS assets its own message recommends (ADR-0133 decision 9);
+and the session-context hook still matched C-0002's seven prefixes, so every `web-` and `console-`
+repository was told at session start that its name broke the scheme, and shown every locked ADR
+unfiltered.

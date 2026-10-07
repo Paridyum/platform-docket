@@ -95,6 +95,30 @@ classes:
       repository is scaffolded by hand and becomes the de facto template without
       having been reviewed as one.
 
+  - class: game
+    prefix: game-
+    scope: game
+    stacks: [rust, cpp]
+    deployable: false
+    ci: true
+    description: One title's game client, distributed to players' own devices rather than run on the cluster.
+    declared: 2026-10-07
+    notes: >
+      Added by ADR-0133 for RFC-0059's gaming line.
+      A STACK IS A LANGUAGE, NEVER AN ENGINE. Bevy is `rust` and Unreal is `cpp`, as
+      `mobile` has React Native on `typescript` and Flutter on `dart`. The engine is named
+      in exactly one place, the title's own ADR, so no repository name, folder or scope
+      carries it. Under ADR-0107 the stack suffix is optional, and appears only for a port —
+      one title built in two engines.
+      `deployable: false` because a title ships to stores and players' machines, never onto
+      the cluster: ADR-0020 does not bind it, and the class starts, as `mobile` did, with no
+      release governance. A dedicated server, code shared between titles, asset storage and
+      an engine that needs native Windows are deferred with their triggers in ADR-0133
+      decision 8.
+      `cpp` has no toolchain pin, lint or standard; the first C++ title writes them. No
+      repository exists, and per RFC-0059 D2 none receives production code until hosting has
+      a paying customer who renewed.
+
   - class: infra
     prefix: infra-
     scope: infra

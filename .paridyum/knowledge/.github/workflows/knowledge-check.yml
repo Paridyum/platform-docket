@@ -14,6 +14,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Nightly, on main's latest commit (GitHub: "Scheduled workflows run on the latest commit on the
+  # default branch"). The check suite always runs here, so a pull request that skipped it because
+  # nothing it changed could reach it is still proven within a day (ADR-0124, 2026-09-29 addendum).
+  schedule:
+    - cron: "30 21 * * *"   # 03:00 IST
 
 permissions:
   contents: read
@@ -61,7 +66,26 @@ jobs:
       # Proves the gates by breaking them. README.md's rule is "treat a green check as
       # unproven until you have watched it fail"; this is that rule as a build step, and it
       # is why check-registry.yaml may count these checks as implemented rather than declared.
+      # ADR-0124, 2026-09-29 addendum. The suite takes 40 to 90 minutes on the estate runner and holds
+      # one of its two slots for all of it. On a pull request it runs only when the change can reach
+      # it: a checker, a registry or schema, TESTING.md, or an artifact the suite plants a defect into
+      # (scripts/check-suite-scope.sh says which, and why). It always runs on a push to main and
+      # nightly. GITHUB_SHA on a pull request is its merge commit, so HEAD^1..HEAD is exactly what the
+      # pull request changes against its base; fetch-depth 0 above makes HEAD^1 present. Any failure
+      # to compute the diff runs the suite.
+      - name: Does this change reach the check suite?
+        id: scope
+        if: github.event_name == 'pull_request'
+        run: |
+          if files="$(git diff --name-only HEAD^1 HEAD)"; then
+            printf '%s\n' "$files" | ./scripts/check-suite-scope.sh >> "$GITHUB_OUTPUT"
+          else
+            echo "could not diff HEAD^1..HEAD, so the suite runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check suite (plant every defect)
+        if: github.event_name != 'pull_request' || steps.scope.outputs.run != 'false'
         run: ./scripts/test-checks.sh
 
       # STD-0008: every blocking tier publishes a machine-readable artifact. This suite is this
@@ -98,6 +122,8 @@ jobs:
           ./scripts/check-pr.sh --body /tmp/pr-body.md
 
       - name: Commit identity and attribution (C-0003)
+        # Not nightly: it gates a change as it arrives, and a scheduled run brings no new change.
+        if: github.event_name != 'schedule'
         # The range was `origin/${{ github.base_ref || 'main' }}..HEAD`, which on a push
         # is ALWAYS empty — origin/main already contains the pushed commit — so this step
         # examined zero commits and reported success on every push. See ADR-0016.
@@ -107,7 +133,11 @@ jobs:
         # force-push, so both cases fall back to the tip commit alone.
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            range="origin/${{ github.base_ref }}..HEAD"
+            # The PR's own head, not HEAD: on a pull request HEAD is the merge commit GitHub
+            # synthesises ("Merge <head> into <base>"), which no author wrote and which is never a
+            # Conventional Commit, so ending the range at HEAD failed every PR once this step was
+            # first reached on the estate runner (knowledge#31, 2026-09-30).
+            range="origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
           else
             before="${{ github.event.before }}"
             if [[ -z "$before" || "$before" =~ ^0+$ ]] \
@@ -134,9 +164,15 @@ jobs:
       # workflow (ADR-0016), so its final shape is worth copying verbatim rather than
       # refactoring both into one place and risking the same defect twice.
       - name: Regression test on a fix (STD-0008)
+        # Not nightly: it gates a change as it arrives, and a scheduled run brings no new change.
+        if: github.event_name != 'schedule'
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            range="origin/${{ github.base_ref }}..HEAD"
+            # The PR's own head, not HEAD: on a pull request HEAD is the merge commit GitHub
+            # synthesises ("Merge <head> into <base>"), which no author wrote and which is never a
+            # Conventional Commit, so ending the range at HEAD failed every PR once this step was
+            # first reached on the estate runner (knowledge#31, 2026-09-30).
+            range="origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
           else
             before="${{ github.event.before }}"
             if [[ -z "$before" || "$before" =~ ^0+$ ]] \

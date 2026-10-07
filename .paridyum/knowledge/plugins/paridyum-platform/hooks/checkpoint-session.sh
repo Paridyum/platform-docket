@@ -207,14 +207,19 @@ fi
 # A large file is UNSTAGED rather than blocking the commit: the actual work still gets preserved,
 # which is the whole point of ADR-0025, while the bulk is left on disk for a human to decide
 # about. Refusing the entire commit would trade a bloated repository for a lost session.
+#
+# WHAT IS MEASURED IS THE STAGED BLOB, NOT THE FILE ON DISK (ADR-0133 decision 9). They differ
+# exactly when a clean filter ran: a Git LFS asset is full-size on disk and a small pointer in the
+# index, so measuring the disk left out the very files the message below recommends tracking with
+# LFS. A deletion has no staged blob and is skipped. Paths are read NUL-separated because
+# `--name-only` quotes a non-ASCII path, and a quoted path matched no file and slipped past.
 MAX_FILE_BYTES=$((5 * 1024 * 1024))
 skipped=""
-while IFS= read -r f; do
-  [[ -f "$f" ]] || continue
-  sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+while IFS= read -r -d '' f; do
+  sz="$(git cat-file -s ":$f" 2>/dev/null)" || continue
   [[ -n "$sz" && "$sz" -gt "$MAX_FILE_BYTES" ]] || continue
   git reset -q -- "$f" 2>/dev/null && skipped+="  ${f} ($((sz / 1024 / 1024))MB)"$'\n'
-done < <(git diff --cached --name-only)
+done < <(git diff --cached --name-only -z)
 if [[ -n "$skipped" ]]; then
   say "left OUT of this commit — over $((MAX_FILE_BYTES / 1024 / 1024))MB each, and permanent once pushed:"
   printf '%s' "$skipped" >&2
