@@ -6,7 +6,7 @@
 //! of the org id — `uuidv5(namespace, orgId)` — so a request resolves its tenant with no database
 //! lookup (login must work before the store holds data; the derivation cannot depend on it).
 //!
-//! The SAME value is computed by `web-admin`'s `deriveTenantId` (TypeScript) and by
+//! The SAME value is computed by `web-console`'s `deriveTenantId` (TypeScript) and by
 //! `platform-tenancy`'s provisioning (`uuid.uuid5` in Python) when it seeds the `tenants` row —
 //! same namespace, same org id, same uuid on every side. The namespace is FIXED FOREVER; changing
 //! it re-keys every tenant.
@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn paridyum_org_derives_the_known_tenant_id() {
         // Proven cross-language: Python `uuid.uuid5(NAMESPACE, "389623583590057140")` and
-        // web-admin's `deriveTenantId` both produce this, and it is the tenant id the live cluster
+        // web-console's `deriveTenantId` both produce this, and it is the tenant id the live cluster
         // was seeded with. A mismatch here would silently isolate Paridyum from its own rows.
         let derived = derive_tenant_id("389623583590057140").expect("non-empty org id");
         assert_eq!(

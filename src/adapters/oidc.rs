@@ -68,7 +68,7 @@ impl OidcConfig {
     fn scope(&self) -> String {
         // `resourceowner` puts the signing-in user's org id into the token
         // (urn:zitadel:iam:user:resourceowner:id); the served backend derives the tenant from it
-        // (ADR-0099/ADR-0082), the way web-admin already does. Without it a multi-tenant request
+        // (ADR-0099/ADR-0082), the way web-console already does. Without it a multi-tenant request
         // names no tenant and is refused.
         let mut scope = String::from("openid profile urn:zitadel:iam:user:resourceowner");
         if let Some(project) = &self.project_id {
