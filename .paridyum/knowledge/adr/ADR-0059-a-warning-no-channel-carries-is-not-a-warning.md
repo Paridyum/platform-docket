@@ -32,6 +32,13 @@ enforced_by:
 reserves `locked` for a rule CI mechanically rejects, and §5b of the new-decision procedure says
 to lock in a separate commit.
 
+**Amended 2026-10-08 by ADR-0134 — decision 4 only.** Its rule stands: a harness change advances
+the plugin's version. Its means changes from discipline to a gate, checked once per pull request
+(`pr.harness_change_advances_plugin_version`), because discipline did not hold — `0.2.0` carried
+two weeks of hook changes to no workstation, and `marketplace.json` said `0.1.0` throughout. The
+rejected alternative below is left as written: it was about a gate on every *commit*, and for that
+gate it is still right.
+
 ## Context
 
 RFC-0027 was written on 2026-08-18 to capture research provenance at the moment of the fetch. On

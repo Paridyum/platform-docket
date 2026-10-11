@@ -13,6 +13,60 @@ handle — file names may be reorganised, ids never are.
 
 ### Added
 
+- **ADR-0137: the saga creates each product's project and hands it to platform-deployment as that
+  project's owner.** Zitadel v4 does not make a project's creator its owner, so `ORG_PROJECT_CREATOR` left
+  deployment unable to read what it had made (X2's 409 loop). Deployment is now `PROJECT_OWNER` of each
+  product project and nothing else, rather than `ORG_OWNER` of every tenant.
+- **ADR-0136: the app zone is a dedicated low-cost domain, set as configuration.** `app.paridyum.in` was
+  the first choice. The free edge certificate covers one level, and the edge accepts only the rented
+  tier, so it was rejected. Changing the zone later is configuration: bind the new hosts, move canonical,
+  keep the old as redirects.
+- **RFC-0072 (accepted): the portal at paridyum.in takes a person from joining to a working tenant.**
+  web-dashboard as a backend-for-frontend at paridyum.in (ADR-0128 D1). It signs people in at the portal
+  instance and acts with the person's own token against platform-tenancy. Tenancy fronts routing for
+  own-domain verification. Registration opens only behind RFC-0056 D's controls. Ten slices (S7.0–S7.9)
+  plus a gated S7.R.
+- **The `knowledge-audit` skill runs `forge audit`** (plugin 0.5.0). It still told an agent to sweep
+  the organisation by hand "until `forge audit` ships", and it has. Local clones are now audited
+  with `forge audit`, cleared only on request with `forge tidy` or `forge knowledge sync --all`, and
+  the organisation-wide name sweep is kept for repositories nobody has cloned. The first harness
+  change after ADR-0134: committed without the bump, `check-pr.sh` refused it.
+- **`forge` is installed at a pinned commit** (ADR-0066, ADR-0053). `tool-registry.yaml` registers it
+  — `cargo` from `Paridyum/tool-forge` at a 40-character sha — and `install-tools.sh` gains the
+  `cargo` method it declared and could not run: `cargo install --locked --git … --rev …` into
+  `~/.cargo/bin`, with `cargo install --list`'s record of the revision as the installed-at-the-pin
+  check. Until 2026-10-08 no workstation had `forge` at all; the day's snapshot refresh built it from
+  source to run it, and RFC-0060 named the install as owed. RUN-0001 and `bootstrap.sh` now say how,
+  and stop promising a `forge doctor` that does not exist.
+- **SessionStart says when CI cannot run** (RFC-0060 D5; plugin 0.4.0). On 2026-10-07 every
+  self-hosted runner went offline and `main` sat queued for more than a day with nobody told. The
+  session summary now opens with a line when no runner is online, or when this repository's run on
+  `main` has waited in the queue for over an hour while runners are online. It asks GitHub with the
+  operator's own `gh` login — no new secret — bounded to a few seconds, and says nothing when it
+  cannot ask. `PARIDYUM_CI_HEALTH=0` turns it off. The channel was the operator's choice, and
+  closes RFC-0060's first open question.
+- **ADR-0134 (accepted): a harness change advances the plugin version, and the pull request is
+  where that is checked.** Amends ADR-0059 decision 4, which had made the version bump discipline
+  rather than a gate. Discipline did not hold — 0.2.0 carried two weeks of hook changes to no
+  workstation — and ADR-0059's objection was to a gate on every checkpoint commit, not on a pull
+  request. Records that the gate (#49) was merged before ADR-0059 was read, and adopts it on the
+  evidence.
+- **RFC-0060 (accepted): the estate is swept, not remembered.** The 2026-10-08 sweep found nothing
+  lost and almost nothing where it belonged — branches and worktrees of merged work, clones parked
+  off `main`, every snapshot stale, research logs on one disk, CI offline with no one told — all
+  cleared by hand. Proposes `forge audit` (the report ADR-0004 has required since 2026-08-06 and
+  nobody built), a `forge tidy` that removes only what is provably held elsewhere, worktrees under
+  `scratch/pd-wt` removed on merge, one command to refresh every snapshot, and an alarm when CI
+  cannot run.
+
+- **A harness change cannot merge without a plugin release** (ADR-0007). Claude Code refreshes an
+  installed plugin only when its version changes, and the version had stayed 0.2.0 through two
+  weeks of hook changes that therefore reached no workstation (#47). Two checks close it:
+  `pr.harness_change_advances_plugin_version` fails a branch that changes the plugin's hooks,
+  skills, agents or commands without raising `plugin.json`'s version, and
+  `knowledge.marketplace_agrees_with_plugin_version` fails when the marketplace entry and the
+  manifest declare different versions, as they did (0.1.0 against 0.2.0). A README edit under the
+  plugin does not count.
 - **RFC-0059 (accepted): a gaming line is a vertical; its prototypes are spikes now, and a game is
   built only after hosting renews.** The operator asked to pilot or prototype a few game ideas, with
   engine-agnostic naming. Under C-0006 the line is a vertical, so anti-goal 6 gates building a game
@@ -202,6 +256,14 @@ handle — file names may be reorganised, ids never are.
 
 ### Changed
 
+- **ADR-0039 addendum (2026-10-09): a derived Zitadel organization id is decimal.** Zitadel's login reads
+  the organization scope with `([0-9]+)`, so a hex id was truncated (`4aeec496…` → `4`), and no tenant's
+  sign-in page was its own (X2). The id is still derived from the provisioning, now in base 10.
+- **The app zone is `paridyum.xyz`** (ADR-0136, filled in 2026-10-09): default hosts are `<slug>.paridyum.xyz`.
+- **ADR-0070 addendum (2026-10-09): a role counts only in the project the resource server pins.** A
+  multi-audience token stays legitimate; a verifier reads only its own project's roles claim.
+  `paridyum-auth` 0.2.0 took the first claim, so platform-deployment saw platform-routing's role and
+  refused the saga (X2).
 - **The `paridyum-platform` plugin is 0.3.0, and `marketplace.json` now agrees with it.** Claude
   Code refreshes an installed plugin only when its version changes, and the version had stayed
   0.2.0 since 2026-09-24 through every hook change since — the SessionStart listing of accepted
@@ -1549,6 +1611,21 @@ handle — file names may be reorganised, ids never are.
 
 ### Fixed
 
+- **Two gates counted the errors they printed.** `check-changelog.sh`'s duplicate-category rule and
+  `check-repo.sh`'s check for pnpm's rewritten `allowBuilds` placeholder each called `err` inside a
+  piped `while` loop. Bash runs that loop in a subshell, so each printed its ✘ and the error count
+  died with the subshell: a duplicated `### Added` was reported and the changelog still came out
+  "valid", and a placeholder that enforces nothing passed RFC-0003's posture. Both loops now read
+  from process substitution, and the suite asserts on the exit status. Watched failing: the old
+  scripts exit 0 on both planted defects. The same class was swept for across every gate and hook;
+  these were the only two.
+- **`check-repo.sh` compares the installed harness by its files in a consuming repository.** It
+  looked for the plugin's pinned knowledge commit in the repository being checked, which a
+  product repository never contains, so every repository warned "cannot tell" on every run. It now
+  compares the installed hooks and skills with the repository's vendored harness, names both
+  versions when they differ, and is silent when they match. Comparing files is also the stricter
+  test: on 2026-10-07 the recorded pin was newer than the cached hooks, which a commit comparison
+  cannot see. The install whose scope applies to the repository is read, not whichever came first.
 - **RUN-0001's workspace layout lists a folder for every class in `class-registry.yaml`.** It still
   held only C-0002's classes, so `web/` and `consoles/` existed on every workstation without
   appearing in the runbook that decides where a repository is cloned, and `mobile-`, `agent-` and

@@ -55,7 +55,7 @@ the copy was the honest move: the shared Rust library did not exist, and inventi
 have decided an open question — RFC-0009 Q5 — silently and in the wrong place.
 
 **The extraction was blocked on a name, not on code.** `Paridyum/lib-auth` already exists and is
-TypeScript: it publishes `@paridyum/auth`, which `web-paridyum`, `web-admin`, `web-dashboard`,
+TypeScript: it publishes `@paridyum/auth`, which `web-paridyum`, `web-console`, `web-dashboard`,
 `web-hiring` and `console-docket` all depend on, and which ADR-0038, ADR-0045, ADR-0082 and
 ADR-0092 D5 all refer to by repository name.
 
@@ -129,7 +129,7 @@ graph across both.
 > **Found while applying this, and deliberately not fixed here:** `manifest.schema.json` describes
 > `name` as *"the repository name with its class prefix removed: `svc-billing` is `billing`"*, and
 > **every manifest in the estate carries the full repository name instead** — `platform-identity`,
-> `tool-forge`, `web-admin`, `lib-ui`, all eleven. The convention in the code is unanimous and the
+> `tool-forge`, `web-console`, `lib-ui`, all eleven. The convention in the code is unanimous and the
 > schema description disagrees with all of it; the pattern permits both, so nothing ever failed. The
 > two new manifests follow the convention rather than the description, and reconciling them is a
 > separate change — noted rather than silently inherited.

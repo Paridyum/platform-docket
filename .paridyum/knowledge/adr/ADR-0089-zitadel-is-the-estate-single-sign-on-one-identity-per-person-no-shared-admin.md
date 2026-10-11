@@ -57,7 +57,7 @@ and where each stands:
 
 | System | Mechanism | State |
 | --- | --- | --- |
-| `web-admin` (tenant admin) | OIDC | done |
+| `web-console` (tenant admin) | OIDC | done |
 | `console-*` operator tools | OIDC device flow (ADR-0070 D5) | contracted in `applications.yaml` |
 | the Kubernetes API | OIDC (`kube-apiserver` → Zitadel) | aspirational — replaces static kubeconfig |
 | observability (Grafana, …) | OIDC | when it exists |

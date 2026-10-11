@@ -316,6 +316,17 @@ plant_ok "a reusable workflow beside a triggered one still passes" m_two_wf_one_
 plant "a script piped to ssh bash -s (ADR-0056)"      m_ssh_bash_s
 plant "a script redirected into ssh (ADR-0056)"       m_ssh_redirect
 plant "a script cat into ssh, over continued lines (ADR-0056)" m_ssh_cat_multi
+# RFC-0003's pnpm posture: pnpm's rewritten allowBuilds placeholder. The ✘ was printed inside a piped
+# `while`, so the error was never counted and the gate passed (found 2026-10-08). The control is the
+# same workspace with an explicit boolean, so the placeholder is the only difference between them.
+pnpm_ws() {
+  printf '{}\n' > "$1/package.json"
+  printf 'minimumReleaseAge: 1440\ntrustPolicy: no-downgrade\nblockExoticSubdeps: true\nallowBuilds:\n  esbuild: %s\n' "$2" > "$1/pnpm-workspace.yaml"
+}
+m_pnpm_explicit()    { pnpm_ws "$1" false; }
+m_pnpm_placeholder() { pnpm_ws "$1" "set this to true or false"; }
+plant_ok "a pnpm workspace with every build decided passes" m_pnpm_explicit
+plant "pnpm's allowBuilds placeholder fails, not only prints (RFC-0003)" m_pnpm_placeholder
 plant "SOP.md absent from a classed repo (STD-0013)" m_class_no_sop
 plant "CLAUDE.md absent"                       m_no_claude
 plant "CLAUDE.md over the line budget"         m_long_claude
@@ -519,6 +530,34 @@ expect_ok "a 40-line branch diff passes" \
 expect_ok "no branch diff reports n/a rather than passing" \
   bash -c "bash scripts/check-pr.sh --root '$PR' --base small 2>&1 | grep -q 'n/a'"
 
+# pr.harness_change_advances_plugin_version (ADR-0007). A hook edit that leaves the version alone
+# ships to no installed copy; the same edit with the version raised is the release; a README edit
+# is not harness and must not demand one. Three branches off one base, checked out in turn.
+HV="$TMP/harness"; HVP="plugins/paridyum-platform"; mkdir -p "$HV/$HVP/.claude-plugin" "$HV/$HVP/hooks"
+(
+  cd "$HV" && git init -q -b main . \
+    && git config user.email t@t.t && git config user.name T && git config commit.gpgsign false \
+    && printf '{"name":"paridyum-platform","version":"1.0.0"}\n' > "$HVP/.claude-plugin/plugin.json" \
+    && printf '#!/bin/sh\nexit 0\n' > "$HVP/hooks/guard.sh" && printf 'readme\n' > "$HVP/README.md" \
+    && git add -A && git commit -qm "chore: base" \
+    && git checkout -q -b hook-only && printf '#!/bin/sh\nexit 1\n' > "$HVP/hooks/guard.sh" \
+    && git commit -qam "fix: the hook" \
+    && git checkout -q -b hook-and-bump \
+    && printf '{"name":"paridyum-platform","version":"1.1.0"}\n' > "$HVP/.claude-plugin/plugin.json" \
+    && git commit -qam "chore(release): 1.1.0" \
+    && git checkout -q -b readme-only main && printf 'more\n' >> "$HVP/README.md" \
+    && git commit -qam "docs: the readme"
+) >/dev/null 2>&1
+git -C "$HV" checkout -q hook-only >/dev/null 2>&1
+expect_caught "a hook change that leaves the plugin version alone" \
+  bash scripts/check-pr.sh --root "$HV" --base main --body "$PR/body-plain.md"
+git -C "$HV" checkout -q hook-and-bump >/dev/null 2>&1
+expect_ok "the same hook change with the version raised" \
+  bash scripts/check-pr.sh --root "$HV" --base main --body "$PR/body-plain.md"
+git -C "$HV" checkout -q readme-only >/dev/null 2>&1
+expect_ok "a README change under the plugin does not demand a release" \
+  bash scripts/check-pr.sh --root "$HV" --base main --body "$PR/body-plain.md"
+
 printf '\n── hook reachability (ADR-0027) ────────────────────────────────────\n'
 # The failure these cover was invisible for a whole session: the plugin declared and enabled while
 # the marketplace had never been added, so layer 1 never denied an edit and the ADR-0025 checkpoint
@@ -604,6 +643,34 @@ PY3
 expect_ok "a pin with no harness change stays silent" \
   env HOME="$SH" bash "$SP/scripts/check-repo.sh" --root "$SP"
 
+# A CONSUMING repository never contains the knowledge commit the pin names, so it is compared by
+# FILES: the installed copy against the repository's vendored harness (ADR-0001). The old message
+# — "not in this clone, cannot tell" — fired in every repository on every run. Three cases: the
+# same harness is silent, a stale install is named, and a pin with nothing to compare says so.
+CR="$TMP/consumer"; CRH="$CR/.paridyum/knowledge/plugins/paridyum-platform"; INST="$TMP/installed-harness"
+mkdir -p "$CRH/hooks" "$CRH/.claude-plugin"
+printf '#!/bin/sh\nexit 0\n' > "$CRH/hooks/guard.sh"; printf '{"version":"1.0.0"}\n' > "$CRH/.claude-plugin/plugin.json"
+cp -R "$CRH" "$INST"
+( cd "$CR" && git init -q -b main . && git remote add origin https://example.invalid/consumer.git ) >/dev/null 2>&1
+CH="$TMP/consumerhome"; mkdir -p "$CH/.claude/plugins"
+pin_entry() { python3 - "$CH" "$1" <<'PYC'
+import json, pathlib, sys
+e = {"scope": "user", "version": "1.0.0", "gitCommitSha": "0" * 40}
+if sys.argv[2]: e["installPath"] = sys.argv[2]
+pathlib.Path(sys.argv[1], ".claude/plugins/installed_plugins.json").write_text(
+    json.dumps({"plugins": {"paridyum-platform@paridyum": [e]}}))
+PYC
+}
+pin_entry "$INST"
+expect_ok "a consuming repository whose installed harness matches its snapshot is silent" \
+  bash -c "! env HOME='$CH' bash '$ROOT/scripts/check-repo.sh' --root '$CR' 2>&1 | grep -q 'installed plugin'"
+printf '#!/bin/sh\nexit 1\n' > "$INST/hooks/guard.sh"
+expect_warns "an installed harness that differs from the snapshot is named" "differs from this repository's vendored harness" \
+  env HOME="$CH" bash "$ROOT/scripts/check-repo.sh" --root "$CR"
+pin_entry ""
+expect_warns "a pin with nothing to compare still says it cannot tell" "cannot tell" \
+  env HOME="$CH" bash "$ROOT/scripts/check-repo.sh" --root "$CR"
+
 printf '\n── checkpoint bulk guard (ADR-0025) ───────────────────────────────\n'
 # `git add -A` stages everything, and a large file is permanent once pushed — git keeps every
 # object and C-0004 denies the rewrite that would remove it. The guard must exclude the bulk and
@@ -651,6 +718,17 @@ expect_ok "a large file with no filter is still left out" \
   bash -c "! git -C '$CL' cat-file -e HEAD:scratch.bin 2>/dev/null"
 expect_ok "a large file is left out whatever its name" \
   bash -c "! git -C '$CL' cat-file -e 'HEAD:scratch-ø.bin' 2>/dev/null"
+
+printf '\n── changelog gate (STD-0005) ──────────────────────────────────────\n'
+# The duplicate-category rule printed its ✘ inside a piped `while`, so the error was never counted
+# and the gate said "valid" — asserted here on the exit status, which is what a caller reads.
+CLG="$TMP/changelog"; mkdir -p "$CLG"
+printf '# Changelog\n\nFormat: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/)\n\n## [Unreleased]\n\n### Added\n\n- **One change.** Explained for the reader who needs it.\n' > "$CLG/one.md"
+{ cat "$CLG/one.md"; printf '\n### Added\n\n- **Another change.** Explained for that reader too.\n'; } > "$CLG/twice.md"
+expect_ok "a changelog with each category once passes" \
+  bash templates/infra-ci/scripts/check-changelog.sh "$CLG/one.md"
+expect_caught "a category twice under one version fails, not only prints" \
+  bash templates/infra-ci/scripts/check-changelog.sh "$CLG/twice.md"
 
 printf '\n── regression gate (STD-0008) ─────────────────────────────────────\n'
 # A real git repository, because the rule is about a commit rather than about a tree: the
@@ -916,6 +994,10 @@ kplant "enforced_by naming an unregistered check"    adr/ADR-0024-nested-tenancy
   "check: db.operator_scope_is_an_explicit_grant" "check: db.no_such_check_exists"
 kplant "check-registry entries out of sorted order"  check-registry.yaml \
   "  - check: repo.claude_md_links_resolve" "  - check: zz.out_of_order_on_purpose"
+# knowledge.marketplace_agrees_with_plugin_version (ADR-0007). The anchor is the key, not a number,
+# so the plant survives every release: whatever the version is, the marketplace stops matching it.
+kplant "a marketplace version the plugin manifest does not carry" .claude-plugin/marketplace.json \
+  '"version": "' '"version": "0.0.0-planted-'
 # knowledge.check_specs_cite_live_artifacts. The plant is the real defect this check was
 # written for: repo.name_matches_scheme's spec cited C-0002's prefix table, which holds seven
 # of the ten classes, so an implementation obeying the spec would have rejected every web-,
@@ -1251,6 +1333,8 @@ fi
 # The genuinely unarmed case stays silent by design — see the RFC; warning from an unrelated
 # directory would fire in every project on the machine.
 SCHOOK="$ROOT/plugins/paridyum-platform/hooks/session-context.sh"
+# The CI-health line asks GitHub; every session test here stays offline unless it opts back in.
+export PARIDYUM_CI_HEALTH=0
 sc_out() { (cd "$pcwd" && printf '{"cwd":"%s"}' "$pcwd" | env "$@" bash "$SCHOOK" 2>/dev/null); }
 # CAPTURE, THEN MATCH — never `sc_out ... | grep -q`. This suite runs under `set -o pipefail`,
 # and `grep -q` exits on its FIRST match, so the producer takes SIGPIPE and the pipeline reports
@@ -1290,6 +1374,42 @@ if [[ "$sc_class_out" == *"does not match the naming scheme in C-0007"* && "$sc_
 else
   bad "SessionStart lists the registry's prefixes for a name that matches none" "$(head -4 <<<"$sc_class_out")"
 fi
+
+# RFC-0060 D5: SessionStart says when CI cannot run. A stub `gh` stands in for GitHub, so the suite
+# needs no network and the runner count is exactly what the stub prints. `exec` matters in the slow
+# stub: the bound kills one process, and a child left holding the pipe would hold the session too.
+GHSTUB="$TMP/ghstub"; mkdir -p "$GHSTUB"
+ci_out() { # ci_out <stub body> [env…] — the summary, with a `gh` that runs <stub body>
+  local body="$1"; shift
+  printf '#!/bin/sh\n%s\n' "$body" > "$GHSTUB/gh"; chmod +x "$GHSTUB/gh"
+  local p; p="$(mktemp -d)/web-example"; mkdir -p "$p/.paridyum"; ln -s "$ROOT" "$p/.paridyum/knowledge"
+  printf '{"cwd":"%s"}' "$p" | env PATH="$GHSTUB:$PATH" PARIDYUM_CI_HEALTH=1 "$@" bash "$SCHOOK" 2>/dev/null
+  rm -rf "$(dirname "$p")"
+}
+ci_case() { # ci_case <label> <expect: say|silent> <pattern> <stub body> [env…]
+  local label="$1" want="$2" pat="$3" body="$4"; shift 4
+  local got; got="$(ci_out "$body" "$@")"
+  if { [[ "$want" == say && "$got" == *"$pat"* ]] || [[ "$want" == silent && "$got" != *"$pat"* ]]; }; then
+    ok "$label"
+  else
+    bad "$label" "$(grep -E 'CI (cannot run|is stuck)' <<<"$got")"
+  fi
+}
+ci_case "SessionStart says when no runner is online" say "CI cannot run" 'echo "0 6"'
+ci_case "healthy runners and an empty queue say nothing" silent "**CI " \
+  'case "$1" in api) echo "6 6";; *) echo "";; esac'
+ci_case "a queue stuck while runners are online is named" say "CI is stuck" \
+  'case "$1" in api) echo "6 6";; run) echo "2020-01-01T00:00:00Z";; esac'
+ci_case "the switch turns the line off" silent "CI cannot run" 'echo "0 6"' PARIDYUM_CI_HEALTH=0
+ci_start="$(date +%s)"
+ci_case "a GitHub that never answers says nothing" silent "CI cannot run" 'exec sleep 30'
+ci_waited=$(( $(date +%s) - ci_start ))
+if [[ "$ci_waited" -lt 10 ]]; then ok "a GitHub that never answers holds a session for seconds, not minutes"
+else bad "a GitHub that never answers holds a session for seconds, not minutes" "waited ${ci_waited}s"; fi
+# The rest of the summary must survive GitHub refusing. The CI block reads with `read`, which returns
+# non-zero on empty input; under `set -e` that would end the hook there and drop every locked decision
+# below it. Watched failing: a copy of the hook with `set -euo pipefail` prints no section at all.
+ci_case "a GitHub that refuses still leaves the whole summary" say "### Rules of engagement" 'exit 1'
 
 # Ages in the ledger. The hook used to compute "now minus created", which straddled a second and
 # floored to a day short, and showed "?" for anything created today. Three proposed fixtures, created
@@ -1490,6 +1610,21 @@ fi
 
 
 printf '\n── tool registry (ADR-0066) ───────────────────────────────────────\n'
+# install-tools.sh's `cargo` method (forge). A stub `cargo` stands in, because the real install
+# clones a private repository and compiles; what is under test is how the script decides a binary
+# is at its pin, which is `cargo install --list`'s record of the revision.
+CSTUB="$TMP/cargostub"; mkdir -p "$CSTUB"
+FORGE_REF="$(python3 -c "import yaml;print(next(t['install']['ref'] for t in yaml.safe_load(open('tool-registry.yaml'))['tools'] if t['id']=='forge'))" 2>/dev/null)"
+cargo_stub() { printf '#!/bin/sh\n%s\n' "$1" > "$CSTUB/cargo"; chmod +x "$CSTUB/cargo"; }
+cargo_stub "[ \"\$2\" = --list ] && printf 'tool-forge v0.1.0 (ssh://x/tool-forge.git?rev=$FORGE_REF#abc1234):\\n    forge\\n'; exit 0"
+expect_ok "a cargo-installed tool recorded at its pin counts as installed" \
+  env PATH="$CSTUB:$PATH" bash scripts/install-tools.sh --check forge
+cargo_stub 'exit 0'
+expect_caught "a cargo-installed tool absent from cargo's list counts as missing" \
+  env PATH="$CSTUB:$PATH" bash scripts/install-tools.sh --check forge
+cargo_stub "[ \"\$2\" = --list ] && printf 'tool-forge v0.1.0 (ssh://x/tool-forge.git?rev=0000000#0000000):\\n'; exit 0"
+expect_caught "an install that does not record the pinned revision fails" \
+  env PATH="$CSTUB:$PATH" bash scripts/install-tools.sh forge
 # knowledge.tool_registry_valid and knowledge.tool_registry_holds_no_version. Five cases,
 # because the registry makes five distinct claims and a schema call proves only one of them.
 #

@@ -2080,6 +2080,22 @@ checks:
       is "partly mechanical and partly not"; this is the mechanical part and it should never
       be described as more.
 
+  - check: knowledge.marketplace_agrees_with_plugin_version
+    spec: >
+      Fails when `.claude-plugin/marketplace.json` lists `paridyum-platform` at a version other
+      than the one its `plugins/paridyum-platform/.claude-plugin/plugin.json` declares, or when
+      that manifest declares no version at all.
+    owner: check-knowledge.sh
+    blocks: [ADR-0134]
+    declared: 2026-10-08
+    notes: >
+      ADR-0007 distributes the harness as a versioned plugin so that it is fixed once, at a
+      version, and the version is what Claude Code compares to decide whether an installed copy
+      is stale. The manifest and the marketplace entry each declare one, and they disagreed —
+      0.2.0 against 0.1.0 — for two weeks with nothing comparing them. Found 2026-10-07 (#47),
+      in the same investigation that found hook changes reaching no workstation; the other half
+      is pr.harness_change_advances_plugin_version.
+
   - check: knowledge.no_check_id_demotion
     spec: >
       Fails when a check id present in tool-forge's implemented registry at the
@@ -2757,6 +2773,26 @@ checks:
       The exception lives in the PR body rather than a config file so the reviewer being asked to
       absorb it can see it, and so a pattern of exceptions is visible in the log.
 
+  - check: pr.harness_change_advances_plugin_version
+    spec: >
+      Fails when a pull request's branch diff changes a file under the paridyum-platform plugin's
+      `hooks/`, `skills/`, `agents/` or `commands/` and leaves `plugin.json`'s version equal to the
+      version at the merge base.
+    owner: check-pr.sh
+    blocks: [ADR-0134]
+    declared: 2026-10-08
+    notes: >
+      Claude Code refreshes an installed plugin only when its version changes, and `claude plugin
+      update` compares versions, not commits. So a harness change merged without a bump reaches
+      no workstation, while installed_plugins.json records the newer commit — the running hooks
+      and the recorded pin disagree, and nothing says so. On 2026-10-07 the version had stayed
+      0.2.0 through every hook change for two weeks, including two fixes merged that day; #47
+      released them as 0.3.0. Only the executable directories count, so a README edit does not
+      demand a release (ADR-0008). In scope only in a repository that holds the plugin.
+      ADR-0134 (2026-10-08) adopts this gate and amends ADR-0059 decision 4, which had chosen
+      discipline over a gate; ADR-0059's objection was to a gate on every commit, not on a pull
+      request.
+
   - check: pr.significant_change_references_design
     spec: >
       Fails when a pull request whose diff matches any clause of ADR-0013's
@@ -3406,7 +3442,7 @@ checks:
       PRESENT BUT A STUB: worse, which is why this reads content rather than existence. pnpm
       REWRITES allowBuilds on an install that meets an unapproved build script, replacing the
       mapping with `pkg: set this to true or false` and discarding the surrounding comments.
-      The file then exists, looks deliberate, and enforces nothing. web-admin's own copy
+      The file then exists, looks deliberate, and enforces nothing. web-console's own copy
       records that this already happened once and the placeholder was committed.
       The same rewrite pins minimumReleaseAgeExclude to an exact version, which expires on the
       next release and sends every first-party package into a 24-hour quarantine — and the

@@ -89,7 +89,7 @@ ADR-0092.** Postings are the hiring domain and live in the platform database —
 already reaches (account-context/RLS) and already writes (applications, profiles), behind an OIDC
 session. `console-docket` was the intuitive choice ("beside the roster") but it is wrong here: it
 talks to *docket's* API, and postings are decoupled from docket (decision 5), so putting posting
-management there would invent a cross-domain coupling this ADR exists to avoid. web-admin is the
+management there would invent a cross-domain coupling this ADR exists to avoid. web-console is the
 tenant identity/membership surface, a different domain again. So the public careers pages
 (anonymous read) and the operator posting admin (role-gated write) are two sections of one
 people-platform app, separated by the `operator` role in the token — not two apps.
