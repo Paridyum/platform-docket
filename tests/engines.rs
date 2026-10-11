@@ -3,7 +3,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 
 use std::path::PathBuf;
-use tool_docket::adapters::typeset::Engine;
+use platform_docket::adapters::typeset::Engine;
 
 mod common;
 
@@ -19,7 +19,7 @@ fn pdflatex_is_preferred_when_present() {
         // Nothing to assert about preference on a machine without it.
         return;
     }
-    let chosen = tool_docket::adapters::typeset::detect().expect("an engine is available");
+    let chosen = platform_docket::adapters::typeset::detect().expect("an engine is available");
     assert_eq!(chosen, Engine::PdfLatex);
 }
 
@@ -52,7 +52,7 @@ fn an_entry_with_no_engine_recorded_reads_as_pdflatex() {
         "template_sha256":"a","pdf_sha256":"b","pdf_path":"p.pdf",
         "texlive":"2026","prev_sha256":"0","entry_sha256":"x"
     }"#;
-    let e: tool_docket::domain::register::Entry =
+    let e: platform_docket::domain::register::Entry =
         serde_json::from_str(json).expect("an older entry still deserialises");
     assert_eq!(e.engine_or_default(), "pdflatex");
     assert!(e.engine.is_none());
@@ -71,7 +71,7 @@ fn adding_the_engine_field_cannot_change_an_older_entrys_digest() {
         "template_sha256":"a","pdf_sha256":"b","pdf_path":"p.pdf",
         "texlive":"2026","prev_sha256":"0","entry_sha256":""
     }"#;
-    let e: tool_docket::domain::register::Entry = serde_json::from_str(json).expect("parses");
+    let e: platform_docket::domain::register::Entry = serde_json::from_str(json).expect("parses");
     let round_tripped = serde_json::to_value(&e).expect("serialises");
     let map = round_tripped.as_object().expect("an object");
     assert!(

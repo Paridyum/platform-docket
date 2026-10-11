@@ -37,7 +37,7 @@ estate, and none of it is done.
 
 ## 1. What is being built
 
-`tool-docket`'s system of record moves from YAML/JSONL files under `store/` and
+`platform-docket`'s system of record moves from YAML/JSONL files under `store/` and
 `people/` to the shared Postgres database (platform-tenancy). The `application::`
 layer and the `adapters/http/` contract are **preserved**; what changes underneath
 them is where bytes live and how many people may write at once.

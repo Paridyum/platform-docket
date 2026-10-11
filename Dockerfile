@@ -32,7 +32,7 @@ COPY src ./src
 RUN --mount=type=secret,id=git_token \
     --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=tool-docket-target,target=/build/target,sharing=locked \
+    --mount=type=cache,id=platform-docket-target,target=/build/target,sharing=locked \
     GIT_CONFIG_COUNT=1 \
     GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/git_token 2>/dev/null)@github.com/Paridyum/.insteadOf" \
     GIT_CONFIG_VALUE_0="ssh://git@github.com/Paridyum/" \

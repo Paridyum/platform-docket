@@ -10,14 +10,14 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::{FixedClock, parse_iso};
-use tool_docket::adapters::http::request;
-use tool_docket::adapters::http::router::{self, Context};
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::FileStore;
-use tool_docket::application::{personnel, roster};
-use tool_docket::config::Paths;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::{FixedClock, parse_iso};
+use platform_docket::adapters::http::request;
+use platform_docket::adapters::http::router::{self, Context};
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::FileStore;
+use platform_docket::application::{personnel, roster};
+use platform_docket::config::Paths;
 
 mod common;
 
@@ -173,7 +173,7 @@ fn health_answers_without_a_store() {
     */
     assert_eq!(
         body["contract"],
-        serde_json::json!(tool_docket::adapters::http::dto::CONTRACT)
+        serde_json::json!(platform_docket::adapters::http::dto::CONTRACT)
     );
 }
 
@@ -281,7 +281,7 @@ fn check_reports_the_same_findings_the_cli_would() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let expected = tool_docket::application::check::run(
+    let expected = platform_docket::application::check::run(
         &FileStore::new(&sandbox.paths),
         &FileBlobs::new(&sandbox.paths),
         &sandbox.paths,
@@ -524,7 +524,7 @@ fn advancing_past_an_unmet_gate_is_refused_and_the_stage_does_not_move() {
     let reg = registry();
     enrol(&sandbox, &reg, "asha");
 
-    let stage_before = tool_docket::adapters::store::person(&sandbox.paths, "asha")
+    let stage_before = platform_docket::adapters::store::person(&sandbox.paths, "asha")
         .expect("record")
         .stage()
         .to_owned();
@@ -539,7 +539,7 @@ fn advancing_past_an_unmet_gate_is_refused_and_the_stage_does_not_move() {
     assert!(blockers[0]["code"].is_string(), "{payload}");
     assert!(blockers[0]["reason"].is_string(), "{payload}");
 
-    let stage_after = tool_docket::adapters::store::person(&sandbox.paths, "asha")
+    let stage_after = platform_docket::adapters::store::person(&sandbox.paths, "asha")
         .expect("record")
         .stage()
         .to_owned();
@@ -646,7 +646,7 @@ fn the_enrolment_form_is_generated_from_the_registry() {
 
     // And it matches what the CLI would ask, rather than being a second list.
     let class = reg.catalogue.class("intern").expect("intern class");
-    let expected = tool_docket::domain::personnel::questions(&reg.catalogue, class);
+    let expected = platform_docket::domain::personnel::questions(&reg.catalogue, class);
     assert_eq!(questions.len(), expected.len());
 }
 
@@ -675,7 +675,7 @@ fn enrolling_through_the_api_produces_the_same_record_the_cli_would() {
     assert_eq!(status, 200, "{payload}");
 
     // The record exists, is filed under the slug, and carries the answers.
-    let person = tool_docket::adapters::store::person(&sandbox.paths, "priya").expect("record");
+    let person = platform_docket::adapters::store::person(&sandbox.paths, "priya").expect("record");
     assert_eq!(person.string("identity.legal_name"), Some("Priya Nair"));
 
     // And the identifier was allocated, so the ledger and the file agree. A
@@ -694,7 +694,7 @@ fn enrolling_through_the_api_produces_the_same_record_the_cli_would() {
         "Software Engineering Intern".to_owned(),
     );
     expected_answers.insert("engagement.start_date".to_owned(), "2026-09-01".to_owned());
-    let expected = tool_docket::application::enrol::to_yaml(&reg, "intern", &expected_answers);
+    let expected = platform_docket::application::enrol::to_yaml(&reg, "intern", &expected_answers);
     let actual = std::fs::read_to_string(sandbox.paths.person("priya")).expect("read");
     assert_eq!(actual, expected);
 }
@@ -719,9 +719,9 @@ fn a_post_with_no_body_where_one_is_required_is_refused() {
 /// Issuing renders real PDFs, and a GitHub runner has neither TeX Live nor
 /// Tectonic — so this test SKIPS there rather than failing, the same pattern the
 /// issuance and engines suites already use. Skipping is not free: it means CI does
-/// not exercise issuance through the API either, which is `tool-docket` D-35.
+/// not exercise issuance through the API either, which is `platform-docket` D-35.
 fn typesetter_available() -> bool {
-    tool_docket::adapters::typeset::detect().is_ok()
+    platform_docket::adapters::typeset::detect().is_ok()
 }
 
 #[test]
@@ -749,7 +749,7 @@ fn onboarding_a_filled_record_issues_and_records_the_operator() {
     let issued = payload["issued"].as_array().expect("issued");
     assert!(!issued.is_empty(), "{payload}");
 
-    let register = tool_docket::adapters::store::register(&sandbox.paths).expect("register");
+    let register = platform_docket::adapters::store::register(&sandbox.paths).expect("register");
     assert!(
         !register.is_empty(),
         "documents were reported issued but the register is empty"
@@ -761,10 +761,10 @@ fn onboarding_a_filled_record_issues_and_records_the_operator() {
     // where authorship lives — the register describes the document and the log
     // describes the act. A write with no author is what `--by` was introduced to
     // stop and the API must not reintroduce it.
-    let events = tool_docket::adapters::store::events(&sandbox.paths).expect("events");
+    let events = platform_docket::adapters::store::events(&sandbox.paths).expect("events");
     let issued_events: Vec<_> = events
         .iter()
-        .filter(|e| matches!(e.kind, tool_docket::domain::event::Kind::DocumentIssued))
+        .filter(|e| matches!(e.kind, platform_docket::domain::event::Kind::DocumentIssued))
         .collect();
     assert!(!issued_events.is_empty(), "issuing recorded no event");
     for e in issued_events {

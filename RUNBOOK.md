@@ -10,7 +10,7 @@ ADR-0093) and, for issued PDFs, on a blob path — currently an ephemeral volume
 data is served (ADR-0093 §5). The service holds no durable state of its own, so a pod can be killed
 and rescheduled freely.
 
-- **Image:** `ghcr.io/paridyum/tool-docket`, deployed by digest (ADR-0060).
+- **Image:** `ghcr.io/paridyum/platform-docket`, deployed by digest (ADR-0060).
 - **Chart:** `helm/` — Deployment + Service (ClusterIP), in namespace `platform`.
 - **In-cluster address:** `docket.platform.svc.cluster.local:8080`.
 - **Liveness/readiness:** `GET /healthz` (unauthenticated; `200 ok`).

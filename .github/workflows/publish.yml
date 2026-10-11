@@ -1,6 +1,6 @@
 # Publish the container image for the `serve` binary (ADR-0093, ADR-0060, REQ-0004 §2: a deployment
 # names a digest). Calls the estate's reusable image-publish workflow, which builds ./Dockerfile and
-# pushes to ghcr.io/paridyum/tool-docket by digest, emitting the digest in the run summary.
+# pushes to ghcr.io/paridyum/platform-docket by digest, emitting the digest in the run summary.
 #
 # SEPARATE from ci.yml on purpose: ci.yml is the gate suite (rust-ci + the render job), this is the
 # image. An image can publish while the gates are still being brought green — the deploy pins the

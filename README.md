@@ -1,4 +1,4 @@
-# tool-docket
+# platform-docket
 
 Paridyum's people-document system. Twenty-six documents, one typesetting
 authority, one home for every fact, and a register that makes an issued
@@ -9,7 +9,7 @@ document is declared for the person **classes** it applies to, so a director
 is not issued a Certificate of Internship and an officer is not asked which
 university they attended.
 
-Rust, class `tool`, binary `docket` (C-0007). Requires TeX Live with
+Rust, class `platform`, binary `docket` (C-0007). Requires TeX Live with
 `pdflatex` on `PATH`.
 
     cargo build --release

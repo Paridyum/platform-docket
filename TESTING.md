@@ -1,4 +1,4 @@
-# Testing — tool-docket
+# Testing — platform-docket
 
     cargo test              # 96 tests
     cargo clippy --all-targets

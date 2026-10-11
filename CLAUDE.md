@@ -1,4 +1,4 @@
-# Agent entrypoint — tool-docket
+# Agent entrypoint — platform-docket
 
 Issues Paridyum's internship and employment documents, keeps the personnel
 records they are issued against, and archives both.

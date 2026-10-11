@@ -17,7 +17,7 @@ path = "junit.xml"
 test-threads = 4
 slow-timeout = { period = "30s", terminate-after = 4 }
 
-# tool-docket's integration tests shell out to pdflatex three times per
+# platform-docket's integration tests shell out to pdflatex three times per
 # document. The default per-test timeout is generous but the suite is not
 # CPU-bound on Rust, so leave the profile's parallelism alone and let the
 # renders queue.

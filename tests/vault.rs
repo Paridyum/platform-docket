@@ -4,13 +4,13 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::store::{self, FileStore};
-use tool_docket::adapters::{crypt, registry::Registry};
-use tool_docket::application::{issue, personnel, sign, vault, verify};
-use tool_docket::config::Paths;
-use tool_docket::domain::signature::Method;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::store::{self, FileStore};
+use platform_docket::adapters::{crypt, registry::Registry};
+use platform_docket::application::{issue, personnel, sign, vault, verify};
+use platform_docket::config::Paths;
+use platform_docket::domain::signature::Method;
 
 mod common;
 
@@ -34,7 +34,7 @@ fn skip(test: &str) -> bool {
         eprintln!("SKIP {test}: age is not installed");
         return true;
     }
-    if tool_docket::adapters::typeset::detect().is_err() {
+    if platform_docket::adapters::typeset::detect().is_err() {
         eprintln!("SKIP {test}: no typesetter installed (see DECISION-DEBT D-35)");
         return true;
     }
@@ -83,7 +83,7 @@ impl Sandbox {
     }
 
     /// An officer with one document issued.
-    fn with_document(&self, slug: &str) -> tool_docket::domain::identity::Record {
+    fn with_document(&self, slug: &str) -> platform_docket::domain::identity::Record {
         let reg = registry();
         let record = personnel::create(
             &FileStore::new(&self.paths),

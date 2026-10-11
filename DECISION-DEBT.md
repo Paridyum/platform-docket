@@ -1,4 +1,4 @@
-# Decision debt — tool-docket
+# Decision debt — platform-docket
 
 Open questions that block issuing real documents. None is a code problem.
 
@@ -1121,23 +1121,17 @@ exposure is small, but it is a real change from ADR-0072 and is recorded as such
 the loopback path to use the same database (D-61) or to reinstate a file-store write lock behind the
 port.
 
-## D-64 — docket is class `platform` but still named `tool-docket`
+## D-64 — docket was class `platform` but named `tool-docket`  (RESOLVED 2026-10-11)
 
-ADR-0093 §3 reclassifies the served backend as platform-shaped, and `manifest.yaml` now declares
+ADR-0093 §3 reclassified the served backend as platform-shaped, and `manifest.yaml` declared
 `class: platform` so that ADR-0020's deployable obligations (the Helm chart, probes, limits added
-2026-09-14) actually bind. But the repository is still named `tool-docket`, whose `tool-` prefix maps
-to the `tool` class under C-0005 and C-0007. The two disagree.
+2026-09-14) actually bind. The repository was still named `tool-docket`, whose `tool-` prefix mapped
+to the `tool` class under C-0005 and C-0007. The two disagreed.
 
-Nothing fails today: `repo.name_matches_scheme` is forge-owned and validates the NAME against the set
-of registered prefixes (which `tool-` is), not the manifest `class`; and the class↔stack gate passes
-because `platform` permits `rust`. So the disagreement is latent, not breaking.
-
-The clean resolution is to rename the repository to `platform-docket` — but that is a breaking
-operation (git remote, the org repo, every vendored `.paridyum/` snapshot, and console-docket's
-references to it) that ADR-0093 does not schedule, and it is not something to do as a side effect of
-adding a chart. **Reopens when:** the rename is scheduled, or forge ships a check that binds a
-manifest's `class` to its repository-name prefix — whichever is first. Sibling debt: console-docket
-D-? (its manifest is now `class: web` while named `console-docket`).
+**Resolved by the complete rename `tool-docket` → `platform-docket`** (STD-0022), executed
+2026-10-11: a new `Paridyum/platform-docket` repository, `manifest.yaml` `name`, `Cargo.toml`,
+image path (`ghcr.io/paridyum/platform-docket`), Helm `repository`, and every live reference in
+docs and source updated in one change. The old repository is archived.
 
 ## D-65 — API mode needs a Zitadel device-flow public client that does not exist yet  (OPEN, blocks the API path)
 

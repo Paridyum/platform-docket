@@ -1333,6 +1333,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "platform-docket"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "jsonwebtoken",
+ "paridyum-auth",
+ "rand 0.8.8",
+ "reqwest",
+ "rsa",
+ "rusty-s3",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "sqlx",
+ "tempfile",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2304,31 +2329,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "tool-docket"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "jsonwebtoken",
- "paridyum-auth",
- "rand 0.8.8",
- "reqwest",
- "rsa",
- "rusty-s3",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "sqlx",
- "tempfile",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

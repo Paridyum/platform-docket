@@ -14,7 +14,7 @@ ignore = [
 version = 2
 allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0"]
 # CDLA-Permissive-2.0 is the licence of `webpki-roots` — Mozilla's CA-certificate bundle, pulled in
-# transitively by rustls when tool-docket became a Postgres client over TLS (sqlx, ADR-0093 store
+# transitively by rustls when platform-docket became a Postgres client over TLS (sqlx, ADR-0093 store
 # move). It is a permissive DATA licence for a list of trusted roots, not code; platform-identity
 # allowed it for the same reason. Added here rather than left to fail the supply-chain gate.
 confidence-threshold = 0.93

@@ -12,15 +12,15 @@
 
 mod common;
 
-use tool_docket::adapters::correlation::CorrelationId;
-use tool_docket::adapters::pg::{self, PgStore};
-use tool_docket::adapters::store::Store;
-use tool_docket::domain::chain::{seal, verify};
-use tool_docket::domain::event::{Event, Kind};
-use tool_docket::domain::identity::{EngagementId, PersonId, Record, Standing};
-use tool_docket::domain::person::Person;
-use tool_docket::domain::register::{Entry, verify_chain};
-use tool_docket::domain::signature::{Method, Record as Signature};
+use platform_docket::adapters::correlation::CorrelationId;
+use platform_docket::adapters::pg::{self, PgStore};
+use platform_docket::adapters::store::Store;
+use platform_docket::domain::chain::{seal, verify};
+use platform_docket::domain::event::{Event, Kind};
+use platform_docket::domain::identity::{EngagementId, PersonId, Record, Standing};
+use platform_docket::domain::person::Person;
+use platform_docket::domain::register::{Entry, verify_chain};
+use platform_docket::domain::signature::{Method, Record as Signature};
 use uuid::Uuid;
 
 /// One id for the whole test, the way a CLI invocation has one (ADR-0044 D1). A fresh id per call
@@ -427,9 +427,9 @@ async fn a_person_upserts_reads_and_lists() {
 /// A plain `#[test]`: `PgStore` calls `block_on` on the handle from THIS thread, outside the runtime.
 #[test]
 fn the_factory_refuses_an_unprovisioned_tenant_and_scopes_a_provisioned_one() {
-    use tool_docket::adapters::http::server::TenantStores;
-    use tool_docket::adapters::pg::PgTenantStores;
-    use tool_docket::config::Paths;
+    use platform_docket::adapters::http::server::TenantStores;
+    use platform_docket::adapters::pg::PgTenantStores;
+    use platform_docket::config::Paths;
 
     let (Some(url), Ok(scratch), Ok(_admin)) = (
         url(),

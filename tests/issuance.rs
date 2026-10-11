@@ -9,13 +9,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::{self, FileStore};
-use tool_docket::application::{check, issue, status, verify};
-use tool_docket::config::Paths;
-use tool_docket::domain::person::Person;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::{self, FileStore};
+use platform_docket::application::{check, issue, status, verify};
+use platform_docket::config::Paths;
+use platform_docket::domain::person::Person;
 
 mod common;
 
@@ -55,7 +55,7 @@ impl Sandbox {
     /// directly, so the identity ledger has an entry for them. A record with
     /// no identifier is a finding, not a valid fixture.
     fn person(&self, slug: &str, edits: &[(&str, &str)]) -> Person {
-        tool_docket::application::personnel::create(
+        platform_docket::application::personnel::create(
             &FileStore::new(&self.paths),
             &self.paths,
             &registry(),
@@ -79,8 +79,8 @@ impl Sandbox {
 }
 
 /// The ledger record for a slug, which the register now keys on.
-fn who(sb: &Sandbox, slug: &str) -> tool_docket::domain::identity::Record {
-    tool_docket::application::personnel::identify(&FileStore::new(&sb.paths), slug)
+fn who(sb: &Sandbox, slug: &str) -> platform_docket::domain::identity::Record {
+    platform_docket::application::personnel::identify(&FileStore::new(&sb.paths), slug)
         .expect("identified")
 }
 
@@ -93,7 +93,7 @@ fn date() -> time::Date {
 }
 
 /// Issue one document by code.
-fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> tool_docket::domain::register::Entry {
+fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> platform_docket::domain::register::Entry {
     let reg = registry();
     let by_code = reg.lifecycle.by_code().expect("codes");
     let doc = by_code.get(code).expect("known code");
@@ -121,7 +121,7 @@ fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> tool_docket::domain::
 /// recorded as decision debt rather than hidden, and the fix is to install a
 /// typesetter in CI, not to weaken the test.
 fn typesetter_available() -> bool {
-    tool_docket::adapters::typeset::detect().is_ok()
+    platform_docket::adapters::typeset::detect().is_ok()
 }
 
 /// Print once why a test did nothing, so a green run is not mistaken for

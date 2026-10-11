@@ -3,7 +3,7 @@ members = ["."]
 resolver = "2"
 
 [package]
-name = "tool-docket"
+name = "platform-docket"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
@@ -14,13 +14,13 @@ publish = false
 # (bin name kept — the deploy chart depends on it).
 default-run = "docket"
 
-# C-0007: binary name is the bare capability — tool-docket produces `docket`.
+# C-0007: binary name is the bare capability — platform-docket produces `docket`.
 [[bin]]
 name = "docket"
 path = "src/main.rs"
 
 [lib]
-name = "tool_docket"
+name = "platform_docket"
 path = "src/lib.rs"
 
 [dependencies]

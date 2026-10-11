@@ -1,4 +1,4 @@
-# Architecture — tool-docket
+# Architecture — platform-docket
 
 Issues Paridyum's internship documents, and keeps a register that makes an
 issued document verifiable years later.

@@ -5,10 +5,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::FileStore;
-use tool_docket::application::enrol;
-use tool_docket::config::Paths;
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::FileStore;
+use platform_docket::application::enrol;
+use platform_docket::config::Paths;
 
 mod common;
 
@@ -94,7 +94,7 @@ fn the_operator_can_stop_after_the_required_questions() {
     // Fifty prompts is an interrogation, not a wizard.
     let reg = registry();
     let class = reg.catalogue.class("intern").expect("declared");
-    let optional = tool_docket::domain::personnel::questions(&reg.catalogue, class)
+    let optional = platform_docket::domain::personnel::questions(&reg.catalogue, class)
         .into_iter()
         .filter(|q| !q.required)
         .count();
@@ -120,9 +120,9 @@ fn the_generated_record_is_valid_yaml_and_passes_validation() {
 
     let parsed: serde_yaml::Value =
         serde_yaml::from_str(&body).expect("the generated record must parse");
-    let person = tool_docket::domain::person::Person::new("t".to_owned(), parsed);
+    let person = platform_docket::domain::person::Person::new("t".to_owned(), parsed);
     let class = reg.catalogue.class("intern").expect("declared");
-    let violations = tool_docket::domain::personnel::validate(&reg.catalogue, class, &person)
+    let violations = platform_docket::domain::personnel::validate(&reg.catalogue, class, &person)
         .expect("validates");
     assert!(violations.is_empty(), "{violations:?}");
 }
@@ -155,7 +155,7 @@ fn booleans_and_pronouns_are_written_as_the_templates_expect() {
         "a flag, not a string: {body}"
     );
     let parsed: serde_yaml::Value = serde_yaml::from_str(&body).expect("parses");
-    let person = tool_docket::domain::person::Person::new("t".to_owned(), parsed);
+    let person = platform_docket::domain::person::Person::new("t".to_owned(), parsed);
     assert_eq!(person.string("identity.pronouns.subject"), Some("she"));
     assert_eq!(person.string("identity.pronouns.object"), Some("her"));
     assert_eq!(person.string("identity.pronouns.possessive"), Some("her"));
@@ -168,7 +168,7 @@ fn pronouns_default_to_they_them_when_only_partly_given() {
     answers.insert("identity.pronouns".to_owned(), "she".to_owned());
     let body = enrol::to_yaml(&reg, "intern", &answers);
     let parsed: serde_yaml::Value = serde_yaml::from_str(&body).expect("parses");
-    let person = tool_docket::domain::person::Person::new("t".to_owned(), parsed);
+    let person = platform_docket::domain::person::Person::new("t".to_owned(), parsed);
     assert_eq!(person.string("identity.pronouns.subject"), Some("she"));
     assert_eq!(
         person.string("identity.pronouns.object"),
@@ -231,22 +231,22 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
         &enrol::to_yaml(&reg, "intern", &answers),
     )
     .expect("writes");
-    tool_docket::application::personnel::create(
+    platform_docket::application::personnel::create(
         &FileStore::new(&paths),
         &paths,
         &reg,
         "t",
         "intern",
         "PAR",
-        tool_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
+        platform_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
         "rohan",
     )
     .expect("creates");
 
-    let person = tool_docket::adapters::store::person(&paths, "t").expect("record");
-    let who = tool_docket::application::personnel::identify(&FileStore::new(&paths), "t")
+    let person = platform_docket::adapters::store::person(&paths, "t").expect("record");
+    let who = platform_docket::application::personnel::identify(&FileStore::new(&paths), "t")
         .expect("identified");
-    let blocked = tool_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
+    let blocked = platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
         .expect("checks");
 
     assert!(
@@ -278,22 +278,22 @@ fn a_complete_record_has_nothing_unrenderable() {
     };
     let reg = registry();
 
-    tool_docket::application::personnel::create(
+    platform_docket::application::personnel::create(
         &FileStore::new(&paths),
         &paths,
         &reg,
         "t",
         "intern",
         "PAR",
-        tool_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
+        platform_docket::adapters::clock::parse_iso("2026-08-20").expect("date"),
         "rohan",
     )
     .expect("creates");
 
-    let person = tool_docket::adapters::store::person(&paths, "t").expect("record");
-    let who = tool_docket::application::personnel::identify(&FileStore::new(&paths), "t")
+    let person = platform_docket::adapters::store::person(&paths, "t").expect("record");
+    let who = platform_docket::application::personnel::identify(&FileStore::new(&paths), "t")
         .expect("identified");
-    let blocked = tool_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
+    let blocked = platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
         .expect("checks");
     assert!(
         blocked.is_empty(),

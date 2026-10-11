@@ -4,13 +4,13 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::{self, FileStore};
-use tool_docket::application::{check, issue, personnel, sign, status};
-use tool_docket::config::Paths;
-use tool_docket::domain::signature::Method;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::{self, FileStore};
+use platform_docket::application::{check, issue, personnel, sign, status};
+use platform_docket::config::Paths;
+use platform_docket::domain::signature::Method;
 
 mod common;
 
@@ -42,17 +42,17 @@ impl Sandbox {
     /// Every issuance runs pdflatex three times, so issuing documents that no
     /// assertion touches is pure wall-clock. Tests that need the whole gate
     /// ask for all four explicitly.
-    fn onboarded(&self, slug: &str) -> tool_docket::domain::identity::Record {
+    fn onboarded(&self, slug: &str) -> platform_docket::domain::identity::Record {
         self.with_docs(slug, &["NDA"])
     }
 
     /// A person with every document the preboarding gate requires.
-    fn gated(&self, slug: &str) -> tool_docket::domain::identity::Record {
+    fn gated(&self, slug: &str) -> platform_docket::domain::identity::Record {
         self.with_docs(slug, &["NDA", "ISP", "IPA", "AGR", "COC", "GRV"])
     }
 
     /// A person with exactly the named documents issued.
-    fn with_docs(&self, slug: &str, codes: &[&str]) -> tool_docket::domain::identity::Record {
+    fn with_docs(&self, slug: &str, codes: &[&str]) -> platform_docket::domain::identity::Record {
         let reg = registry();
         let r = personnel::create(
             &FileStore::new(&self.paths),
@@ -139,7 +139,7 @@ fn sign_it(sb: &Sandbox, code: &str, method: Method, on: &str) -> anyhow::Result
 /// recorded as decision debt rather than hidden, and the fix is to install a
 /// typesetter in CI, not to weaken the test.
 fn typesetter_available() -> bool {
-    tool_docket::adapters::typeset::detect().is_ok()
+    platform_docket::adapters::typeset::detect().is_ok()
 }
 
 /// Print once why a test did nothing, so a green run is not mistaken for
@@ -309,7 +309,7 @@ fn the_scan_is_copied_into_the_store_and_hashed() {
     let bytes = std::fs::read(&stored).expect("read");
     assert_eq!(
         s.record.scan_sha256.as_deref(),
-        Some(tool_docket::domain::chain::sha256(&bytes).as_str())
+        Some(platform_docket::domain::chain::sha256(&bytes).as_str())
     );
 }
 
@@ -441,7 +441,7 @@ fn issuance_is_recorded_in_the_event_log() {
     let issued = log
         .iter()
         .filter(|e| e.person_id == who.person_id)
-        .filter(|e| e.kind == tool_docket::domain::event::Kind::DocumentIssued)
+        .filter(|e| e.kind == platform_docket::domain::event::Kind::DocumentIssued)
         .count();
     assert_eq!(
         issued, 1,
@@ -461,7 +461,7 @@ fn signing_is_recorded_in_the_event_log() {
     assert!(
         log.iter()
             .filter(|e| e.person_id == who.person_id)
-            .any(|e| e.kind == tool_docket::domain::event::Kind::DocumentSigned),
+            .any(|e| e.kind == platform_docket::domain::event::Kind::DocumentSigned),
         "signing must appear in the history"
     );
 }

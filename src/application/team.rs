@@ -131,7 +131,7 @@ fn countersignatories(
 
 /// The published team as JSON, for the web surface to commit.
 ///
-/// EXPORTED RATHER THAN READ ACROSS REPOSITORIES. `web-paridyum` and `tool-docket` have
+/// EXPORTED RATHER THAN READ ACROSS REPOSITORIES. `web-paridyum` and `platform-docket` have
 /// no shared build (ADR-0001), and a public page that reads a gitignored directory at
 /// build time would be a page whose content depends on which machine built it. So this
 /// emits a file, the file is reviewed in a diff like every other public claim, and

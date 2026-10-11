@@ -12,7 +12,7 @@ stale — say so.
 ## Read this before you start
 
 **Two repositories, and the split is deliberate.** A job posting lives in
-`web-paridyum/jobs/`. A person lives in `tool-docket/people/`. Nothing joins
+`web-paridyum/jobs/`. A person lives in `platform-docket/people/`. Nothing joins
 them until you make an offer, because a candidate is not yet a person — that is
 ADR-0068, and it is why there is no `docket apply` command to look for.
 

@@ -1,4 +1,4 @@
-# Logbook — tool-docket
+# Logbook — platform-docket
 
 How this tool got the way it is, recorded as it was built rather than
 reconstructed afterwards (RFC-0033). The `CHANGELOG.md` says what changed;
@@ -239,7 +239,7 @@ gate needs no Garage; `scripts/gates.sh` as the single un-piped gate.
 ## 2026-09-14 — the deployment surface for the served backend (ADR-0093 §3)
 
 ADR-0093 makes docket a served, staff-authenticated platform and reclassifies it: the served
-`serve` binary is platform-shaped, so `tool-docket` "stops being deployable: false" and now owes
+`serve` binary is platform-shaped, so `platform-docket` "stops being deployable: false" and now owes
 ADR-0020's Helm chart, probes and resource limits. This entry adds that surface without touching the
 Rust internals (a parallel worker owns the Postgres port):
 
@@ -259,12 +259,12 @@ Rust internals (a parallel worker owns the Postgres port):
   enter a layer. The image build passes once the parallel refactor lands and `serve` compiles — the
   env-var interface it targets is stable.
 - **CI** `publish.yml`, a thin caller of the estate's reusable `image-publish.yml@v1` (ADR-0021),
-  publishing by digest to `ghcr.io/paridyum/tool-docket`. `ci.yml` is unchanged.
+  publishing by digest to `ghcr.io/paridyum/platform-docket`. `ci.yml` is unchanged.
 - **manifest.yaml** reclassified `class: tool → platform`, gaining `exposes.http` and the `serve`
   entrypoint. The class registry already carries `platform` as deployable, so no registry edit was
   needed; `platform` permits `rust`, so the class↔stack gate passes.
 
-**The one real tension, flagged not hidden (D-60).** The repository is still named `tool-docket`,
+**The one real tension, flagged not hidden (D-60).** The repository is still named `platform-docket`,
 whose `tool-` prefix maps to the `tool` class under C-0005/C-0007, while the manifest now says
 `platform`. No shipped gate enforces prefix↔class agreement (`repo.name_matches_scheme` is
 forge-owned and reads the name, not the manifest class), so nothing breaks today — but the honest
@@ -919,7 +919,7 @@ exactly which sections change and which do not.
 **Two joins between repositories are stated because neither is enforced.** `engagement.class` on
 the posting must match the class passed to `docket new`, and `engagement.job_id` in the person
 record must be the posting id — the only join between `web-paridyum/jobs/` and
-`tool-docket/people/`. Both are checkboxes because nothing checks them; `jobs.ts` already carries
+`platform-docket/people/`. Both are checkboxes because nothing checks them; `jobs.ts` already carries
 a hand-copied mirror of `ENGAGEMENT_CLASSES` and `DOCUMENT_PROVIDES` with a comment admitting a
 copy goes stale silently.
 

@@ -8,11 +8,11 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::store::FileStore;
-use tool_docket::adapters::{crypt, registry::Registry};
-use tool_docket::application::{node, personnel, vault};
-use tool_docket::config::Paths;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::store::FileStore;
+use platform_docket::adapters::{crypt, registry::Registry};
+use platform_docket::application::{node, personnel, vault};
+use platform_docket::config::Paths;
 
 mod common;
 
@@ -209,7 +209,7 @@ fn a_cold_spare_rebuilds_the_register_from_the_bundle_and_the_key_alone() {
         "the restored chains do not verify"
     );
 
-    let ledger = tool_docket::adapters::store::ledger(&spare.paths).expect("ledger");
+    let ledger = platform_docket::adapters::store::ledger(&spare.paths).expect("ledger");
     let slugs: Vec<&str> = ledger.iter().map(|r| r.slug.as_str()).collect();
     for slug in ["vivaswan", "priyanshu", "aditya"] {
         assert!(slugs.contains(&slug), "{slug} did not survive: {slugs:?}");
@@ -233,7 +233,7 @@ fn a_restored_spare_continues_the_sequence_rather_than_restarting_it() {
     node::restore(&node::bundle_path(&lost.paths), &spare.estate, &spare.paths).expect("restore");
     spare.add("d");
 
-    let ledger = tool_docket::adapters::store::ledger(&spare.paths).expect("ledger");
+    let ledger = platform_docket::adapters::store::ledger(&spare.paths).expect("ledger");
     let d_row = ledger.iter().find(|r| r.slug == "d").expect("d");
     assert_eq!(
         d_row.person_id.as_str(),
@@ -267,7 +267,7 @@ fn a_restore_onto_a_live_store_is_refused_rather_than_merged() {
     assert!(text.contains("does not merge"), "{text}");
     assert!(text.contains("ADR-0051"), "{text}");
 
-    let ledger = tool_docket::adapters::store::ledger(&spare.paths).expect("ledger");
+    let ledger = platform_docket::adapters::store::ledger(&spare.paths).expect("ledger");
     assert!(
         ledger.iter().any(|r| r.slug == "later"),
         "the refused restore still destroyed a record"

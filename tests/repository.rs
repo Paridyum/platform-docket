@@ -153,7 +153,7 @@ fn a_template_hash_covers_the_clauses_it_includes() {
     // closure, `template_sha256` was a hash of the top-level file — so amending a shared clause
     // would have left every document recording the hash it had before, and the verification
     // code printed on them would have been a claim that the text was unchanged.
-    use tool_docket::domain::template::{closure, hashable};
+    use platform_docket::domain::template::{closure, hashable};
 
     let nda = root().join("templates/agreement/nda.tex");
     let files = closure(&root(), &nda).expect("closure resolves");
@@ -180,7 +180,7 @@ fn every_declared_template_resolves_its_inputs() {
     // A missing `\input` target renders as a LaTeX error at issuance — the worst moment to find
     // out, because an operator is mid-onboarding. Checked across every template the registry
     // declares rather than the five that happen to have one today.
-    use tool_docket::domain::template::closure;
+    use platform_docket::domain::template::closure;
 
     let lifecycle: serde_yaml::Value = serde_yaml::from_str(
         &std::fs::read_to_string(root().join("registry/lifecycle.yaml")).expect("readable"),
@@ -250,7 +250,7 @@ fn an_adapted_template_is_reviewed_when_its_source_changes() {
             read.as_ref().err()
         );
         let bytes = read.expect("checked on the line above");
-        let actual = tool_docket::domain::chain::sha256(&bytes);
+        let actual = platform_docket::domain::chain::sha256(&bytes);
         assert_eq!(
             actual,
             expected,

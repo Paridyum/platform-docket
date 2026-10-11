@@ -7,28 +7,28 @@ use std::io::{BufRead, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use tool_docket::adapters::api::{
+use platform_docket::adapters::api::{
     self, AdvanceRequest, ApiClient, EnrolRequest, PostOutcome, SignRequest,
 };
-use tool_docket::adapters::blobs::{self, Blobs};
-use tool_docket::adapters::clock::{self, Clock, SystemClock};
-use tool_docket::adapters::console;
-use tool_docket::adapters::correlation::CorrelationId;
-use tool_docket::adapters::http;
-use tool_docket::adapters::lock;
-use tool_docket::adapters::pg::{self, PgStore};
-use tool_docket::adapters::store::{FileStore, Store};
-use tool_docket::adapters::{oidc, registry::Registry, token, typeset};
-use tool_docket::application::{
+use platform_docket::adapters::blobs::{self, Blobs};
+use platform_docket::adapters::clock::{self, Clock, SystemClock};
+use platform_docket::adapters::console;
+use platform_docket::adapters::correlation::CorrelationId;
+use platform_docket::adapters::http;
+use platform_docket::adapters::lock;
+use platform_docket::adapters::pg::{self, PgStore};
+use platform_docket::adapters::store::{FileStore, Store};
+use platform_docket::adapters::{oidc, registry::Registry, token, typeset};
+use platform_docket::application::{
     archive, browse, check, comms, enrol, issue, next, node, pack, personnel, roster, sign, status,
     vault, verify,
 };
-use tool_docket::config::Paths;
-use tool_docket::domain::address;
-use tool_docket::domain::event::Kind;
-use tool_docket::domain::identity::Standing;
-use tool_docket::domain::person;
-use tool_docket::domain::signature::Method;
+use platform_docket::config::Paths;
+use platform_docket::domain::address;
+use platform_docket::domain::event::Kind;
+use platform_docket::domain::identity::Standing;
+use platform_docket::domain::person;
+use platform_docket::domain::signature::Method;
 use uuid::Uuid;
 
 /// Paridyum's internship document system.
@@ -1858,7 +1858,7 @@ fn cmd_store(paths: &Paths, what: &StoreCmd) -> Result<ExitCode> {
         } => {
             let identity = match identity {
                 Some(p) => p.clone(),
-                None => tool_docket::adapters::crypt::estate_identity()?,
+                None => platform_docket::adapters::crypt::estate_identity()?,
             };
             let target = Paths::resolve(into);
             let restored = node::restore(from, &identity, &target)?;
@@ -1898,7 +1898,7 @@ fn cmd_vault(
         VaultCmd::Seal { slug } => {
             // Resolved here, at the one place that knows a key is needed, rather than deep
             // in the vault where a test would have to fake an environment to reach it.
-            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            let estate = platform_docket::adapters::crypt::estate_identity()?;
             // `vault seal` has no company of its own: it seals everything issued to a
             // PERSON, and a person is one archive across companies (ADR-0077 D2).
             let out = vault::seal(store, blobs, paths, slug, None, &estate)?;
@@ -1941,7 +1941,7 @@ fn cmd_vault(
             Ok(ExitCode::SUCCESS)
         }
         VaultCmd::Backup => {
-            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            let estate = platform_docket::adapters::crypt::estate_identity()?;
             for name in vault::back_up_register(paths, &estate)? {
                 println!("  backed up  {name}");
             }
@@ -1950,7 +1950,7 @@ fn cmd_vault(
             Ok(ExitCode::SUCCESS)
         }
         VaultCmd::Escrow { to } => {
-            let estate = tool_docket::adapters::crypt::estate_identity()?;
+            let estate = platform_docket::adapters::crypt::estate_identity()?;
             let count = vault::escrow(paths, &estate, to)?;
             println!("{count} key(s) written to {}", to.display());
             println!();
@@ -1997,12 +1997,12 @@ fn cmd_vault(
 /// page cannot read this at build time without its content depending on which machine
 /// built it. Exporting makes the published set a reviewed diff instead.
 fn cmd_team(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
-    print!("{}", tool_docket::application::team::export_json(registry)?);
+    print!("{}", platform_docket::application::team::export_json(registry)?);
     // The receipt is written AFTER the export is emitted, and records what it was derived
     // from. `docket check` compares it, so editing signatories.yaml and forgetting to
     // re-export becomes a warning here rather than a stale public page nobody notices (D-48).
     let today = clock::to_iso(SystemClock.today()?)?;
-    tool_docket::application::team::record_export(paths, registry, &today)?;
+    platform_docket::application::team::record_export(paths, registry, &today)?;
     Ok(ExitCode::SUCCESS)
 }
 

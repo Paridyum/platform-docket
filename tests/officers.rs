@@ -9,13 +9,13 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::{self, FileStore};
-use tool_docket::application::{issue, personnel};
-use tool_docket::config::Paths;
-use tool_docket::domain::person;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::{self, FileStore};
+use platform_docket::application::{issue, personnel};
+use platform_docket::config::Paths;
+use platform_docket::domain::person;
 
 mod common;
 
@@ -265,7 +265,7 @@ fn the_officer_gate_waits_only_on_officer_documents() {
 /// these render real PDFs because the guarantee is about output bytes, and a CI runner has
 /// no TeX Live. Skipping is recorded rather than hidden.
 fn skip_without_typesetter(test: &str) -> bool {
-    if tool_docket::adapters::typeset::detect().is_ok() {
+    if platform_docket::adapters::typeset::detect().is_ok() {
         return false;
     }
     eprintln!("SKIP {test}: no typesetter installed (see DECISION-DEBT D-35)");
@@ -404,7 +404,7 @@ fn the_published_team_joins_the_registries_rather_than_restating_them() {
     // from `signatories.yaml`, so the office someone holds cannot differ between the
     // document they sign and the page that names them.
     let reg = registry();
-    let team = tool_docket::application::team::published(&reg).expect("team resolves");
+    let team = platform_docket::application::team::published(&reg).expect("team resolves");
 
     assert_eq!(team.len(), 4, "four officers are published");
     assert_eq!(team[0].short, "CEO", "declared order is honoured");
@@ -436,7 +436,7 @@ fn a_registry_edit_makes_the_officers_page_export_stale() {
     // D-48. The export is a file committed in another repository, so nothing over there can
     // tell that signatories.yaml moved and nobody re-ran `docket team`. This is the half that
     // is local, and it was the half actually going wrong.
-    use tool_docket::application::team;
+    use platform_docket::application::team;
 
     let sb = Sandbox::new();
     let reg = registry();
@@ -654,7 +654,7 @@ fn findings_with_org(yaml: &str) -> Vec<String> {
     };
     let reg = Registry::load(&paths).expect("registry loads");
     let mut items = Vec::new();
-    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    platform_docket::application::check::organisation_findings(&mut items, &reg);
     items
 }
 
@@ -864,7 +864,7 @@ fn officer_named(name: &str) -> person::Person {
     )
 }
 
-fn nda_officer(reg: &Registry) -> &tool_docket::domain::lifecycle::Document {
+fn nda_officer(reg: &Registry) -> &platform_docket::domain::lifecycle::Document {
     reg.lifecycle
         .documents
         .iter()
@@ -938,7 +938,7 @@ fn a_company_whose_signatories_are_all_one_person_is_blocking() {
     // would call that covered.
     let reg = registry_without(&["cyber-holding", "cyber-cto"]);
     let mut items = Vec::new();
-    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    platform_docket::application::check::organisation_findings(&mut items, &reg);
     let text = items.join("\n");
     assert!(
         text.contains("only one person among its active signatories"),
@@ -953,7 +953,7 @@ fn removing_one_of_cybers_three_leaves_it_able_to_issue() {
     // losing Priyanshu. Ruhani's documents fall to Rohan and his to Ruhani.
     let reg = registry_without(&["cyber-holding"]);
     let mut items = Vec::new();
-    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    platform_docket::application::check::organisation_findings(&mut items, &reg);
     assert!(
         !items.iter().any(|f| f.contains("only one person")),
         "{items:?}"
@@ -970,7 +970,7 @@ fn removing_one_of_cybers_three_leaves_it_able_to_issue() {
 fn the_shipped_registry_can_countersign_every_company() {
     let reg = registry();
     let mut items = Vec::new();
-    tool_docket::application::check::organisation_findings(&mut items, &reg);
+    platform_docket::application::check::organisation_findings(&mut items, &reg);
     assert!(
         !items.iter().any(|f| f.contains("active signatories")),
         "{items:?}"

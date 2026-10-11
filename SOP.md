@@ -1,4 +1,4 @@
-# SOP — tool-docket
+# SOP — platform-docket
 
 Covers onboarding a person, issuing and verifying their documents, moving them
 through the lifecycle, and archiving or erasing what they leave behind.
@@ -1107,11 +1107,11 @@ Run it locally against a throwaway database:
     curl -s localhost:8080/healthz     # the unauthenticated liveness route; 200 when serving
 
 **Build the image.** Pushing to `main` runs `.github/workflows/publish.yml`, which calls the
-estate's `image-publish.yml` to build `./Dockerfile` and push `ghcr.io/paridyum/tool-docket`
+estate's `image-publish.yml` to build `./Dockerfile` and push `ghcr.io/paridyum/platform-docket`
 by DIGEST (ADR-0060). The run summary prints the `sha256:…` digest — that, not a tag, is what
 a deployment names. To build it by hand:
 
-    docker build -t ghcr.io/paridyum/tool-docket:local .
+    docker build -t ghcr.io/paridyum/platform-docket:local .
 
 **Deploy.** The Helm chart is in `helm/` (Deployment + Service, `/healthz` liveness/readiness
 probes, resource limits, ClusterIP). Non-secret config lives in `helm/values-staging.yaml`;

@@ -8,12 +8,9 @@
 # path against the same database (ADR-0054: added capability, the old one not removed).
 #
 # NAMING TENSION, tracked as decision debt (DECISION-DEBT.md D-64): the repository is
-# still named `tool-docket`, whose `tool-` prefix maps to the `tool` class under C-0005/
-# C-0007, while this manifest now declares `platform`. Renaming the repository to
-# `platform-docket` is the clean resolution but is a separate breaking operation (git
-# history, remotes, vendored snapshots, the console's references) that ADR-0093 does not
-# schedule here. `stack: rust` is permitted for `platform` in class-registry.yaml, so the
-# class↔stack gate passes; the prefix↔class alignment is the deferred half.
+# now named `platform-docket`, whose `platform-` prefix maps to the `platform` class under C-0005/
+# C-0007, matching this manifest's `class: platform`. The rename from `tool-docket` to
+# `platform-docket` resolves the prefix↔class alignment (ADR-0093 §3, STD-0022).
 #
 # lifecycle: beta — the code is complete and reviewed to the standard it will be operated
 # at (C-0010), but it has not yet issued a document that anyone has signed and the served
@@ -22,7 +19,7 @@
 #
 # NOT `alpha`. That value is not in the schema's enum, which permits only
 # experimental | beta | production | deprecated.
-name: tool-docket
+name: platform-docket
 class: platform
 stack: rust
 owner: rohanbatrain

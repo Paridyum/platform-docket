@@ -337,7 +337,7 @@
     pdfauthor={\dkOrgName},
     pdfsubject={\dkDocSubject},
     pdfkeywords={\dkDocKeywords},
-    pdfcreator={tool-docket},
+    pdfcreator={platform-docket},
   }%
 }
 

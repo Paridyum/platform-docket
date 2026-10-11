@@ -4,15 +4,15 @@
 
 use std::path::PathBuf;
 
-use tool_docket::adapters::blobs::FileBlobs;
-use tool_docket::adapters::clock::parse_iso;
-use tool_docket::adapters::registry::Registry;
-use tool_docket::adapters::store::{self, FileStore};
-use tool_docket::application::{check, personnel, roster};
-use tool_docket::config::Paths;
-use tool_docket::domain::event::Kind;
-use tool_docket::domain::identity::Standing;
-use tool_docket::domain::personnel::Violation;
+use platform_docket::adapters::blobs::FileBlobs;
+use platform_docket::adapters::clock::parse_iso;
+use platform_docket::adapters::registry::Registry;
+use platform_docket::adapters::store::{self, FileStore};
+use platform_docket::application::{check, personnel, roster};
+use platform_docket::config::Paths;
+use platform_docket::domain::event::Kind;
+use platform_docket::domain::identity::Standing;
+use platform_docket::domain::personnel::Violation;
 
 mod common;
 
@@ -70,7 +70,7 @@ fn date() -> time::Date {
 /// recorded as decision debt rather than hidden, and the fix is to install a
 /// typesetter in CI, not to weaken the test.
 fn typesetter_available() -> bool {
-    tool_docket::adapters::typeset::detect().is_ok()
+    platform_docket::adapters::typeset::detect().is_ok()
 }
 
 /// Print once why a test did nothing, so a green run is not mistaken for
@@ -610,7 +610,7 @@ fn recorded_pronouns_reach_the_document() {
         ],
     );
     let person = store::person(&sb.paths, "p").expect("record");
-    let defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    let defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
     assert_eq!(defs.get("dkPPronounsSubject"), Some("she"));
     assert_eq!(defs.get("dkPPronounsObject"), Some("her"));
     assert_eq!(defs.get("dkPPronounsPossessive"), Some("her"));
@@ -639,7 +639,7 @@ fn pronouns_default_to_they_them_when_not_recorded() {
         )],
     );
     let person = store::person(&sb.paths, "p").expect("record");
-    let defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    let defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
     assert_eq!(
         defs.get("dkPPronounsObject"),
         Some("them"),
@@ -680,8 +680,8 @@ fn the_offboarding_checklist_names_access_still_open() {
         .expect("records");
     }
     let person = store::person(&sb.paths, "t").expect("record");
-    let mut defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    tool_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
+    let mut defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    platform_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
         .expect("history");
 
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("1"));
@@ -711,8 +711,8 @@ fn a_person_with_no_recorded_history_still_renders() {
     )
     .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
-    let mut defs = tool_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    tool_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
+    let mut defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    platform_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
         .expect("history");
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("0"));
     assert!(
@@ -767,7 +767,7 @@ fn the_institution_letter_is_owed_only_when_the_institution_asks() {
     );
     let who = personnel::identify(&FileStore::new(&sb.paths), "no-noc").expect("identified");
     let person = store::person(&sb.paths, "no-noc").expect("record");
-    let owed = tool_docket::application::issue::outstanding(&reg, &person, &who, &[])
+    let owed = platform_docket::application::issue::outstanding(&reg, &person, &who, &[])
         .expect("outstanding");
     assert!(!owed.contains(&"INS".to_owned()), "{owed:?}");
 }
@@ -797,14 +797,14 @@ fn every_retention_class_names_the_date_it_counts_from() {
         if stated.contains("indefinite") {
             assert_eq!(
                 c.from,
-                tool_docket::adapters::registry::Epoch::Never,
+                platform_docket::adapters::registry::Epoch::Never,
                 "{}",
                 c.class
             );
         } else if stated.contains("ends") || stated.contains("working day") {
             assert_eq!(
                 c.from,
-                tool_docket::adapters::registry::Epoch::EngagementEnd,
+                platform_docket::adapters::registry::Epoch::EngagementEnd,
                 "{} states an end-relative period",
                 c.class
             );
@@ -849,7 +849,7 @@ fn every_declared_field_states_a_purpose() {
 
 #[test]
 fn the_pack_groups_documents_by_what_must_be_done_with_them() {
-    use tool_docket::application::pack::Action;
+    use platform_docket::application::pack::Action;
 
     if skip_without_typesetter("the_pack_groups_documents_by_what_must_be_done_with_them") {
         return;
@@ -874,7 +874,7 @@ fn the_pack_groups_documents_by_what_must_be_done_with_them() {
     let by_code = reg.lifecycle.by_code().expect("codes");
     for code in ["NDA", "ONB", "INS", "PUB"] {
         let doc = by_code.get(code).expect("declared");
-        tool_docket::application::issue::one(
+        platform_docket::application::issue::one(
             &FileStore::new(&sb.paths),
             &FileBlobs::new(&sb.paths),
             &sb.paths,
@@ -888,7 +888,7 @@ fn the_pack_groups_documents_by_what_must_be_done_with_them() {
     }
 
     let grouped =
-        tool_docket::application::pack::grouped(&FileStore::new(&sb.paths), &reg, "t", None)
+        platform_docket::application::pack::grouped(&FileStore::new(&sb.paths), &reg, "t", None)
             .expect("grouped");
     let find = |a: Action| -> Vec<String> {
         grouped
@@ -933,7 +933,7 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
         .get("NDA")
         .copied()
         .expect("declared");
-    tool_docket::application::issue::one(
+    platform_docket::application::issue::one(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -947,7 +947,7 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
 
     let before = std::fs::read(sb.paths.register()).expect("register");
     let out = sb.dir.path().join("out");
-    let p = tool_docket::application::pack::assemble(
+    let p = platform_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -966,7 +966,7 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
     for line in manifest.lines() {
         let (hash, rel) = line.split_once("  ").expect("manifest line");
         let bytes = std::fs::read(p.root.join(rel)).expect("packed file");
-        assert_eq!(tool_docket::domain::chain::sha256(&bytes), hash, "{rel}");
+        assert_eq!(platform_docket::domain::chain::sha256(&bytes), hash, "{rel}");
     }
     assert!(
         p.root.join("00_Read_Me_First.pdf").exists(),
@@ -997,7 +997,7 @@ fn packing_a_person_with_nothing_issued_is_refused() {
     )
     .expect("creates");
     let out = sb.dir.path().join("out");
-    let err = tool_docket::application::pack::assemble(
+    let err = platform_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -1040,7 +1040,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
         .get("NDA")
         .copied()
         .expect("declared");
-    tool_docket::application::issue::one(
+    platform_docket::application::issue::one(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -1053,7 +1053,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
     .expect("issues");
 
     let out = sb.dir.path().join("out");
-    let first = tool_docket::application::pack::assemble(
+    let first = platform_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -1068,7 +1068,7 @@ fn rebuilding_a_pack_replaces_it_rather_than_accumulating() {
     let stray = first.root.join("01_Sign_and_return").join("99_stale.pdf");
     std::fs::write(&stray, b"left over from a previous pack").expect("write");
 
-    let again = tool_docket::application::pack::assemble(
+    let again = platform_docket::application::pack::assemble(
         &FileStore::new(&sb.paths),
         &FileBlobs::new(&sb.paths),
         &sb.paths,
@@ -1133,7 +1133,7 @@ fn a_message_reports_attachments_that_have_not_been_issued() {
         "rohan",
     )
     .expect("creates");
-    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+    let due = platform_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
         .expect("due");
     let offer = due
         .iter()
@@ -1157,7 +1157,7 @@ fn messages_are_addressed_from_the_record() {
         "rohan",
     )
     .expect("creates");
-    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+    let due = platform_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
         .expect("due");
     let offer = due.iter().find(|m| m.id == "offer").expect("offer");
     assert_eq!(offer.address.as_deref(), Some("test.person@example.com"));
@@ -1190,7 +1190,7 @@ fn the_guardian_message_is_due_only_for_a_child() {
     )
     .expect("creates");
     let adult =
-        tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "adult", None)
+        platform_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "adult", None)
             .expect("due");
     assert!(
         !adult.iter().any(|m| m.id == "guardian"),
@@ -1219,7 +1219,7 @@ fn the_guardian_message_is_due_only_for_a_child() {
         ],
     );
     let child =
-        tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "child", None)
+        platform_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "child", None)
             .expect("due");
     let g = child
         .iter()
@@ -1249,7 +1249,7 @@ fn messages_are_cumulative_across_stages() {
     )
     .expect("creates");
     sb.edit("t", &[("stage: preboarding", "stage: active")]);
-    let due = tool_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
+    let due = platform_docket::application::comms::due(&FileStore::new(&sb.paths), &reg, "t", None)
         .expect("due");
     let ids: Vec<&str> = due.iter().map(|m| m.id.as_str()).collect();
     assert!(
@@ -1281,7 +1281,7 @@ fn next_walks_a_person_through_the_workflow_in_order() {
     )
     .expect("creates");
 
-    let first = tool_docket::application::next::steps(
+    let first = platform_docket::application::next::steps(
         &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
@@ -1318,7 +1318,7 @@ fn next_refuses_to_look_past_a_record_that_cannot_be_issued_against() {
         &[("currently_enrolled: true", "currently_enrolled: false")],
     );
 
-    let steps = tool_docket::application::next::steps(
+    let steps = platform_docket::application::next::steps(
         &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
@@ -1357,7 +1357,7 @@ fn next_does_not_suggest_advancing_out_of_an_ungated_stage() {
     )
     .expect("creates");
     sb.edit("t", &[("stage: preboarding", "stage: active")]);
-    let steps = tool_docket::application::next::steps(
+    let steps = platform_docket::application::next::steps(
         &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,
@@ -1395,7 +1395,7 @@ fn next_says_nothing_remains_for_an_erased_person() {
         "rohan",
     )
     .expect("erases");
-    let steps = tool_docket::application::next::steps(
+    let steps = platform_docket::application::next::steps(
         &FileStore::new(&sb.paths),
         &sb.paths,
         &reg,

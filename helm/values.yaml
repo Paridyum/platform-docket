@@ -4,10 +4,10 @@
 replicaCount: 2
 
 image:
-  # ghcr.io/paridyum/tool-docket — the path is the REPOSITORY name, class prefix included, because
+  # ghcr.io/paridyum/platform-docket — the path is the REPOSITORY name, class prefix included, because
   # that is what the image is published under (image-publish derives it from github.repository).
   # The chart/release name strips it to the bare capability `docket` (C-0007).
-  repository: ghcr.io/paridyum/tool-docket
+  repository: ghcr.io/paridyum/platform-docket
   # REQUIRED, no tag: the digest is the deployment's identity (ADR-0060, REQ-0004 §2). The chart
   # refuses to render without it; supplied per release from the image-publish run.
   digest: ""

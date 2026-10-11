@@ -1,4 +1,4 @@
-# A served HR platform for `tool-docket`
+# A served HR platform for `platform-docket`
 
 **Status:** design, approved 2026-08-21. **Amended 2026-08-21** — see §0.
 **Supersedes:** nothing. **Depends on:** ADR-0047, ADR-0054, ANTI-0004, C-0007.
