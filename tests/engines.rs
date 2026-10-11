@@ -2,8 +2,8 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 
-use std::path::PathBuf;
 use platform_docket::adapters::typeset::Engine;
+use std::path::PathBuf;
 
 mod common;
 

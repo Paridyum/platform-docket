@@ -680,9 +680,14 @@ fn the_offboarding_checklist_names_access_still_open() {
         .expect("records");
     }
     let person = store::person(&sb.paths, "t").expect("record");
-    let mut defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    platform_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
-        .expect("history");
+    let mut defs =
+        platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    platform_docket::application::issue::add_history(
+        &mut defs,
+        &FileStore::new(&sb.paths),
+        &person,
+    )
+    .expect("history");
 
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("1"));
     let items = defs.get("dkPAccessOpenItems").unwrap_or_default();
@@ -711,9 +716,14 @@ fn a_person_with_no_recorded_history_still_renders() {
     )
     .expect("creates");
     let person = store::person(&sb.paths, "t").expect("record");
-    let mut defs = platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
-    platform_docket::application::issue::add_history(&mut defs, &FileStore::new(&sb.paths), &person)
-        .expect("history");
+    let mut defs =
+        platform_docket::application::issue::definitions(&reg, Some(&person), None, date());
+    platform_docket::application::issue::add_history(
+        &mut defs,
+        &FileStore::new(&sb.paths),
+        &person,
+    )
+    .expect("history");
     assert_eq!(defs.get("dkPAccessOpenCount"), Some("0"));
     assert!(
         defs.get("dkPAccessOpenItems")
@@ -966,7 +976,11 @@ fn the_pack_verifies_on_its_own_and_leaves_the_store_untouched() {
     for line in manifest.lines() {
         let (hash, rel) = line.split_once("  ").expect("manifest line");
         let bytes = std::fs::read(p.root.join(rel)).expect("packed file");
-        assert_eq!(platform_docket::domain::chain::sha256(&bytes), hash, "{rel}");
+        assert_eq!(
+            platform_docket::domain::chain::sha256(&bytes),
+            hash,
+            "{rel}"
+        );
     }
     assert!(
         p.root.join("00_Read_Me_First.pdf").exists(),

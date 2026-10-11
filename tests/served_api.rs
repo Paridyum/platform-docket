@@ -11,10 +11,6 @@
 mod common;
 
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, encode};
-use rsa::RsaPrivateKey;
-use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use platform_docket::adapters::auth::OperatorVerifier;
 use platform_docket::adapters::blobs::FileBlobs;
 use platform_docket::adapters::clock::{FixedClock, parse_iso};
@@ -24,6 +20,10 @@ use platform_docket::adapters::http::router::{self, Context};
 use platform_docket::adapters::pg::{self, PgStore};
 use platform_docket::adapters::registry::Registry;
 use platform_docket::config::Paths;
+use rsa::RsaPrivateKey;
+use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 const ISS: &str = "https://id.test";
 const AUD: &str = "ops-project";

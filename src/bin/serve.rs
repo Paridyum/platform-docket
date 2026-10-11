@@ -30,14 +30,14 @@
 //! ```
 
 use anyhow::{Context, Result};
-use std::net::SocketAddr;
-use std::path::Path;
 use platform_docket::adapters::auth::{OperatorVerifier, TenantVerifier, keys_from_jwks};
 use platform_docket::adapters::clock::SystemClock;
 use platform_docket::adapters::http::server::{self, Backend, Serving};
 use platform_docket::adapters::pg::{self, PgTenantStores};
 use platform_docket::adapters::registry::Registry;
 use platform_docket::config::Paths;
+use std::net::SocketAddr;
+use std::path::Path;
 
 fn env(key: &str) -> Result<String> {
     std::env::var(key).with_context(|| format!("required environment variable {key} is unset"))

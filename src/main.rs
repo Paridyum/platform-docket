@@ -2,11 +2,6 @@
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use std::collections::BTreeMap;
-use std::io::{BufRead, Write};
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use platform_docket::adapters::api::{
     self, AdvanceRequest, ApiClient, EnrolRequest, PostOutcome, SignRequest,
 };
@@ -29,6 +24,11 @@ use platform_docket::domain::event::Kind;
 use platform_docket::domain::identity::Standing;
 use platform_docket::domain::person;
 use platform_docket::domain::signature::Method;
+use std::collections::BTreeMap;
+use std::io::{BufRead, Write};
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use uuid::Uuid;
 
 /// Paridyum's internship document system.
@@ -1997,7 +1997,10 @@ fn cmd_vault(
 /// page cannot read this at build time without its content depending on which machine
 /// built it. Exporting makes the published set a reviewed diff instead.
 fn cmd_team(paths: &Paths, registry: &Registry) -> Result<ExitCode> {
-    print!("{}", platform_docket::application::team::export_json(registry)?);
+    print!(
+        "{}",
+        platform_docket::application::team::export_json(registry)?
+    );
     // The receipt is written AFTER the export is emitted, and records what it was derived
     // from. `docket check` compares it, so editing signatories.yaml and forgetting to
     // re-export becomes a warning here rather than a stale public page nobody notices (D-48).

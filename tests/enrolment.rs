@@ -246,8 +246,9 @@ fn a_minimal_record_is_told_which_fields_a_document_still_needs() {
     let person = platform_docket::adapters::store::person(&paths, "t").expect("record");
     let who = platform_docket::application::personnel::identify(&FileStore::new(&paths), "t")
         .expect("identified");
-    let blocked = platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
-        .expect("checks");
+    let blocked =
+        platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
+            .expect("checks");
 
     assert!(
         !blocked.is_empty(),
@@ -293,8 +294,9 @@ fn a_complete_record_has_nothing_unrenderable() {
     let person = platform_docket::adapters::store::person(&paths, "t").expect("record");
     let who = platform_docket::application::personnel::identify(&FileStore::new(&paths), "t")
         .expect("identified");
-    let blocked = platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
-        .expect("checks");
+    let blocked =
+        platform_docket::application::issue::unrenderable(&paths, &reg, &person, &who, &[])
+            .expect("checks");
     assert!(
         blocked.is_empty(),
         "the shipped template must render everything: {blocked:?}"

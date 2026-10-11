@@ -93,7 +93,11 @@ fn date() -> time::Date {
 }
 
 /// Issue one document by code.
-fn issue_one(sb: &Sandbox, person: &Person, code: &str) -> platform_docket::domain::register::Entry {
+fn issue_one(
+    sb: &Sandbox,
+    person: &Person,
+    code: &str,
+) -> platform_docket::domain::register::Entry {
     let reg = registry();
     let by_code = reg.lifecycle.by_code().expect("codes");
     let doc = by_code.get(code).expect("known code");
