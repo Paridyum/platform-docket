@@ -87,11 +87,14 @@ table owns the per-platform command. Neither owns a version: those are in
 Two tools are installed from the registry rather than from this table:
 
 ```sh
-./scripts/install-tools.sh          # clones each pinned tool at its recorded commit sha
+./scripts/install-tools.sh          # installs each pinned tool at its recorded commit sha
 ./scripts/install-tools.sh --check  # report what is missing, install nothing
 ```
 
-`archify` (RUN-0006) is the only one today. It is deliberately **not** installed with the
+`archify` (RUN-0006), cloned at its commit, and `forge`, built by `cargo install --locked` from
+`Paridyum/tool-forge` at its commit into `~/.cargo/bin` — the path `bootstrap.sh` checks, and the one
+that tells ours from Foundry's `forge`. Advancing `forge` means moving its `ref` in
+`tool-registry.yaml` to a newer `tool-forge` commit and re-running the script. It is deliberately **not** installed with the
 `npx skills add` command its own README documents — that delegates the clone to a third-party CLI
 at no pinned revision.
 
@@ -344,8 +347,9 @@ enforces it.
 
 ## Verification
 
-`scripts/bootstrap.sh --check` verifies without changing anything. Once `tool-forge`
-ships, `forge doctor` supersedes it and this section is updated to say so.
+`scripts/bootstrap.sh --check` verifies without changing anything. `forge doctor` is not built,
+so `bootstrap.sh --check` remains the verifier for the machine; `forge audit`, run from
+`~/Developer/paridyum`, is the verifier for the clones (RFC-0060).
 
 Known limitation: on macOS, `gh` stores its token in the Keychain, which a detached or
 non-TTY process cannot unlock. Running `--check` outside a terminal reports gh as
@@ -360,7 +364,8 @@ unauthenticated. The script detects this and warns rather than failing.
 3. `gh auth login`, then the `gh auth refresh` above.
 4. Clone `knowledge`, run `bootstrap.sh`.
 5. Install the `paridyum-platform` plugin.
-6. `forge doctor`.
+6. `scripts/install-tools.sh` — `forge` and `archify` at their pins.
+7. Clone the repositories into the layout above, then `forge audit` from `~/Developer/paridyum`.
 
 Steps 1–3 cannot be scripted from a truly blank machine because they require browser
 interaction. Everything after step 3 can.

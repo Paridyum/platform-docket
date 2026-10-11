@@ -261,3 +261,29 @@ This is deliberately **not** a widening of `tool-`. Giving a tool a client is st
 becomes a service without an ADR (decision 3's own sentence), which is exactly why the station
 got a class of its own. RFC-0054's `agent-reel` is the first instance; the class registry entry
 landed with ADR-0111.
+
+## Addendum — 2026-10-09: a role counts only in the project the resource server pins
+
+Decision 4 makes the audience the boundary, and decision 2 makes each project its own role
+vocabulary. Together they imply a third rule that was never written down: **a resource server
+reads roles only from its own project's claim,** `urn:zitadel:iam:org:project:{pinned}:roles`,
+and never from another project's claim in the same token.
+
+It matters because a token may legitimately carry several audiences. The tenant saga's token carries
+both platform-routing's project and platform-deployment's, each with its own role
+(`bindings.manage`, `releases.manage`), because the saga calls both (ADR-0039 D1, decision 4's second
+rule). `paridyum-auth` 0.2.0 took the roles of the **first** project-roles claim in the token. Keys sort,
+so routing's project came first, and platform-deployment saw `bindings.manage`. It refused the saga
+(403), so no tenant's compensation could finish; X2 found this on 2026-10-04. The opposite ordering
+would have been worse: a role granted in one project would satisfy a check in another whenever the
+names coincide. `operator`, the one name several products share, is exactly that case.
+
+Decided:
+
+- **A verifier reads roles from its pinned project's claim only.** A token whose `aud` contains the
+  pin, but which holds no claim for that project, authenticates with no roles: entitled to nothing,
+  never to another project's roles.
+- **A multi-audience token is legitimate and stays so.** Decision 4's second rule still bounds which
+  audiences a client may request; this addendum changes nothing a client requests.
+- **`paridyum-auth` carries the rule** (it owns the claims contract, ADR-0107 D4), released as 0.2.1. Its
+  consumers move to it.

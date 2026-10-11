@@ -220,3 +220,27 @@ rather than trusting `completed_steps`, which is what the crash may have corrupt
 - RFC-0012 — the Zitadel resources steps 2–4 create
 - STD-0006 — the migration conventions the saga table follows
 - REQ-0005 — events; a provisioning event stream is the natural subscriber path
+
+## Addendum — 2026-10-09: a derived Zitadel organization id is decimal
+
+D4's client-supplied identifiers are derived from the provisioning id, so a retry recomputes the same id
+and finds what the first attempt made. The saga rendered the organization's id as a 32-character hex
+UUID. Zitadel accepts that at creation. But its login, v4.15.3, reads the organization from a sign-in
+request with `/urn:zitadel:iam:org:id:([0-9]+)/` (`apps/login/src/lib/server/flow-initiation.ts`), so it
+keeps only the leading digits. X2 (PLAN-TENANT-HOSTS §6) measured it:
+- tenant-a3's dashboard asked for `urn:zitadel:iam:org:id:4aeec496…`, and the login scoped itself to
+  organization `4`;
+- tenant-b3's became `34950`.
+
+A tenant's sign-in page was therefore never its own: not its login policy, branding or "Continue with
+Paridyum".
+
+**Decided:** a derived Zitadel **organization** id is **decimal**. It is the provisioning's UUIDv5 under
+the saga's namespace, as before, reduced to its low 63 bits and written in base 10. That is a positive
+id of up to 19 digits, the shape of Zitadel's own ids, and still derived, so D4 holds unchanged.
+- **Existing provisionings keep the id they recorded.** The column is filled at request time, so no
+  migration is needed; the synthetic tenants made before this are retired at S8.
+- **A collision** in 63 bits among one region's organizations is negligible, and the instance refuses a
+  duplicate id, which the saga treats as an existing organization and confirms by id (D4).
+- **Other derived ids** (the owner's user) stay hex until a reader is found that assumes otherwise.
+  None is known; X2 is the test that would find one.

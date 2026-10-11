@@ -2112,6 +2112,29 @@ PY_TOOLREG
   fi
 fi
 
+# --- 8h. knowledge.marketplace_agrees_with_plugin_version (ADR-0007) ---------
+# The harness is declared at a version in TWO places: the plugin's own manifest and its entry in
+# the marketplace this repository publishes. They disagreed for two weeks — the manifest read
+# 0.2.0 while the marketplace still read 0.1.0 — and nothing noticed, because nothing compared
+# them. A version is what Claude Code uses to decide whether an installed copy is stale, so two
+# versions for one plugin is two answers to that question. Found 2026-10-07 (#47).
+MKT_JSON=".claude-plugin/marketplace.json"; PLUGIN_JSON="plugins/paridyum-platform/.claude-plugin/plugin.json"
+if [[ -f "$MKT_JSON" && -f "$PLUGIN_JSON" ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    mv_="$(jq -r '.plugins[]? | select(.name == "paridyum-platform") | .version // empty' "$MKT_JSON" 2>/dev/null)"
+    pv_="$(jq -r '.version // empty' "$PLUGIN_JSON" 2>/dev/null)"
+    if [[ -z "$pv_" ]]; then
+      err "$PLUGIN_JSON declares no version — Claude Code cannot tell an installed copy is stale (ADR-0007)"
+    elif [[ -n "$mv_" && "$mv_" != "$pv_" ]]; then
+      err "$MKT_JSON lists paridyum-platform at $mv_ but $PLUGIN_JSON says $pv_ — one plugin, two versions (knowledge.marketplace_agrees_with_plugin_version, ADR-0007)"
+    else
+      printf '%s✔%s paridyum-platform is %s in its manifest and in the marketplace\n' "$GRN" "$RST" "$pv_"
+    fi
+  else
+    wrn "jq unavailable — knowledge.marketplace_agrees_with_plugin_version not evaluated"
+  fi
+fi
+
 # --- 9. enforcement inventory (ADR-0014: reported at every run) -------------
 # Not gated on --audit. A backlog is worth nothing if seeing it requires
 # choosing to look.

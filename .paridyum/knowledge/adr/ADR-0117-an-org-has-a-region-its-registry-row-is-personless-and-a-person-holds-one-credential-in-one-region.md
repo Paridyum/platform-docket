@@ -39,6 +39,13 @@ sources:
 
 # ADR-0117 — An org has a region, its registry row is personless, and a person holds one credential in one region
 
+> **Superseded in part, 2026-10-10 — ADR-0142.** **D1 is amended by ADR-0142:** an org's region is
+> chosen **when the org is created** — the personal org at signup, a team org at creation — not "at
+> signup" for every org, and its creator is admitted to that region as a linked user (D7). A global
+> `paridyum.in` user may own an org in another region, and the credential never moves (ADR-0141).
+> D1's "chosen explicitly from the regions that exist … immutable except by migration and contract
+> amendment" stands.
+
 ## Status
 
 **ACCEPTED** 2026-09-28 by the operator, answering the question *"how we run a multi-region cloud —

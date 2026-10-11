@@ -72,12 +72,17 @@ done < <(grep -E '^### ' "$FILE")
 # alone missed it — a duplicated `### Added` was committed to this very file and the
 # gate stayed green. The reader cannot know which half to scan, which is the whole
 # failure a changelog format check exists to prevent.
-awk '
+#
+# FED BY PROCESS SUBSTITUTION, NOT A PIPE. `awk … | while … err` ran the loop in a subshell, so
+# each `err` printed its ✘ and the count it incremented died with the subshell: a duplicate was
+# reported and the gate still said "valid" and exited 0 — the defect this paragraph describes,
+# back again inside its own fix. Found 2026-10-08, when a duplicated `### Added` passed.
+while IFS='|' read -r ver cat; do
+  err "duplicate '$cat' under '$ver' — merge them; a category may appear once per version (STD-0005)"
+done < <(awk '
   /^## /  { ver = $0; delete seen; next }
   /^### / { if (seen[$0]++) printf "%s|%s\n", ver, $0 }
-' "$FILE" | while IFS='|' read -r ver cat; do
-  err "duplicate '$cat' under '$ver' — merge them; a category may appear once per version (STD-0005)"
-done
+' "$FILE")
 
 # ── entries must be curated, not dumped ──────────────────────────────────────
 # A commit hash or a bare Conventional Commit prefix in an entry means a generated

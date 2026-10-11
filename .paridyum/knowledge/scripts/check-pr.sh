@@ -124,6 +124,27 @@ if [[ -n "$BODY" && -f "$BODY" ]]; then
     || wrn "the PR body cites no REQ-, RFC- or ADR- id — the reason for this work exists only outside the repository (STD-0007, C-0001 principle 3)"
 fi
 
+# --- pr.harness_change_advances_plugin_version (ADR-0007) --------------------
+# Claude Code refreshes an installed plugin only when its `version` changes, and `claude plugin
+# update` compares versions, not commits. A branch that changes a hook or a skill and leaves the
+# version alone therefore ships nothing: every workstation keeps the old harness while
+# installed_plugins.json records the newer commit. Found 2026-10-07, when 0.2.0 had carried every
+# hook change for two weeks (#47). Only the executable parts count — hooks, skills, agents,
+# commands — so a README edit does not demand a release (ADR-0008: a check that fires on harmless
+# changes gets switched off). In scope only where the plugin lives.
+PLUGIN_DIR="plugins/paridyum-platform"
+if [[ -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ]] && command -v jq >/dev/null 2>&1; then
+  harness_n="$(git diff --name-only "$MB"...HEAD -- "$PLUGIN_DIR/hooks" "$PLUGIN_DIR/skills" \
+                 "$PLUGIN_DIR/agents" "$PLUGIN_DIR/commands" 2>/dev/null | grep -c .)"
+  if [[ "$harness_n" -gt 0 ]]; then
+    was_v="$(git show "$MB:$PLUGIN_DIR/.claude-plugin/plugin.json" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)"
+    now_v="$(jq -r '.version // empty' "$PLUGIN_DIR/.claude-plugin/plugin.json" 2>/dev/null)"
+    if [[ -n "$was_v" && "$was_v" == "$now_v" ]]; then
+      err "the branch changes $harness_n harness file(s) under $PLUGIN_DIR/ and leaves the plugin at $now_v — no installed copy will receive them; bump plugin.json and the marketplace entry (pr.harness_change_advances_plugin_version, ADR-0007)"
+    fi
+  fi
+fi
+
 printf '\n'
 if [[ "$EXPECT_FAIL" == true ]]; then
   [[ $ERRORS -gt 0 ]] && { printf '%s✔%s expected failure produced %d error(s)\n' "$GRN" "$RST" "$ERRORS"; exit 0; }

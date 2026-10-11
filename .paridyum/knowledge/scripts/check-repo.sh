@@ -305,16 +305,45 @@ fi
 # commit this clone has never fetched.
 IP="$HOME/.claude/plugins/installed_plugins.json"
 if [[ -f "$IP" ]] && git -C "$R" rev-parse --git-dir >/dev/null 2>&1; then
-  psha="$(python3 -c "
-import json,sys
+  # The entry that applies HERE: a project-scoped install whose path contains this repository,
+  # otherwise the user-scoped one. Reading entry [0] regardless picked whichever was written first.
+  IFS=$'\t' read -r psha pinst pver < <(python3 - "$IP" "$R" <<'PYPIN' 2>/dev/null
+import json, os, sys
 try:
-    d=json.load(open('$IP'))['plugins']['paridyum-platform@paridyum'][0]
-    print(d.get('gitCommitSha',''))
+    es = json.load(open(sys.argv[1]))['plugins']['paridyum-platform@paridyum']
 except Exception:
-    pass" 2>/dev/null)"
+    sys.exit(0)
+here = os.path.realpath(sys.argv[2])
+def applies(e):
+    p = e.get('projectPath')
+    return e.get('scope') == 'project' and p and (here + '/').startswith(os.path.realpath(p) + '/')
+e = next((e for e in es if applies(e)), None) or next((e for e in es if e.get('scope') == 'user'), None) or (es[0] if es else {})
+print('\t'.join([e.get('gitCommitSha', ''), e.get('installPath', ''), e.get('version', '')]))
+PYPIN
+)
   if [[ -n "$psha" ]]; then
     if ! git -C "$R" cat-file -e "$psha" 2>/dev/null; then
-      wrn "the installed plugin pins commit ${psha:0:12}, which is not in this clone — cannot tell whether the running hooks match the repository (ADR-0027)"
+      # A consuming repository can never contain the knowledge commit the pin names, so the commit
+      # question has no answer here — and asking it anyway warned in every repository on every run,
+      # which is noise that teaches people to skip the gate (ADR-0008). Ask the question that HAS an
+      # answer offline: are the installed files the harness this repository's vendored snapshot
+      # carries (ADR-0001)? It is also the stricter question. On 2026-10-07 the recorded pin was
+      # newer than the cached hooks, because Claude Code refreshes a plugin only on a version change;
+      # comparing commits said nothing was wrong, comparing files would have.
+      snapdir="$R/.paridyum/knowledge/plugins/paridyum-platform"
+      if [[ -n "$pinst" && -d "$pinst" && -d "$snapdir" ]]; then
+        nd=0
+        for sub in hooks skills; do
+          [[ -d "$snapdir/$sub" || -d "$pinst/$sub" ]] || continue
+          nd=$((nd + $(diff -rq "$pinst/$sub" "$snapdir/$sub" 2>/dev/null | grep -c .)))
+        done
+        if [[ $nd -gt 0 ]]; then
+          sver="$(python3 -c "import json;print(json.load(open('$snapdir/.claude-plugin/plugin.json')).get('version',''))" 2>/dev/null)"
+          wrn "the installed plugin (${pver:-unversioned}, $pinst) differs from this repository's vendored harness (${sver:-unversioned}) in $nd hook/skill file(s) — update the plugin or 'forge knowledge sync' the snapshot, whichever is behind (ADR-0007, ADR-0027)"
+        fi
+      else
+        wrn "the installed plugin pins commit ${psha:0:12}, which is not in this clone, and there is no installed copy and vendored harness to compare — cannot tell whether the running hooks match the repository (ADR-0027)"
+      fi
     else
       # SUBTREE, not commit distance. The first version compared the pinned sha to HEAD and warned
       # on any gap, which fires on every commit that does not touch the harness — and a check that
@@ -413,11 +442,12 @@ if [[ -f "$R/package.json" ]]; then
     grep -qE '^allowBuilds:' "$WS" \
       || err "pnpm-workspace.yaml declares no allowBuilds — empty is the correct starting state, absent is not a decision (RFC-0003)"
     # The rewritten placeholder. A string where a boolean belongs.
-    if grep -qE '^[[:space:]]+[^:#]+:[[:space:]]*set this to true or false' "$WS"; then
-      grep -nE '^[[:space:]]+[^:#]+:[[:space:]]*set this to true or false' "$WS" | while IFS= read -r line; do
-        err "pnpm-workspace.yaml carries pnpm's rewritten allowBuilds placeholder, which enforces nothing: ${line} — replace it with an explicit true or false (RFC-0003)"
-      done
-    fi
+    # Process substitution, not a pipe: a piped `while` runs in a subshell, where `err` printed its
+    # ✘ and the error count it raised was discarded — the placeholder was named and the gate
+    # still passed (found 2026-10-08).
+    while IFS= read -r line; do
+      err "pnpm-workspace.yaml carries pnpm's rewritten allowBuilds placeholder, which enforces nothing: ${line} — replace it with an explicit true or false (RFC-0003)"
+    done < <(grep -nE '^[[:space:]]+[^:#]+:[[:space:]]*set this to true or false' "$WS")
     # A version-pinned first-party exemption is pnpm's rewrite, not the estate's posture:
     # it expires on the next release and sends every @paridyum package into the quarantine.
     if grep -qE "^[[:space:]]+- *'?@paridyum/[a-z-]+@[0-9]" "$WS"; then
