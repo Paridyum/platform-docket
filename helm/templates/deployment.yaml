@@ -28,6 +28,8 @@ spec:
       {{- end }}
       # In-flight requests and the graceful shutdown need a moment on a rolling update.
       terminationGracePeriodSeconds: 30
+      # Nothing here calls the Kubernetes API, so no service-account token is mounted.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
