@@ -57,6 +57,8 @@ COPY latex ./latex
 COPY --from=builder /usr/local/bin/serve /usr/local/bin/serve
 USER 10001
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/api/health || exit 1
 # No shell form: PID 1 is the binary itself, so SIGTERM reaches it and the graceful shutdown
 # actually runs on a rolling update.
 ENTRYPOINT ["/usr/local/bin/serve"]
