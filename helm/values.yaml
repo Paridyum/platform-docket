@@ -21,6 +21,8 @@ resources:
   # ADR-0020 requires limits. A Rust service that also shells `typst`/`latex` for issuance, so the
   # memory ceiling is higher than a pure API. Requests and limits equal on memory so an overrun is
   # OOM-killed under test rather than surprising production.
+  # unmeasured (RFC-0103 D5): these requests are not yet from a measurement of this workload under
+  # load; they are replaced by its measured p95 RSS and CPU, with the headroom applied, when one exists.
   requests: { cpu: 100m, memory: 128Mi }
   limits: { cpu: "1", memory: 512Mi }
 

@@ -88,3 +88,10 @@ missing_errors_doc      = "warn"
 
 [lints]
 workspace = true
+
+# RFC-0103 D3: thin LTO, one codegen unit, stripped; "unwind" so a handler panic ends one task.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"
