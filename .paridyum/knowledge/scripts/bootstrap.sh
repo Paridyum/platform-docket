@@ -316,7 +316,7 @@ if command -v forge >/dev/null 2>&1; then
     note "likely Foundry — ours installs to ~/.cargo/bin/forge. See C-0002."
   fi
 else
-  note "forge not installed yet — tool-forge is not built (expected pre-v0.1)"
+  note "forge not installed — run scripts/install-tools.sh forge (it builds tool-forge at its pinned commit, RUN-0001)"
 fi
 
 # --------------------------------------------------------------------------

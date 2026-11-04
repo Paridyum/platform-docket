@@ -1218,7 +1218,7 @@ either appears in a migration or stops being claimed. → produces a glossary co
 > edited in passing.
 
 #### ~~T-G.6 Declare `product:` on the web manifests~~ — **done 2026-09-27**: `web-hiring` declares `product: [hiring]` (web-hiring#6); RFC-0048 open question 2 marked answered
-`web-admin` declares `product: [identity]`; `web-hiring` and `web-paridyum` declare none, and under
+`web-console` declares `product: [identity]`; `web-hiring` and `web-paridyum` declare none, and under
 ADR-0050 an absent value means *every* product.
 **Done when:** both manifests declare a product and `knowledge.product_slugs_resolve` passes.
 Implements RFC-0048 slice 2.

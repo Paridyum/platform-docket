@@ -137,7 +137,7 @@ tenant: paridyum  (tenant zero, ADR-0049 D2)
   ├── Release  landing   ← web-paridyum      single-tenant, product zero's own (RFC-0048 §B)
   ├── Release  careers   ← web-hiring        tenant-served (RFC-0048 §A)
   ├── Release  docket    ← tool/console-docket  multi-tenant (ADR-0099)
-  ├── Release  admin     ← web-admin
+  ├── Release  admin     ← web-console
   └── Release  app       ← the control plane  ★ the special case (§D)
 
 tenant: <any other>

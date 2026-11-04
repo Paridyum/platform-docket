@@ -49,7 +49,7 @@ Observably:
    reads `paridyumTenantId()` from config. There is exactly one tenant it can ever serve, which is
    the shape ADR-0099 removed from docket when it deleted `DOCKET_TENANT_ID`.
 
-2. **Neither surface declares a `product:`.** `web-admin` declares `product: [identity]`; `web-hiring`
+2. **Neither surface declares a `product:`.** `web-console` declares `product: [identity]`; `web-hiring`
    and `web-paridyum` declare none. ADR-0050 makes `product` a governance axis and an absent value
    means *every* product — so two deployables that are in fact about one thing are governed as
    though they were about all of them.

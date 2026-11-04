@@ -277,7 +277,7 @@ Slice 1 blocks the rest. Slices 3–6 are one screen each and independently revi
 ## Open questions
 
 1. **Which repository?** `/dashboard` is a `web-` deployable that does not exist. Creating it
-   escalates to a human (ADR-0019 D5), and the alternative — growing it inside `web-admin`, which
+   escalates to a human (ADR-0019 D5), and the alternative — growing it inside `web-console`, which
    declares `product: [identity]` — would put the control plane inside a product that is not it.
    **Blocking slice 3.**
 2. **Does the dashboard need a categorical palette?** Not proven by these drafts, which show no

@@ -70,6 +70,41 @@ if [[ -z "$class" ]]; then
   printf 'prefix from `class-registry.yaml`: %s.\n\n' "${prefixes:-none could be read from this snapshot}"
 fi
 
+# --- CI that cannot run says so (RFC-0060 D5) --------------------------------------------------
+# On 2026-10-07 every self-hosted runner went offline and `main` sat queued for more than a day
+# with nobody told. The channel is this summary — the place ADR-0059 decision 3 already makes the
+# one the operator reads — chosen by the operator on 2026-10-08. GitHub is asked with the
+# operator's own `gh` login, so no secret is added, and every call is bounded so a session never
+# waits on the network: when `gh` or `perl` is absent, unauthorised, slow or offline the summary
+# says nothing, because an unanswered question is not news. PARIDYUM_CI_HEALTH=0 turns it off —
+# the check suite does, to stay offline.
+bounded() { perl -e 'alarm shift; exec @ARGV' "$@" 2>/dev/null; }
+if [[ "${PARIDYUM_CI_HEALTH:-1}" != "0" ]] && command -v gh >/dev/null 2>&1 \
+   && command -v perl >/dev/null 2>&1; then
+  read -r ci_online ci_total < <(bounded 4 gh api orgs/Paridyum/actions/runners \
+    --jq '"\([.runners[] | select(.status == "online")] | length) \(.runners | length)"' || true)
+  if [[ "${ci_total:-}" =~ ^[0-9]+$ && "${ci_online:-}" =~ ^[0-9]+$ && "$ci_total" -gt 0 ]]; then
+    if [[ "$ci_online" -eq 0 ]]; then
+      printf '**CI cannot run:** none of the organisation'"'"'s %s self-hosted runners is online, so every\n' "$ci_total"
+      printf 'pull request and push waits in the queue unverified; until they are back, the gates run only\n'
+      printf 'where someone runs them locally (RFC-0060 D5).\n\n'
+    else
+      # Runners online but `main` still queued: the queue itself is stuck. One hour, because a
+      # healthy run here starts within minutes.
+      queued_at="$( (cd "$cwd" && bounded 4 gh run list --branch main --status queued --limit 1 \
+        --json createdAt --jq '.[0].createdAt // empty') || true)"
+      if [[ -n "$queued_at" ]]; then
+        queued_s="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$queued_at" +%s 2>/dev/null \
+                    || date -u -d "$queued_at" +%s 2>/dev/null)"
+        if [[ "$queued_s" =~ ^[0-9]+$ ]] && (( $(date -u +%s) - queued_s > 3600 )); then
+          printf '**CI is stuck:** this repository'"'"'s run on main has waited in the queue since %s\n' "$queued_at"
+          printf 'while runners are online (RFC-0060 D5).\n\n'
+        fi
+      fi
+    fi
+  fi
+fi
+
 # Frontmatter reader: stops at the closing delimiter, so prose containing the word
 # "locked" cannot produce a false match.
 fm() { awk -v k="^$2:" 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit} $0~k{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$1" 2>/dev/null; }

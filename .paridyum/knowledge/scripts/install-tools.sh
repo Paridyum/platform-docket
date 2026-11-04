@@ -86,6 +86,33 @@ while IFS=$'\t' read -r id method ref path source pin_home; do
     continue
   fi
 
+  # `cargo` — built from the source repository at the pinned commit, into ~/.cargo/bin. There is no
+  # tree under TOOLS_HOME: `cargo install --list` records the revision a git install came from
+  # (`(<source>?rev=<ref>#<short sha>)` — the ref exactly as passed, then cargo's own abbreviation),
+  # and that record is the installed-at-the-pin check. `--locked` builds
+  # the dependency versions the commit's Cargo.lock names, never newer ones. Git over the CLI,
+  # because the source is a private repository reached with the operator's ssh agent.
+  if [[ "$method" == cargo ]]; then
+    if cargo install --list 2>/dev/null | grep -qF "?rev=$ref#"; then
+      ok "$id already at $ref"
+      continue
+    fi
+    MISSING=$((MISSING+1))
+    if [[ "$CHECK_ONLY" == true ]]; then
+      printf '%s·%s %s missing at %s\n' "$YLW" "$RST" "$id" "$ref"
+      continue
+    fi
+    command -v cargo >/dev/null || die "$id: cargo is required to install it (rustup, RUN-0001)"
+    [[ "$source" != "-" ]] || die "$id: install.method is cargo but no source is declared"
+    CARGO_NET_GIT_FETCH_WITH_CLI=true cargo install --locked --quiet --force \
+        --git "$source" --rev "$ref" \
+      || die "$id: cargo install failed from $source at $ref"
+    cargo install --list 2>/dev/null | grep -qF "?rev=$ref#" \
+      || die "$id: cargo finished, but its install list does not record $ref"
+    ok "$id installed at $ref"
+    continue
+  fi
+
   DEST="$TOOLS_HOME/$id/$ref"
   if [[ -d "$DEST/.git" ]]; then
     write_shim "$id" "$DEST" "$path"

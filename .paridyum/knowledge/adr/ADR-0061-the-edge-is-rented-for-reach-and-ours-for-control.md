@@ -219,3 +219,15 @@ here so that the first person to ask "did anyone check this vendor" finds the an
 - **RFC-0037** — the edge routing block at `X = 210–214`, reserved before anything needed it
 - **REQ-0012** — vendor approval, `deferred`, owed for both
 - **ADR-0044** — `traceparent`, still partly unmet
+
+## Addendum — 2026-10-09: customer domains terminate on our tier directly (ADR-0139)
+
+The rented tier stays in front of **Paridyum's own zones**, as decided above. **A customer's own domain
+does not pass through it.** It points at our edge's fixed address and is terminated there with a
+certificate the node obtains over ACME (ADR-0139). So:
+- the node admits 80 and 443 from everywhere, and our own names still accept only the rented tier's
+  ranges, now enforced by nginx on the real client address rather than by the security group alone;
+- D4's DNS-01 rule stays for our names. Customer names use TLS-ALPN-01 or HTTP-01, because their DNS
+  is not ours;
+- RFC-0016's Cloudflare for SaaS route for customer domains is not taken, because it would be the
+  distinctive vendor feature D3 forbids.

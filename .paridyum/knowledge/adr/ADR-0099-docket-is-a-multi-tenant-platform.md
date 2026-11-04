@@ -44,7 +44,7 @@ company, no signatory, no template of its own; it would issue Paridyum's.
 
 The estate already knows how to be multi-tenant, and docket should not invent a
 second way. ADR-0024 is the RLS posture, ADR-0038 the tenant/account accessors,
-ADR-0082 derives a tenant's uuid from its Zitadel organization id, and web-admin
+ADR-0082 derives a tenant's uuid from its Zitadel organization id, and web-console
 demonstrates the pattern end to end: the token carries the `resourceowner` (org)
 claim, the app derives the tenant, and RLS does the isolation. docket adopts it.
 

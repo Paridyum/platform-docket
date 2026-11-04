@@ -173,6 +173,30 @@ tools:
       on this workstation 2026-09-05: `doctor` reports all fifteen subsystems ok under Node
       26.8.1 and all five renderers render their bundled examples.
 
+  - id: caddy
+    purpose: >-
+      Terminates TLS for customers' own domains on the edge, obtaining each certificate on demand over
+      ACME once routing says the host is verified (ADR-0139 D2).
+    licence: Apache-2.0
+    source: https://github.com/caddyserver/caddy
+    tier: critical
+    adopted_by: [ADR-0139]
+    install:
+      method: release-binary
+      ref: v2.11.7
+      ref_dated: 2026-10-09
+    network: always
+    declared: 2026-10-09
+    exit: >
+      Any ACME client that can obtain a certificate at first handshake, behind an allow-list, replaces
+      it: lego with our own controller, or certmagic in a small service. Customers' records name
+      `domains.paridyum.in` and our address, never Caddy, so leaving touches no customer. Certificates
+      re-issue on demand within the CA's limits.
+    notes: >
+      The version here is the authority. infra-edge's edge_proxy role installs exactly it, with the
+      release asset's sha256 pinned beside it, as lego's is. Runs
+      only on the edge node, behind nginx's SNI split, for names that are not Paridyum's own.
+
   - id: cargo-audit
     purpose: Reports RustSec advisories against a lockfile in CI.
     licence: MIT OR Apache-2.0
@@ -310,6 +334,40 @@ tools:
       permissive licence. Unproblematic as an unmodified separate binary invoked by another
       process, which is the only way it is used here; it would need thought before being linked
       into anything shipped.
+
+  - id: forge
+    name: forge (tool-forge)
+    purpose: >
+      The estate's own governance CLI: which artifacts bind a repository, the checks it
+      implements, refreshing vendored knowledge snapshots one clone or every clone at a time,
+      and auditing and tidying the workspace's local clones (ADR-0004, RFC-0060).
+    licence: UNLICENSED
+    source: ssh://git@github.com/Paridyum/tool-forge.git
+    tier: supporting
+    adopted_by: [ADR-0001, ADR-0004, RFC-0060]
+    install:
+      method: cargo
+      ref: 8bd2a4f38d6d4fcebd7f007c80fddef370019355
+      ref_dated: 2026-10-08
+    network: explicit
+    declared: 2026-10-08
+    exit: >
+      First-party, so there is no vendor to leave: losing it costs the commands, not the work.
+      Every command it runs is plain git underneath — a snapshot refresh is a copy of a
+      `git archive`, the audit and the tidy are `git` queries and `git branch -D` on proven-held
+      refs — so each can be done by hand from its SOP, as it was before 2026-10-08.
+    notes: >
+      INSTALLED BY CARGO AT A COMMIT, INTO ~/.cargo/bin. `scripts/install-tools.sh forge` runs
+      `cargo install --locked --git <source> --rev <ref>`, and `cargo install --list` records the
+      revision, which is how the script knows the installed binary is the pinned one. That path
+      is the one `scripts/bootstrap.sh` already checks, and the one that tells our `forge` from
+      Foundry's (C-0007's note on the name).
+      UNTIL 2026-10-08 IT WAS NOT INSTALLED ANYWHERE. The workstation had no `forge`; the
+      snapshot refresh of that day built it from source to run it. RFC-0060 named installing it
+      as a cost owed.
+      `network: explicit`: only `audit --fetch`, `tidy` (asking GitHub whether a pull request
+      holds a branch, which `--no-prs` turns off) and `knowledge sync --all --push` reach a
+      remote.
 
   - id: gh
     name: GitHub CLI

@@ -28,9 +28,33 @@ Reports, in order of severity:
    *visible* rather than assumed. Do not "fix" these by downgrading them to
    `accepted` unless the rule genuinely cannot be checked.
 
-## Repository compliance
+## Local clones — `forge audit`
 
-Until `forge audit` ships, sweep the org directly.
+`forge audit` (ADR-0004, RFC-0060 D1) reports, for every clone in the RUN-0001 workspace, what it
+holds that its remote does not: a branch other than `main`, `main` behind or ahead of
+`origin/main`, uncommitted changes, stashes, live and dead worktrees, local branches already held
+on `origin` and ones held nowhere else, snapshot drift from `knowledge`, and a name with no
+registered prefix. It changes nothing.
+
+```sh
+cd ~/Developer/paridyum
+forge audit            # as of each clone's last fetch
+forge audit --fetch    # fetch first
+```
+
+Installed by `scripts/install-tools.sh forge` (RUN-0001). Its SOP in `tool-forge` says what each
+finding asks of you.
+
+**Clearing what it finds is a separate act, and only on request.** `forge tidy` prints a plan
+and removes only what is provably held elsewhere — on `origin/main`, in its own origin branch,
+patch-equivalent to `origin/main`, or inside a pull request's head — and only under `--apply`.
+`forge knowledge sync --all` refreshes stale snapshots, each on its own branch. Neither is run as
+part of an audit: the rule below — *do not fix drift silently* — still holds.
+
+## Repositories not cloned here
+
+`forge audit` sees the clones on this machine. A repository in the organisation that nobody has
+cloned is invisible to it, so sweep the organisation's names directly.
 
 **Derive the prefix list from `class-registry.yaml`; never restate it here.** The list is
 registry data (C-0007: *the grammar is constitutional, the list is data*). This skill carried a
@@ -81,12 +105,10 @@ first. A repository may carry a legitimate prefix and declare a different `class
 ADR-0093 §3. Read each manifest's `class` against its prefix before reporting; the sweep cannot
 tell you, and a rename that only fixes the directory leaves the other half behind (STD-0022).
 
-Then per repository, check that:
-
-- `.paridyum/knowledge/` exists and is newer than 30 days (ADR-0001)
-- the vendored snapshot is unmodified relative to `Paridyum/knowledge`
-- `CODEOWNERS`, `.github/workflows/`, and the knowledge check are present
-- the default branch is `main`
+Then per repository, `scripts/check-repo.sh --root <clone>` checks what `forge audit` does not —
+`CODEOWNERS`, `.github/workflows/` and the knowledge check present, the plugin reachable — and
+`forge audit` covers the snapshot: present, and identical to `knowledge` `main` file for file. The
+default branch is `main` on every repository (`gh repo list Paridyum --json defaultBranchRef`).
 
 ## Why this matters more than usual here
 
