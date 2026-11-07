@@ -788,4 +788,90 @@ fn an_organisations_documents_and_executed_scan_are_sealed_and_shreddable() {
         1,
         "the register survives"
     );
+    // Re-review r2: a lawful shred leaves `check` green, the missing scan being expected.
+    let check = platform_docket::application::check::run(&fs_store, &blobs, &sb.paths, &registry())
+        .expect("check runs");
+    assert!(!check.items.iter().any(|f| f.blocking), "{:?}", check.items);
+}
+
+#[test]
+fn shredding_one_organisation_document_leaves_its_others_alone() {
+    use platform_docket::adapters::blobs::Blobs as _;
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::counterparty;
+    // Re-review r1: retention is per document, so deletion is. Ending the letter's period must
+    // not destroy a later MOU's executed copy, the evidence of a binding agreement.
+    if crypt::detect().is_err() {
+        eprintln!("SKIP shredding_one_organisation_document_leaves_its_others_alone");
+        return;
+    }
+    let sb = Sandbox::new();
+    let (fs_store, blobs) = (FileStore::new(&sb.paths), FileBlobs::new(&sb.paths));
+    let facts = counterparty::Facts {
+        legal_name: "Example University",
+        address: "1 College Road, Dehradun",
+        office: "The Registrar",
+    };
+    let org = counterparty::enrol(&sb.paths, "example", facts, d("2026-11-07"), "rohan")
+        .expect("enrolled")
+        .id;
+    let golden = include_str!("fixtures/register-v1.jsonl");
+    let mut entries = Vec::new();
+    for code in ["ICL", "MOU"] {
+        let mut e: platform_docket::domain::register::Entry =
+            serde_json::from_str(golden.lines().next().expect("line")).expect("entry");
+        (e.person_id, e.engagement_id) = (None, None);
+        e.counterparty_id = Some(org.clone());
+        e.serial = format!("PAR/{code}/2026/0001");
+        e.pdf_path = format!("issued/{org}/{code}.pdf");
+        e.pdf_sha256 = platform_docket::domain::register::sha256(code.as_bytes());
+        blobs.put(&e.pdf_path, code.as_bytes()).expect("pdf");
+        let e = fs_store.append_register(e).expect("registered");
+        let scan = sb.paths.store.join(format!("{code}-signed.pdf"));
+        std::fs::write(&scan, code).expect("scan");
+        let (on, got) = (d("2026-11-08"), d("2026-11-09"));
+        sign::record(
+            &fs_store,
+            &blobs,
+            &registry(),
+            &e.serial,
+            Method::WetInk,
+            on,
+            got,
+            Some(&scan),
+            "rohan",
+        )
+        .expect("signed");
+        entries.push(e);
+    }
+    vault::seal_counterparty(&fs_store, &blobs, &sb.paths, &org, &sb.estate).expect("sealed");
+    let (letter, mou) = (&entries[0], &entries[1]);
+    let one = vault::shred_counterparty_document(
+        &fs_store,
+        &blobs,
+        &sb.paths,
+        &org,
+        &letter.serial,
+        d("2034-11-08"),
+        "rohan",
+    )
+    .expect("the letter shredded");
+    assert_eq!(
+        (one.objects, one.key_destroyed),
+        (2, false),
+        "its PDF and scan, not the key"
+    );
+    assert!(!blobs.exists(&letter.pdf_path).expect("probe"));
+    assert!(
+        blobs.exists(&mou.pdf_path).expect("probe"),
+        "the MOU is untouched"
+    );
+    assert!(
+        vault::unsealed(&fs_store, &sb.paths)
+            .expect("status")
+            .is_empty()
+    );
+    let check = platform_docket::application::check::run(&fs_store, &blobs, &sb.paths, &registry())
+        .expect("check runs");
+    assert!(!check.items.iter().any(|f| f.blocking), "{:?}", check.items);
 }

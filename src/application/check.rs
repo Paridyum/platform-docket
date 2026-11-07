@@ -679,6 +679,7 @@ fn register(
     for fault in verify_chain(&entries)? {
         err(items, fault.to_string());
     }
+    let shredded = crate::application::vault::Shredded::read(paths)?;
     for e in &entries {
         // The stored bytes are read back through the blob port (design §11) and re-hashed: the
         // seal-preservation invariant, checked rather than assumed, against files or Garage alike.
@@ -692,7 +693,7 @@ fn register(
                     format!("{}: stored PDF does not match its recorded hash", e.serial),
                 );
             }
-        } else {
+        } else if !shredded.covers(e) {
             warn(
                 items,
                 format!("{}: issued PDF is missing from the store", e.serial),
@@ -1206,6 +1207,8 @@ fn signatures(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Res
         err(items, format!("signature ledger {fault}"));
     }
     let register = store.register()?;
+    // A scan destroyed by `shred` or `erase` is gone lawfully, and its tombstone says so.
+    let shredded = crate::application::vault::Shredded::read(paths)?;
     for sig in &signatures {
         match register.iter().find(|e| e.serial == sig.serial) {
             None => err(
@@ -1226,7 +1229,7 @@ fn signatures(items: &mut Vec<Finding>, store: &dyn Store, paths: &Paths) -> Res
                     );
                 }
                 // A scan recorded but absent means the evidence is gone.
-                if let Some(rel) = &sig.scan_path {
+                if let Some(rel) = sig.scan_path.as_ref().filter(|_| !shredded.covers(e)) {
                     let p = paths.store.join(rel);
                     if !p.exists() {
                         err(

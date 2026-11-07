@@ -170,12 +170,16 @@ signature block are filled in by hand, so the scan `docket sign --scan` files ca
 the institution signatory's name and signature. Treat it as a person's:
 
     docket counterparty seal example-university     # into the vault, under its own key
-    docket counterparty shred example-university --confirm   # when retention ends, or on request
+    docket counterparty shred example-university PAR/ICL/2026/0001 --confirm   # one document
 
 `seal` encrypts the organisation's PDFs and scans into `store/vault/PAR-O-…/` (what is
-uploaded) and `docket vault status` reports any not yet sealed. `shred` destroys that
-key and vault and deletes the plaintext PDFs and scans; the register and the
-organisation's record stay, so a copy the institution holds still verifies.
+uploaded) and `docket vault status` reports any not yet sealed. `shred` works on ONE
+document — the one whose retention has ended (`docket retention`) or that a request
+covers — and deletes its sealed copies, PDF and scan, leaving the organisation's other
+documents alone: a letter's period ending must not destroy a later MOU's evidence.
+`--all example-university` (the slug again, to mean it) deletes every document and the
+key. The register and the organisation's record stay, a copy the institution holds still
+verifies, and `docket check` treats what a tombstone covers as lawfully gone.
 
 **When it goes wrong:**
 

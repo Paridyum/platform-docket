@@ -50,6 +50,41 @@ pub struct Tombstone {
     /// Whether the key itself was found and destroyed. `false` means the vault was already
     /// unreadable — worth recording, because it is a different fact from having shredded it.
     pub key_destroyed: bool,
+    /// The one document shredded, where only one was (an organisation's, RFC-0136). Absent when
+    /// the whole vault went, which is every tombstone written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+}
+
+/// What the tombstones say was lawfully destroyed: whole vaults by recipient, single documents
+/// by serial. A missing PDF or scan these cover is expected, not a fault.
+#[derive(Debug, Default)]
+pub struct Shredded {
+    recipients: std::collections::BTreeSet<String>,
+    serials: std::collections::BTreeSet<String>,
+}
+
+impl Shredded {
+    /// Read the tombstones.
+    ///
+    /// # Errors
+    /// As `tombstones`.
+    pub fn read(paths: &Paths) -> Result<Self> {
+        let mut out = Self::default();
+        for t in tombstones(paths)? {
+            match t.serial {
+                Some(serial) => out.serials.insert(serial),
+                None => out.recipients.insert(t.person_id),
+            };
+        }
+        Ok(out)
+    }
+
+    /// Whether this entry's documents were destroyed on purpose.
+    #[must_use]
+    pub fn covers(&self, entry: &crate::domain::register::Entry) -> bool {
+        self.serials.contains(&entry.serial) || self.recipients.contains(entry.recipient())
+    }
 }
 
 /// Read the tombstones. Append-only, and part of the register rather than the vault: it
@@ -294,6 +329,7 @@ pub fn shred(paths: &Paths, recipient: &str, date: time::Date, by: &str) -> Resu
         by: by.to_owned(),
         objects,
         key_destroyed: key.exists(),
+        serial: None,
     };
     append_tombstone(paths, &stone)?;
 
@@ -342,6 +378,63 @@ pub fn shred_counterparty(
         }
     }
     Ok(tombstone)
+}
+
+/// Shred ONE document issued to an organisation: its sealed copies and its plaintext PDF and scan.
+///
+/// Retention is per document, so deletion is too. Shredding the letter of collaboration when its
+/// period ends must not destroy a later MOU's executed copy, still inside its own period and the
+/// only evidence of a binding agreement. The key stays: the organisation's other documents are
+/// sealed under it. A tombstone naming the serial makes the absence lawful to `check`.
+///
+/// # Errors
+/// Fails if the serial was not issued to this organisation, or a file or blob cannot be deleted.
+pub fn shred_counterparty_document(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    counterparty: &CounterpartyId,
+    serial: &str,
+    date: time::Date,
+    by: &str,
+) -> Result<Tombstone> {
+    let register = store.register()?;
+    let Some(entry) = register
+        .iter()
+        .find(|e| e.serial == serial && e.counterparty_id.as_ref() == Some(counterparty))
+    else {
+        bail!("{serial} was not issued to {counterparty}");
+    };
+    let mut keys = vec![entry.pdf_path.clone()];
+    keys.extend(
+        store
+            .signatures()?
+            .into_iter()
+            .filter(|s| s.serial == serial)
+            .filter_map(|s| s.scan_path),
+    );
+    let dir = vault_dir(paths, counterparty.as_str());
+    let sealed: Vec<PathBuf> = keys
+        .iter()
+        .map(|k| dir.join(format!("{}.age", k.rsplit('/').next().unwrap_or(k))))
+        .filter(|p| p.exists())
+        .collect();
+    let record = Tombstone {
+        person_id: counterparty.to_string(),
+        shredded_on: clock::to_iso(date)?,
+        by: by.to_owned(),
+        objects: sealed.len(),
+        key_destroyed: false,
+        serial: Some(serial.to_owned()),
+    };
+    append_tombstone(paths, &record)?;
+    for object in &sealed {
+        fs::remove_file(object).with_context(|| format!("destroying {}", object.display()))?;
+    }
+    for key in &keys {
+        blobs.delete(key)?;
+    }
+    Ok(record)
 }
 
 fn append_tombstone(paths: &Paths, stone: &Tombstone) -> Result<()> {
@@ -621,10 +714,7 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
     // operator to re-seal what erasure destroyed; treating a never-sealed person as shredded
     // reports "everything is sealed" when nothing is. The tombstone is what distinguishes them,
     // and it is the record that erasure actually happened.
-    let shredded: std::collections::BTreeSet<String> = tombstones(paths)?
-        .into_iter()
-        .map(|t| t.person_id)
-        .collect();
+    let shredded = Shredded::read(paths)?;
 
     // Scans first, because they are the irreplaceable half: an issued PDF was handed over in a
     // pack, a returned scan exists nowhere else.
@@ -636,17 +726,14 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
         let Some(name) = Path::new(rel).file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        let Some(person) = register
-            .iter()
-            .find(|e| e.serial == sig.serial)
-            .map(|e| e.recipient().to_owned())
-        else {
+        let Some(entry) = register.iter().find(|e| e.serial == sig.serial) else {
             continue;
         };
-        if shredded.contains(person.as_str()) {
+        if shredded.covers(entry) {
             continue;
         }
-        if !vault_dir(paths, &person)
+        let person = entry.recipient();
+        if !vault_dir(paths, person)
             .join(format!("{name}.age"))
             .exists()
         {
@@ -665,7 +752,7 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
         else {
             continue;
         };
-        if shredded.contains(person_id.as_str()) {
+        if shredded.covers(&entry) {
             continue;
         }
         if !dir.join(format!("{name}.age")).exists() {
