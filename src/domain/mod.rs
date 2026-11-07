@@ -2,6 +2,7 @@
 
 pub mod address;
 pub mod chain;
+pub mod counterparty;
 pub mod definitions;
 pub mod escape;
 pub mod event;
