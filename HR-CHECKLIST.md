@@ -101,6 +101,11 @@ email or phone — the record refuses them.
 - [ ] `docket counterparty issue <slug> ICL` — the non-binding Letter of
       Collaboration, signed by the Director
 - [ ] Send the PDF from `store/issued/PAR-O-…/` yourself; nothing is sent for you
+- [ ] When a signed copy comes back: `docket sign <serial> --scan …`, then
+      `docket counterparty seal <slug>`. The scan carries the signatory's name and
+      signature — personal data — so it goes into the vault like a person's
+- [ ] When its retention ends (`docket retention`): `docket counterparty shred
+      <slug> --confirm`
 - [ ] **Not the MOU, yet.** `docket counterparty issue <slug> MOU` is the binding
       Memorandum of Understanding, and it is refused until PARIDYUM is incorporated
       and `registry/org.yaml` records its `cin` and `registered_office`. That

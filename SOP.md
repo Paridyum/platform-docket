@@ -161,8 +161,21 @@ organisation recorded.
 
 **The record holds those three facts and nothing else.** Never add the name,
 email or phone of anyone at the institution: the record will not load, and
-`docket check` reports it. The acknowledgement block on the letter is ruled lines
-for whoever signs it to fill in by hand.
+`docket check` reports it. Write `office` as an office ("The Registrar"), never as
+"Dr X, Registrar": the three facts are classified as business data (REQ-0003), and a
+person's name in one of them makes that false.
+
+**An executed copy IS personal data.** The acknowledgement block and an agreement's
+signature block are filled in by hand, so the scan `docket sign --scan` files carries
+the institution signatory's name and signature. Treat it as a person's:
+
+    docket counterparty seal example-university     # into the vault, under its own key
+    docket counterparty shred example-university --confirm   # when retention ends, or on request
+
+`seal` encrypts the organisation's PDFs and scans into `store/vault/PAR-O-…/` (what is
+uploaded) and `docket vault status` reports any not yet sealed. `shred` destroys that
+key and vault and deletes the plaintext PDFs and scans; the register and the
+organisation's record stay, so a copy the institution holds still verifies.
 
 **When it goes wrong:**
 
@@ -176,8 +189,8 @@ for whoever signs it to fill in by hand.
 **The MOU, after incorporation.** `docket counterparty issue <slug> MOU`. Its term,
 notice period, sessions and Schedule B are ruled lines agreed with the institution
 and completed before signature; the institution's signatory and contact are written
-in by hand, so no person at the institution is ever recorded. Record its return with
-`docket sign` as for any signed document.
+in by hand, so docket holds no such person's details until the executed copy comes
+back. Record its return with `docket sign --scan`, then `docket counterparty seal`.
 
 ---
 
