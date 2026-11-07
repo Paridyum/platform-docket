@@ -1926,6 +1926,36 @@ fn a_kind_requiring_incorporation_is_refused_on_the_person_path_too() {
 }
 
 #[test]
+fn no_value_in_an_organisation_document_swallows_the_space_after_it() {
+    // Re-review r3: a bare `\dkTTermMonths months` is a control word, and TeX eats the space
+    // after it -- the sealed MOU printed "12months". Every command followed by a word needs `{}`.
+    for code in ["ICL", "MOU"] {
+        let doc = registry()
+            .lifecycle
+            .documents
+            .into_iter()
+            .find(|d| d.code == code)
+            .expect("declared");
+        let body = std::fs::read_to_string(root().join(&doc.template)).expect("template");
+        for line in body.lines().map(|l| l.split('%').next().unwrap_or("")) {
+            for rest in line.split("\\dk").skip(1) {
+                let name: String = rest
+                    .chars()
+                    .take_while(char::is_ascii_alphanumeric)
+                    .collect();
+                let after = rest.get(name.len()..).unwrap_or("");
+                let glued = after.starts_with(' ')
+                    && after.chars().nth(1).is_some_and(char::is_alphanumeric);
+                assert!(
+                    !glued,
+                    "{code}: \\dk{name} is followed by a word; write \\dk{name}{{}}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn the_mou_needs_only_what_incorporation_will_record() {
     // The second guard: the template reads the CIN and registered office bare, so it cannot render
     // until org.yaml holds both. Everything else it needs, the counterparty and its declared terms
