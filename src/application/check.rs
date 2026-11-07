@@ -160,6 +160,7 @@ pub fn run(
     catalogue(&mut items, registry);
     communications(&mut items, registry)?;
     people(&mut items, store, paths, registry)?;
+    counterparties(&mut items, paths, registry);
     let entries = register(&mut items, store, blobs)?;
     archive_index(&mut items, store, paths, registry)?;
     team_export(&mut items, paths)?;
@@ -618,6 +619,43 @@ fn register(items: &mut Vec<Finding>, store: &dyn Store, blobs: &dyn Blobs) -> R
         }
     }
     Ok(entries.len())
+}
+
+/// Every organisation counterparty record loads, holds its three facts, and has an identifier of
+/// its own; and the retention class that governs them is declared (RFC-0136, REQ-0003).
+fn counterparties(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) {
+    use crate::application::counterparty::RETENTION_CLASS;
+    if !registry
+        .retention
+        .iter()
+        .any(|r| r.class == RETENTION_CLASS)
+    {
+        err(
+            items,
+            format!(
+                "retention.yaml does not declare {RETENTION_CLASS:?}, which governs \
+                 organisation counterparty records"
+            ),
+        );
+    }
+    // A record that does not load -- most likely because someone added a contact's name or email
+    // to it by hand -- fails the whole list, and is reported with the parser's reason.
+    let all = match crate::application::counterparty::list(paths) {
+        Ok(all) => all,
+        Err(e) => return err(items, format!("{e:#}")),
+    };
+    let mut seen = BTreeSet::new();
+    for c in &all {
+        for problem in c.problems() {
+            err(items, format!("counterparty {problem}"));
+        }
+        if !seen.insert(c.id.as_str()) {
+            err(
+                items,
+                format!("counterparty {}: identifier {} is held twice", c.slug, c.id),
+            );
+        }
+    }
 }
 
 /// The person-class and field registries are internally consistent.

@@ -4,6 +4,7 @@ pub mod archive;
 pub mod browse;
 pub mod check;
 pub mod comms;
+pub mod counterparty;
 pub mod enrol;
 pub mod issue;
 pub mod next;
