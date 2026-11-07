@@ -1625,6 +1625,7 @@ fn undefined_for_a_counterparty(code: &str) -> Vec<String> {
     let sb = Sandbox::new();
     let mut defs = issue::definitions_for(&reg, None, None, date(), Some(doc));
     issue::counterparty_definitions(&mut defs, &example_counterparty(&sb.paths));
+    defs.merge(&issue::negotiated_terms(doc, full_terms(doc).as_deref()).expect("terms"));
     // Every `\dk...` command, not only the `\dkP` ones `required_commands` scans for: this
     // template's data is the organisation's `\dkC...` and the company's `\dkOrg...`.
     let mut found: Vec<String> = body
@@ -1637,7 +1638,9 @@ fn undefined_for_a_counterparty(code: &str) -> Vec<String> {
                 .collect();
             format!("dk{name}")
         })
-        .filter(|c| !["dkfill", "dkblank"].contains(&c.as_str()))
+        // `\dkfill` is NOT exempt: a registered document must not be a blank form (review M5).
+        // Only `\dkblank` is, for what is signed and dated by hand.
+        .filter(|c| c != "dkblank")
         .filter(|c| defs.get(c).is_none())
         .collect();
     found.sort();
@@ -1765,10 +1768,198 @@ fn the_mou_is_refused_while_the_company_has_no_cin_and_only_for_that() {
     }
 }
 
+/// A terms file giving every term the document declares, or `None` where it declares none.
+fn full_terms(doc: &platform_docket::domain::lifecycle::Document) -> Option<String> {
+    (!doc.terms.is_empty()).then(|| {
+        doc.terms.iter().fold(String::new(), |mut out, t| {
+            out.push_str(&t.key);
+            out.push_str(": Agreed ");
+            out.push_str(&t.key);
+            out.push('\n');
+            out
+        })
+    })
+}
+
+/// Record PAR as incorporated on a registry copy: a CIN, and optionally a registered office.
+fn incorporate(reg: &mut Registry, office: Option<&str>) {
+    let par = reg
+        .org
+        .get_mut("companies")
+        .and_then(|c| c.as_sequence_mut())
+        .and_then(|c| c.first_mut())
+        .and_then(|c| c.as_mapping_mut())
+        .expect("PAR");
+    par.insert("cin".into(), "U00000UT2026PTC000000".into());
+    if let Some(office) = office {
+        par.insert("registered_office".into(), office.into());
+    }
+}
+
+fn mou() -> platform_docket::domain::lifecycle::Document {
+    registry()
+        .lifecycle
+        .documents
+        .into_iter()
+        .find(|d| d.code == "MOU")
+        .expect("MOU")
+}
+
+#[test]
+fn the_mou_is_refused_without_its_terms_or_with_a_term_it_does_not_declare() {
+    // Review M5: its negotiated terms are part of the registered document, so it is refused
+    // without them -- before a serial -- even once incorporation has been recorded.
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let (store, blobs) = (FileStore::new(&sb.paths), FileBlobs::new(&sb.paths));
+    let mut reg = registry();
+    incorporate(&mut reg, None);
+    let org = example_counterparty(&sb.paths);
+    let doc = mou();
+    let issue = |terms: Option<&str>| {
+        issue::to_counterparty(
+            &store,
+            &blobs,
+            &sb.paths,
+            &reg,
+            &org,
+            &doc,
+            "PAR",
+            date(),
+            terms,
+        )
+    };
+    let why = format!("{:#}", issue(None).expect_err("refused"));
+    assert!(
+        why.contains("--terms") && why.contains("term_months"),
+        "{why}"
+    );
+    let extra = format!(
+        "{}contact_name: A Person\n",
+        full_terms(&doc).expect("declared")
+    );
+    let why = format!("{:#}", issue(Some(&extra)).expect_err("refused"));
+    assert!(why.contains("contact_name"), "{why}");
+    assert!(
+        store.register().expect("register").is_empty(),
+        "no serial was spent"
+    );
+}
+
+#[test]
+fn with_its_cin_registered_office_and_terms_the_mou_renders_and_verifies() {
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::{issue, verify};
+    // Review m7: shows the MOU template compiles once incorporation is recorded. Rendering, so it
+    // SKIPS without a typesetter; CI's render job has TeX Live and runs it.
+    if skip_without_typesetter(
+        "with_its_cin_registered_office_and_terms_the_mou_renders_and_verifies",
+    ) {
+        return;
+    }
+    let sb = Sandbox::new();
+    let (store, blobs) = (FileStore::new(&sb.paths), FileBlobs::new(&sb.paths));
+    let mut reg = registry();
+    incorporate(&mut reg, Some("1 Test Road, Dehradun"));
+    let org = example_counterparty(&sb.paths);
+    let doc = mou();
+    let terms = full_terms(&doc);
+    let e = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        &doc,
+        "PAR",
+        date(),
+        terms.as_deref(),
+    )
+    .expect("issued");
+    assert_eq!(e.counterparty_id.as_ref(), Some(&org.id));
+    let checked = verify::verify(
+        &blobs,
+        &store.register().expect("register"),
+        &e.serial,
+        None,
+    )
+    .expect("verifies");
+    assert!(checked.matches());
+}
+
+#[test]
+fn a_kind_requiring_incorporation_is_refused_on_the_person_path_too() {
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let store = FileStore::new(&sb.paths);
+    let reg = registry();
+    personnel::create(
+        &store,
+        &sb.paths,
+        &reg,
+        "asha-verma",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let person = store::person(&sb.paths, "asha-verma").expect("record");
+    let doc: platform_docket::domain::lifecycle::Document = serde_yaml::from_str(
+        "code: TPA\nid: test-person-agreement\ntitle: Test\nclasses: [intern]\n\
+         template: templates/agreement/nda.tex\nkind: signed\nsigned_by: [ceo]\n\
+         retention: contract\nrequires_incorporation: true\n",
+    )
+    .expect("declaration");
+    let refused = issue::one(
+        &store,
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &reg,
+        &person,
+        &doc,
+        date(),
+        "rohan",
+    );
+    assert!(format!("{:#}", refused.expect_err("refused")).contains("not incorporated"));
+}
+
+#[test]
+fn no_value_in_an_organisation_document_swallows_the_space_after_it() {
+    // Re-review r3: a bare `\dkTTermMonths months` is a control word, and TeX eats the space
+    // after it -- the sealed MOU printed "12months". Every command followed by a word needs `{}`.
+    for code in ["ICL", "MOU"] {
+        let doc = registry()
+            .lifecycle
+            .documents
+            .into_iter()
+            .find(|d| d.code == code)
+            .expect("declared");
+        let body = std::fs::read_to_string(root().join(&doc.template)).expect("template");
+        for line in body.lines().map(|l| l.split('%').next().unwrap_or("")) {
+            for rest in line.split("\\dk").skip(1) {
+                let name: String = rest
+                    .chars()
+                    .take_while(char::is_ascii_alphanumeric)
+                    .collect();
+                let after = rest.get(name.len()..).unwrap_or("");
+                let glued = after.starts_with(' ')
+                    && after.chars().nth(1).is_some_and(char::is_alphanumeric);
+                assert!(
+                    !glued,
+                    "{code}: \\dk{name} is followed by a word; write \\dk{name}{{}}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn the_mou_needs_only_what_incorporation_will_record() {
     // The second guard: the template reads the CIN and registered office bare, so it cannot render
-    // until org.yaml holds both. Everything else it needs, an organisation counterparty supplies.
+    // until org.yaml holds both. Everything else it needs, the counterparty and its declared terms
+    // supply -- and it has no `\dkfill` left to print as a blank.
     assert_eq!(
         undefined_for_a_counterparty("MOU"),
         ["dkOrgCin", "dkOrgRegisteredOffice"]

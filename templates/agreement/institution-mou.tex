@@ -10,15 +10,16 @@
 % Until then the non-binding Letter of Collaboration (ICL) is the document to issue.
 %
 % Issued to an ORGANISATION COUNTERPARTY (`recipient: organisation`): the party block reads
-% \dkCLegalName, \dkCAddress, \dkCOffice and nothing else about the institution. Whoever signs for
-% it, and its contact in Schedule A, are ruled lines filled in by hand: docket holds no person's
-% data for an institution (RFC-0136 open question 3).
+% \dkCLegalName, \dkCAddress, \dkCOffice about the institution. Whoever signs for it writes their
+% name by hand: docket holds no person's data for an institution (RFC-0136 open question 3).
 %
-% From knowledge docs/2026-11-07-personas-and-paridyum-in/08-paperwork/05. Two changes: the
-% institution's "legal description" placeholder is dropped, as a counterparty holds three facts
-% (counsel may want it back -- COUNSEL Q11); and the IIC "body" is folded into the office.
-% The terms left as \dkfill lines (term, notice, schedules) are negotiated per agreement and are
-% completed before signature.
+% THE NEGOTIATED TERMS ARE AN INPUT, read bare as \dkT... from the `--terms` file the MOU's
+% lifecycle entry declares (`domain::terms`). No \dkfill: a registered, hash-verified MOU that is
+% a blank form proves nothing about what was agreed (review M5). The institution's legal
+% description and the body it acts through are terms too -- the contracting entity's capacity
+% matters legally (COUNSEL Q11) -- and every contact is an office or a role mailbox, never a person.
+%
+% From knowledge docs/2026-11-07-personas-and-paridyum-in/08-paperwork/05.
 %
 % DRAFT FOR REVIEW BY QUALIFIED COUNSEL (06-counsel-brief.md Q11, Q12, Q13, Q17). Not legal advice.
 % Sources: BET-0010, RFC-0127 D4/D7, REQ-0003, STD-0021, RFC-0134 D9/D12, DPDP Act 2023.
@@ -40,14 +41,15 @@ This Memorandum of Understanding (``Agreement'') is entered into on the date abo
 Paridyum: & \textbf{\dkOrgName}, a company incorporated under the Companies Act, 2013,
             with Corporate Identity Number \dkOrgCin, whose registered office is at
             \dkOrgRegisteredOffice{} (``Paridyum''); and \\[0.6em]
-Institution: & \textbf{\dkCLegalName}, whose address is \dkCAddress{} (the ``Institution''),
-            notices to which are addressed to: \dkCOffice.
+Institution: & \textbf{\dkCLegalName}, \dkTLegalDescription, whose address is \dkCAddress,
+            acting through its \dkTActingThrough{} (the ``Institution''), notices to which are
+            addressed to: \dkCOffice.
 \end{tabularx}
 
 \section*{1. Purpose}
 The parties wish to support students of the Institution who want to start and run businesses.
 Paridyum will contribute talks, workshops and written material. The Institution will make room
-for them in its calendar.
+for them in the calendar of its \dkTActingThrough.
 
 \section*{2. Paridyum's Obligations}
 Paridyum will:
@@ -91,7 +93,7 @@ Nothing else is licensed by either party.
 Neither party may use the other's name, logo, emblem or other marks, or describe the other as a
 partner, sponsor or endorser, except exactly as listed in \textbf{Schedule B}. Any other use
 needs that party's prior written permission. Either party may withdraw a permission in Schedule
-B by email; the other will stop new uses within \dkfill[2cm]{dkMouLogoWithdrawDays} days.
+B by email; the other will stop new uses within \dkTLogoWithdrawDays{} days.
 
 \section*{8. Confidentiality}
 Information one party marks as confidential, or that a reasonable person would understand to be
@@ -99,7 +101,7 @@ confidential, and that it gives the other under this Agreement, will be used by 
 for this Agreement and not disclosed, except where required by law. This does not apply to
 information that is public without a breach of this Agreement, was already lawfully known to
 the receiving party, or is independently developed by it. This clause continues for
-\dkfill[2cm]{dkMouConfidentialityYears} years after this Agreement ends.
+\dkTConfidentialityYears{} years after this Agreement ends.
 
 \section*{9. Data Protection}
 \begin{infobox}
@@ -127,10 +129,10 @@ that it may do so.
 % src: RFC-0134 D9, D12; COUNSEL Q7.
 
 \section*{11. Term and Termination}
-This Agreement begins on the date above and continues for \dkfill[2cm]{dkMouTermMonths} months
+This Agreement begins on the date above and continues for \dkTTermMonths{} months
 unless ended earlier. Either party may end it at any time, without giving a reason, by written
 notice (email is enough) to the other's contact in Schedule A, effective
-\dkfill[2cm]{dkMouNoticeDays} days after it is sent. Clauses 6 (as to rights already exercised),
+\dkTNoticeDays{} days after it is sent. Clauses 6 (as to rights already exercised),
 7, 8 and 9 survive its end.
 
 \section*{12. No Partnership or Agency}
@@ -157,7 +159,7 @@ Each person signing confirms that they are authorised to sign for the party name
 \vspace{0.5em}
 \begin{tabularx}{\linewidth}{@{}F{3.4cm}X@{}}
 Name:        & \dkblank[6cm] \\[1em]
-Designation: & \dkblank[6cm] \\[1em]
+Designation: & \dkTInstitutionSignatoryOffice \\[1em]
 Signature:   & \dkblank[6cm] \\[1em]
 Date:        & \dkblank[6cm]
 \end{tabularx}
@@ -165,23 +167,23 @@ Date:        & \dkblank[6cm]
 \newpage
 \section*{Schedule A --- Sessions and Contacts}
 \begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
-Sessions planned:            & \dkfill{dkMouSessions} \\[0.5em]
-Paridyum contact (office):   & \dkfill{dkMouParidyumContactRole} --- \dkOrgEmail \\[0.5em]
-Institution contact:         & \dkblank[7cm] \\[0.5em]
-Institution contact email:   & \dkblank[7cm]
+Sessions planned:            & \dkTSessions \\[0.5em]
+Paridyum contact (office):   & \dkTParidyumContactOffice{} --- \dkOrgEmail \\[0.5em]
+Institution contact (office): & \dkTInstitutionContactOffice \\[0.5em]
+Institution contact mailbox: & \dkTInstitutionContactMailbox
 \end{tabularx}
-% Paridyum's contact is named by OFFICE, not by person (ADR-0087). The Institution's contact is
-% written in by hand: it is a person's data, and docket holds none for an institution.
+% Both contacts are named by OFFICE, not by person (ADR-0087), and the institution's mailbox is a
+% role mailbox: docket holds no person's data for an institution.
 
 \section*{Schedule B --- Permitted Use of Names and Logos}
 \textit{Anything not listed here is not permitted. ``None'' is a valid entry.}
 
 \vspace{0.5em}
 \begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
-Paridyum may use:     & \dkfill{dkMouParidyumMayUse} \\[0.5em]
-Where and how:        & \dkfill{dkMouParidyumMayUseWhere} \\[0.8em]
-Institution may use:  & \dkfill{dkMouInstMayUse} \\[0.5em]
-Where and how:        & \dkfill{dkMouInstMayUseWhere}
+Paridyum may use:     & \dkTParidyumMayUse \\[0.5em]
+Where and how:        & \dkTParidyumMayUseWhere \\[0.8em]
+Institution may use:  & \dkTInstitutionMayUse \\[0.5em]
+Where and how:        & \dkTInstitutionMayUseWhere
 \end{tabularx}
 % STD-0021: a logo is never used as social proof on a Paridyum page. Schedule B cannot permit
 % that use even if both parties want it.
