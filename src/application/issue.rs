@@ -448,6 +448,7 @@ pub fn to_counterparty(
     document: &Document,
     company: &str,
     date: time::Date,
+    terms: Option<&str>,
 ) -> Result<Entry> {
     if document.recipient != Recipient::Organisation {
         bail!(
@@ -456,6 +457,7 @@ pub fn to_counterparty(
         );
     }
     refuse_before_incorporation(registry, document, company)?;
+    let agreed = negotiated_terms(document, terms)?;
     if let Some(problem) = counterparty.problems().into_iter().next() {
         bail!(
             "{}: refused, the counterparty record is incomplete: {problem}",
@@ -495,7 +497,7 @@ pub fn to_counterparty(
             signatories: &signatories,
         },
         |serial| {
-            organisation_definitions(
+            let mut defs = organisation_definitions(
                 registry,
                 counterparty,
                 document,
@@ -503,7 +505,9 @@ pub fn to_counterparty(
                 Some(serial),
                 date,
                 &signatories,
-            )
+            )?;
+            defs.merge(&agreed);
+            Ok(defs)
         },
         |mut entry| {
             entry.counterparty_id = Some(counterparty.id.clone());
@@ -540,6 +544,27 @@ pub fn refuse_before_incorporation(
         );
     }
     Ok(())
+}
+
+/// The negotiated terms a document needs, read from the `--terms` file, before any serial.
+///
+/// A document declaring terms is refused without them, and one declaring none is refused a file:
+/// the registered document must say exactly what was agreed, never a blank to fill in later.
+///
+/// # Errors
+/// Fails if terms are owed and absent, offered and not owed, or invalid (`domain::terms::read`).
+pub fn negotiated_terms(document: &Document, terms: Option<&str>) -> Result<Definitions> {
+    match (document.terms.is_empty(), terms) {
+        (true, None) => Ok(Definitions::new()),
+        (true, Some(_)) => bail!("{}: takes no terms file", document.code),
+        (false, None) => bail!(
+            "{}: its negotiated terms are part of the document; pass --terms <file> with: {}",
+            document.code,
+            crate::domain::terms::keys(&document.terms)
+        ),
+        (false, Some(text)) => crate::domain::terms::read(&document.terms, text)
+            .with_context(|| format!("{}: the terms file", document.code)),
+    }
 }
 
 /// Everything an organisation's document is rendered against, as issued by `company`: THAT

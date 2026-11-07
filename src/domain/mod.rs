@@ -15,3 +15,4 @@ pub mod serial;
 pub mod signature;
 pub mod template;
 pub mod tenant;
+pub mod terms;

@@ -82,6 +82,10 @@ pub struct Document {
     /// issuable today and the MOU is not.
     #[serde(default)]
     pub requires_incorporation: bool,
+    /// Terms negotiated per issuance, supplied with `--terms` and read bare by the template
+    /// (`domain::terms`). Empty for a document whose every word comes from the registry.
+    #[serde(default)]
+    pub terms: Vec<crate::domain::terms::Term>,
     /// Who it is issued to. Only a document declaring `organisation` may be issued to an
     /// organisation counterparty, and such a document is never issued to a person.
     #[serde(default)]
