@@ -1671,6 +1671,62 @@ fn a_collaboration_letter_issued_to_an_organisation_registers_and_verifies() {
 }
 
 #[test]
+fn the_mou_is_refused_while_the_company_has_no_cin_and_only_for_that() {
+    // RFC-0136 D7: a binding agreement waits for incorporation. org.yaml's `cin` is null today,
+    // so the MOU is refused before a serial exists; with a CIN recorded the guard steps aside.
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let store = FileStore::new(&sb.paths);
+    let blobs = FileBlobs::new(&sb.paths);
+    let mut reg = registry();
+    let org = example_counterparty(&sb.paths);
+    let mou = reg
+        .lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == "MOU")
+        .expect("MOU")
+        .clone();
+    let refused =
+        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &mou, "PAR", date());
+    let why = format!("{:#}", refused.expect_err("refused before incorporation"));
+    assert!(
+        why.contains("not incorporated") && why.contains("cin"),
+        "{why}"
+    );
+    assert!(
+        store.register().expect("register").is_empty(),
+        "no serial was spent"
+    );
+
+    let par = reg
+        .org
+        .get_mut("companies")
+        .and_then(|c| c.as_sequence_mut())
+        .and_then(|c| c.first_mut())
+        .expect("PAR");
+    par["cin"] = serde_yaml::Value::from("U00000UT2026PTC000000");
+    // Past the guard: without a typesetter it now fails at rendering, and with one the template
+    // still stops on the unrecorded registered office -- either way not on the guard.
+    if let Err(e) =
+        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &mou, "PAR", date())
+    {
+        assert!(!format!("{e:#}").contains("not incorporated"), "{e:#}");
+    }
+}
+
+#[test]
+fn the_mou_needs_only_what_incorporation_will_record() {
+    // The second guard: the template reads the CIN and registered office bare, so it cannot render
+    // until org.yaml holds both. Everything else it needs, an organisation counterparty supplies.
+    assert_eq!(
+        undefined_for_a_counterparty("MOU"),
+        ["dkOrgCin", "dkOrgRegisteredOffice"]
+    );
+}
+
+#[test]
 fn check_reports_an_entry_naming_nobody_and_one_naming_an_unrecorded_organisation() {
     // Both are refused by the store on write; these arrive by hand edit or a restore.
     use platform_docket::domain::counterparty::CounterpartyId;

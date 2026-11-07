@@ -257,6 +257,23 @@ documents:
       (HR-CHECKLIST.md). Signed by the Director, as the business letter is;
       a vacant office falls through in the register's order (ADR-0077 D4).
 
+  - code: MOU
+    id: institution-mou
+    recipient: organisation
+    title: Memorandum of Understanding (Institution)
+    template: templates/agreement/institution-mou.tex
+    kind: signed
+    signed_by: [director]
+    countersigned_by: institution
+    retention: institution
+    on_request: true
+    requires_incorporation: true
+    note: >
+      BINDING, so NOT ISSUABLE BEFORE INCORPORATION (RFC-0136 D7): `docket
+      counterparty issue` refuses it while the issuing company's `cin` is null
+      in org.yaml, and the template fails to render until `cin` and
+      `registered_office` are recorded. Until then, issue ICL.
+
   - code: PUB
     id: publicity-consent
     classes: [intern]

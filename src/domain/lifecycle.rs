@@ -75,6 +75,13 @@ pub struct Document {
     pub classes: Vec<String>,
     /// How the document is handled.
     pub kind: Kind,
+    /// A binding agreement, refused while the issuing company has no CIN (RFC-0136 D7).
+    ///
+    /// A binding instrument needs a party able to hold its obligations, and before
+    /// incorporation there is none. Declared per document, so the non-binding letter is
+    /// issuable today and the MOU is not.
+    #[serde(default)]
+    pub requires_incorporation: bool,
     /// Who it is issued to. Only a document declaring `organisation` may be issued to an
     /// organisation counterparty, and such a document is never issued to a person.
     #[serde(default)]

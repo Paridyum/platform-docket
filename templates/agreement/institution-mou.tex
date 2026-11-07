@@ -1,0 +1,189 @@
+% Memorandum of Understanding with an Institution (BINDING). RFC-0136 D3, D7.
+%
+% NOT ISSUABLE BEFORE INCORPORATION, and that is enforced twice:
+%   1. `docket counterparty issue <slug> MOU` refuses while the issuing company's `cin` is null in
+%      registry/org.yaml (`requires_incorporation: true` in lifecycle.yaml).
+%   2. This template reads \dkOrgCin and \dkOrgRegisteredOffice bare. Both are null in org.yaml
+%      until incorporation, a null defines nothing, and pdflatex stops on the undefined command
+%      (paridyum.cls: a signed document never carries a silently blank field). Never
+%      \providecommand either of them.
+% Until then the non-binding Letter of Collaboration (ICL) is the document to issue.
+%
+% Issued to an ORGANISATION COUNTERPARTY (`recipient: organisation`): the party block reads
+% \dkCLegalName, \dkCAddress, \dkCOffice and nothing else about the institution. Whoever signs for
+% it, and its contact in Schedule A, are ruled lines filled in by hand: docket holds no person's
+% data for an institution (RFC-0136 open question 3).
+%
+% From knowledge docs/2026-11-07-personas-and-paridyum-in/08-paperwork/05. Two changes: the
+% institution's "legal description" placeholder is dropped, as a counterparty holds three facts
+% (counsel may want it back -- COUNSEL Q11); and the IIC "body" is folded into the office.
+% The terms left as \dkfill lines (term, notice, schedules) are negotiated per agreement and are
+% completed before signature.
+%
+% DRAFT FOR REVIEW BY QUALIFIED COUNSEL (06-counsel-brief.md Q11, Q12, Q13, Q17). Not legal advice.
+% Sources: BET-0010, RFC-0127 D4/D7, REQ-0003, STD-0021, RFC-0134 D9/D12, DPDP Act 2023.
+%
+% The shared governing-law clause says "This Agreement", so this MOU defines itself as the
+% "Agreement" in its opening paragraph; that keeps the shared clause correct without a copy.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumverifiable{\dkDocVerify}
+\paridyumtitle{Memorandum of Understanding}
+
+This Memorandum of Understanding (``Agreement'') is entered into on the date above between:
+
+\vspace{0.5em}
+\begin{tabularx}{\linewidth}{@{}F{3.4cm}X@{}}
+Paridyum: & \textbf{\dkOrgName}, a company incorporated under the Companies Act, 2013,
+            with Corporate Identity Number \dkOrgCin, whose registered office is at
+            \dkOrgRegisteredOffice{} (``Paridyum''); and \\[0.6em]
+Institution: & \textbf{\dkCLegalName}, whose address is \dkCAddress{} (the ``Institution''),
+            notices to which are addressed to: \dkCOffice.
+\end{tabularx}
+
+\section*{1. Purpose}
+The parties wish to support students of the Institution who want to start and run businesses.
+Paridyum will contribute talks, workshops and written material. The Institution will make room
+for them in its calendar.
+
+\section*{2. Paridyum's Obligations}
+Paridyum will:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item deliver the talks and workshops listed in \textbf{Schedule A}, or others agreed in
+          writing, at the agreed dates;
+    \item provide speakers who describe Paridyum's services accurately and as they exist on the
+          date of the session;
+    \item provide written material the Institution may reuse with its students, without tracking
+          links; and
+    \item make its services available to students and student ventures of the Institution only
+          on Paridyum's standard published terms, in their own right.
+\end{itemize}
+
+\section*{3. The Institution's Obligations}
+The Institution will:
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item provide a calendar slot, and a room or an online meeting, for each session in
+          Schedule A;
+    \item name a contact for scheduling, set out in Schedule A; and
+    \item tell Paridyum promptly if a session cannot go ahead.
+\end{itemize}
+
+\section*{4. No Payment}
+No money is payable by either party to the other under this Agreement. Paridyum pays no
+sponsorship or fee and charges none. Neither party will offer students prizes in credits,
+waived charges or service capacity in connection with this Agreement. Each party bears its own
+costs.
+
+\section*{5. No Exclusivity}
+Nothing in this Agreement prevents either party from working with anyone else, on any terms.
+
+\section*{6. Intellectual Property}
+Each party keeps all rights in its own names, logos, materials and other intellectual property.
+Paridyum grants the Institution a non-exclusive, royalty-free licence to reproduce and share the
+written material it provides under clause 2, unmodified, with the Institution's students and
+staff, for non-commercial educational purposes, for as long as this Agreement is in force.
+Nothing else is licensed by either party.
+
+\section*{7. Names and Logos}
+Neither party may use the other's name, logo, emblem or other marks, or describe the other as a
+partner, sponsor or endorser, except exactly as listed in \textbf{Schedule B}. Any other use
+needs that party's prior written permission. Either party may withdraw a permission in Schedule
+B by email; the other will stop new uses within \dkfill[2cm]{dkMouLogoWithdrawDays} days.
+
+\section*{8. Confidentiality}
+Information one party marks as confidential, or that a reasonable person would understand to be
+confidential, and that it gives the other under this Agreement, will be used by the other only
+for this Agreement and not disclosed, except where required by law. This does not apply to
+information that is public without a breach of this Agreement, was already lawfully known to
+the receiving party, or is independently developed by it. This clause continues for
+\dkfill[2cm]{dkMouConfidentialityYears} years after this Agreement ends.
+
+\section*{9. Data Protection}
+\begin{infobox}
+\textbf{No personal data is exchanged under this Agreement.}
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item Neither party will give the other, and neither will ask for or accept from the other,
+          any personal data of students, staff, attendees or registrants --- including names,
+          contact details, lists, rosters or r\'esum\'es.
+    \item Paridyum will not collect personal data at any session, and will not run sign-ups,
+          contests or registrations there. A student who wants to use Paridyum's services does so
+          directly, under Paridyum's own terms and privacy notice.
+    \item Each party is a separate data fiduciary for any personal data it processes in its own
+          operations, and is solely responsible for that processing under the Digital Personal
+          Data Protection Act, 2023. Neither party processes personal data on the other's behalf.
+    \item The only personal data either party holds about the other is the business contact
+          details of the people named in Schedule A, used only to administer this Agreement.
+\end{itemize}
+\end{infobox}
+
+\section*{10. Students Under Eighteen}
+Sessions under this Agreement are for students of the Institution's higher-education
+programmes. Nothing under this Agreement will be delivered at a school or directed at persons
+under eighteen, unless the parties agree it in writing after Paridyum has obtained legal advice
+that it may do so.
+% src: RFC-0134 D9, D12; COUNSEL Q7.
+
+\section*{11. Term and Termination}
+This Agreement begins on the date above and continues for \dkfill[2cm]{dkMouTermMonths} months
+unless ended earlier. Either party may end it at any time, without giving a reason, by written
+notice (email is enough) to the other's contact in Schedule A, effective
+\dkfill[2cm]{dkMouNoticeDays} days after it is sent. Clauses 6 (as to rights already exercised),
+7, 8 and 9 survive its end.
+
+\section*{12. No Partnership or Agency}
+Nothing in this Agreement creates a partnership, joint venture, agency or employment
+relationship. Neither party may bind the other.
+
+\section*{13. Entire Agreement and Changes}
+This Agreement, with its Schedules, is the whole agreement between the parties on its subject.
+It replaces any earlier letter of collaboration between them. It may be changed only in writing
+signed for both parties.
+
+\section*{14. Governing Law}
+\input{templates/clauses/governing-law}
+
+\section*{15. Signatures}
+Each person signing confirms that they are authorised to sign for the party named above them.
+
+\vspace{1.5em}
+\paridyumsignblock
+
+\vspace{1.5em}
+\textbf{For \dkCLegalName}
+
+\vspace{0.5em}
+\begin{tabularx}{\linewidth}{@{}F{3.4cm}X@{}}
+Name:        & \dkblank[6cm] \\[1em]
+Designation: & \dkblank[6cm] \\[1em]
+Signature:   & \dkblank[6cm] \\[1em]
+Date:        & \dkblank[6cm]
+\end{tabularx}
+
+\newpage
+\section*{Schedule A --- Sessions and Contacts}
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Sessions planned:            & \dkfill{dkMouSessions} \\[0.5em]
+Paridyum contact (office):   & \dkfill{dkMouParidyumContactRole} --- \dkOrgEmail \\[0.5em]
+Institution contact:         & \dkblank[7cm] \\[0.5em]
+Institution contact email:   & \dkblank[7cm]
+\end{tabularx}
+% Paridyum's contact is named by OFFICE, not by person (ADR-0087). The Institution's contact is
+% written in by hand: it is a person's data, and docket holds none for an institution.
+
+\section*{Schedule B --- Permitted Use of Names and Logos}
+\textit{Anything not listed here is not permitted. ``None'' is a valid entry.}
+
+\vspace{0.5em}
+\begin{tabularx}{\linewidth}{@{}F{4.6cm}X@{}}
+Paridyum may use:     & \dkfill{dkMouParidyumMayUse} \\[0.5em]
+Where and how:        & \dkfill{dkMouParidyumMayUseWhere} \\[0.8em]
+Institution may use:  & \dkfill{dkMouInstMayUse} \\[0.5em]
+Where and how:        & \dkfill{dkMouInstMayUseWhere}
+\end{tabularx}
+% STD-0021: a logo is never used as social proof on a Paridyum page. Schedule B cannot permit
+% that use even if both parties want it.
+
+\end{document}
