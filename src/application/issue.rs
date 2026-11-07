@@ -542,12 +542,9 @@ pub fn refuse_before_incorporation(
     Ok(())
 }
 
-/// Everything an organisation's document is rendered against, as issued by `company`.
-///
-/// THE ISSUING COMPANY'S letterhead, name and CIN, not the default company's: a PCY agreement
-/// printing PAR as the party, over PCY's signatory, would be a document naming the wrong party.
-/// The default company's `dkOrg…` values are dropped before the issuing one's are absorbed, so
-/// none of them can survive into the other's document.
+/// Everything an organisation's document is rendered against, as issued by `company`: THAT
+/// company's letterhead, name and CIN, with the default company's `dkOrg…` values dropped first,
+/// so a PCY agreement cannot name PAR as the party over PCY's signatory.
 ///
 /// # Errors
 /// Fails if `company` is not declared in `registry/org.yaml`.
