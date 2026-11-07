@@ -697,3 +697,95 @@ fn a_shredding_after_an_escrow_is_reported_as_incomplete() {
         "it says what to do: {warning}"
     );
 }
+
+#[test]
+fn an_organisations_documents_and_executed_scan_are_sealed_and_shreddable() {
+    use platform_docket::adapters::blobs::Blobs as _;
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::counterparty;
+    use platform_docket::domain::register::Entry;
+    // RFC-0136, review M4 and M6. An organisation's PDF and its executed scan were never sealed,
+    // so a lost node lost them -- and the scan carries the institution signatory's name and
+    // signature, which then had no deletion path. Both now go through the person mechanism.
+    // Needs `age` only: the entry is written directly, so no typesetter is involved.
+    if crypt::detect().is_err() {
+        eprintln!("SKIP an_organisations_documents_and_executed_scan_are_sealed_and_shreddable");
+        return;
+    }
+    let sb = Sandbox::new();
+    let (fs_store, blobs) = (FileStore::new(&sb.paths), FileBlobs::new(&sb.paths));
+    let facts = counterparty::Facts {
+        legal_name: "Example University",
+        address: "1 College Road, Dehradun",
+        office: "The Registrar",
+    };
+    let org = counterparty::enrol(
+        &sb.paths,
+        "example-university",
+        facts,
+        d("2026-11-07"),
+        "rohan",
+    )
+    .expect("enrolled");
+    let golden = include_str!("fixtures/register-v1.jsonl");
+    let mut entry: Entry =
+        serde_json::from_str(golden.lines().next().expect("line")).expect("entry");
+    entry.person_id = None;
+    entry.engagement_id = None;
+    entry.counterparty_id = Some(org.id.clone());
+    entry.serial = "PAR/MOU/2026/0001".to_owned();
+    entry.pdf_path = format!("issued/{}/MOU-PAR-MOU-2026-0001.pdf", org.id);
+    blobs.put(&entry.pdf_path, b"%PDF the MOU").expect("pdf");
+    fs_store.append_register(entry.clone()).expect("registered");
+    let scan = sb.paths.store.join("signed.pdf");
+    std::fs::write(&scan, b"%PDF signed by the Registrar").expect("scan");
+    sign::record(
+        &fs_store,
+        &blobs,
+        &registry(),
+        &entry.serial,
+        Method::WetInk,
+        d("2026-11-08"),
+        d("2026-11-09"),
+        Some(&scan),
+        "rohan",
+    )
+    .expect("signature recorded");
+
+    let pending = vault::unsealed(&fs_store, &sb.paths).expect("status");
+    assert!(pending.iter().any(|p| p == &entry.serial), "{pending:?}");
+    assert!(
+        pending.iter().any(|p| p.contains("signed scan")),
+        "{pending:?}"
+    );
+
+    let out = vault::seal_counterparty(&fs_store, &blobs, &sb.paths, &org.id, &sb.estate)
+        .expect("sealed");
+    assert_eq!(out.written.len(), 2, "the PDF and the scan");
+    assert!(
+        vault::unsealed(&fs_store, &sb.paths)
+            .expect("status")
+            .is_empty()
+    );
+
+    let stone = vault::shred_counterparty(
+        &fs_store,
+        &blobs,
+        &sb.paths,
+        &org.id,
+        d("2034-11-08"),
+        "rohan",
+    )
+    .expect("shredded");
+    assert!(stone.key_destroyed);
+    assert!(
+        !blobs.exists(&entry.pdf_path).expect("probe"),
+        "plaintext PDF deleted"
+    );
+    assert!(!sb.paths.store.join("vault").join(org.id.as_str()).exists());
+    assert_eq!(
+        fs_store.register().expect("register").len(),
+        1,
+        "the register survives"
+    );
+}

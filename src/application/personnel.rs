@@ -696,7 +696,7 @@ pub fn erase(
     //
     // Best-effort: a store with no vault yet is the common case today, and an erasure must not
     // fail because there was nothing to destroy.
-    let shredded = crate::application::vault::shred(paths, &person_id, date, by).ok();
+    let shredded = crate::application::vault::shred(paths, person_id.as_str(), date, by).ok();
 
     let record_file = paths.person(slug);
     if record_file.exists() {

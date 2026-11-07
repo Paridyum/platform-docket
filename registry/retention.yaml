@@ -58,7 +58,8 @@ classes:
     basis: >
       Governs an organisation counterparty record (RFC-0136), not a document.
       It holds an organisation's legal name, its address and the office that
-      receives documents -- no person's data -- and it is what a register
+      receives documents. Classified as business data, not personal data
+      (REQ-0003); the SOP forbids a person's name in `office`. It is what a register
       entry's counterparty identifier resolves to. Deleting it while a document
       issued to that organisation is still retained would leave a serial that
       names nobody.
@@ -72,3 +73,8 @@ classes:
       the document would never be reviewed; this one runs from issue. Eight
       years mirrors `contract`, and the same caveat applies: confirm the
       limitation period with counsel before it is relied on.
+      The EXECUTED copy (`docket sign --scan`) carries the institution
+      signatory's name and signature, which IS personal data (REQ-0003). It is
+      sealed into the organisation's vault by `docket counterparty seal` and
+      removed, with the plaintext, by `docket counterparty shred` when this
+      period ends or on a request docket must honour.
