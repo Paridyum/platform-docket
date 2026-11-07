@@ -142,6 +142,38 @@ To check a copy someone sent you rather than the stored one, add
 
 ---
 
+## Task: issue a letter to an institution
+
+**When:** a university, incubator or company has agreed to collaborate (RFC-0136 D7).
+**Preconditions:** counsel has reviewed the Letter of Collaboration; you have the
+institution's legal name, address and the office the letter goes to, from its own reply.
+
+    docket counterparty new example-university \
+      --legal-name "Example University" \
+      --address "1 College Road, Dehradun -- 248001" \
+      --office "The President, Institution's Innovation Council"
+    docket counterparty issue example-university ICL
+
+The first prints the organisation's `PAR-O-…` identifier; the second the serial,
+e.g. `PAR/ICL/2026/0001`. It is in the same register as everything else and
+`docket verify` checks it the same way. `docket counterparty list` shows every
+organisation recorded.
+
+**The record holds those three facts and nothing else.** Never add the name,
+email or phone of anyone at the institution: the record will not load, and
+`docket check` reports it. The acknowledgement block on the letter is ruled lines
+for whoever signs it to fill in by hand.
+
+**When it goes wrong:**
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `issued to a person, not to an organisation` | that code is a person's document | use `docket issue` for people; only ICL goes to an organisation |
+| `… is refused against Postgres` | counterparties live in the file store (D-77) | run it offline against the file store |
+| `no active signatory of PAR` | every office the letter routes to is vacant | an officer must be appointed first (RFC-0042) |
+
+---
+
 ## Task: archive documents, and erase somebody
 
 ADR-0069. Two classes of thing, and the split is what makes erasure honest.

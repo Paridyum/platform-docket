@@ -46,8 +46,13 @@ end of the work rather than the start.
 ```
 people/     person records          GITIGNORED
 store/      register + issued PDFs  GITIGNORED
+  counterparties/  organisations documents are issued to (RFC-0136)
 registry/   the facts               committed
 ```
+
+An organisation counterparty -- a university or company a letter is issued to -- is
+recorded in the store, beside the register its entries resolve to, so it moves with
+every backup and restore. It works against the file store only (DECISION-DEBT D-77).
 
 **Both data directories are gitignored on purpose.** They are personal data;
 they do not belong in a repository, and a `git push` is not a backup.
