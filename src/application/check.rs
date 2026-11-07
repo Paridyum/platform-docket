@@ -153,6 +153,7 @@ pub fn run(
     let by_code = registry.lifecycle.by_code()?;
 
     documents(&mut items, paths, registry, &by_code);
+    organisation_documents(&mut items, registry, &by_code);
     stages(&mut items, registry, &by_code);
     organisation(&mut items, registry);
     templates(&mut items, paths, registry)?;
@@ -222,6 +223,44 @@ fn documents(
                     format!("{code}: signatory {s:?} is not in signatories.yaml"),
                 );
             }
+        }
+    }
+}
+
+/// A document issued to an organisation (RFC-0136) is shaped for one.
+///
+/// It names no person class and no class-specific signatory, because there is no person; no
+/// stage owes it, because stages are a person's lifecycle; and its retention is not counted from
+/// an engagement's end, because an organisation has no engagement to end -- such a period would
+/// never start, and the document would never be reviewed for deletion.
+fn organisation_documents(
+    items: &mut Vec<Finding>,
+    registry: &Registry,
+    by_code: &BTreeMap<&str, &Document>,
+) {
+    use crate::adapters::registry::Epoch;
+    use crate::domain::lifecycle::Recipient;
+    for (code, doc) in by_code {
+        if doc.recipient != Recipient::Organisation {
+            continue;
+        }
+        let mut refuse =
+            |why: &str| err(items, format!("{code}: issued to an organisation, {why}"));
+        if !doc.classes.is_empty() || !doc.signed_by_class.is_empty() {
+            refuse("so it names no person class");
+        }
+        if !doc.on_request
+            || registry
+                .lifecycle
+                .stages
+                .iter()
+                .any(|s| s.owes.contains(&doc.code))
+        {
+            refuse("so it is on_request and owed by no stage");
+        }
+        let epoch = registry.retention.iter().find(|r| r.class == doc.retention);
+        if epoch.is_some_and(|r| r.from == Epoch::EngagementEnd) {
+            refuse("so its retention cannot run from an engagement's end");
         }
     }
 }
