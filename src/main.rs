@@ -2323,7 +2323,7 @@ fn cmd_counterparty(
             let doc = by_code
                 .get(code.as_str())
                 .with_context(|| format!("unknown document code {code:?}"))?;
-            let to = counterparty::read(paths, slug)?;
+            let to = counterparty::issuable(paths, slug)?;
             let company = company
                 .or_else(|| registry.default_company())
                 .unwrap_or("PAR");

@@ -129,6 +129,26 @@ pub fn read(paths: &Paths, slug: &str) -> Result<Counterparty> {
     Counterparty::parse(slug, &body)
 }
 
+/// A record that may be issued against: one the ledger allocated, under that slug.
+///
+/// A record made by hand is reported by `check`; this stops it reaching the register too.
+///
+/// # Errors
+/// Fails as `read` does, or when no allocation made this record.
+pub fn issuable(paths: &Paths, slug: &str) -> Result<Counterparty> {
+    let record = read(paths, slug)?;
+    if !ledger(paths)?
+        .iter()
+        .any(|a| a.id == record.id && a.slug == record.slug)
+    {
+        bail!(
+            "{slug}: {} is in no allocation; it was made by hand",
+            record.id
+        );
+    }
+    Ok(record)
+}
+
 /// Every allocation ever made, in order.
 ///
 /// # Errors
@@ -224,5 +244,18 @@ mod tests {
             .map(|l| l.id)
             .collect();
         assert_eq!(held, [a.id, b.id]);
+    }
+
+    #[test]
+    fn a_record_no_allocation_made_is_not_issuable() {
+        let (_dir, paths) = sandbox();
+        let a = enrol(&paths, "example-university", FACTS, day(), "rohan").expect("first");
+        assert_eq!(
+            issuable(&paths, "example-university").expect("allocated"),
+            a
+        );
+        let body = fs::read_to_string(paths.counterparty("example-university")).expect("body");
+        fs::write(paths.counterparty("hand-made"), body).expect("copied by hand");
+        assert!(issuable(&paths, "hand-made").is_err());
     }
 }

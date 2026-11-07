@@ -731,8 +731,11 @@ fn counterparties(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) 
         Ok(ledger) => ledger,
         Err(e) => return err(items, format!("{e:#}")),
     };
-    for fault in chain::verify(&ledger).unwrap_or_default() {
-        err(items, format!("counterparty ledger {fault}"));
+    match chain::verify(&ledger) {
+        Ok(faults) => faults
+            .iter()
+            .for_each(|f| err(items, format!("counterparty ledger {f}"))),
+        Err(e) => err(items, format!("counterparty ledger: {e:#}")),
     }
     for a in &ledger {
         if !all.iter().any(|c| c.id == a.id && c.slug == a.slug) {
