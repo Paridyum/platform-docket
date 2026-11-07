@@ -181,6 +181,50 @@ impl Counterparty {
     }
 }
 
+/// One identifier allocated to one slug, sealed onto `store/register/counterparties.jsonl`.
+///
+/// THE ALLOCATION SOURCE, and append-only, exactly as the identity ledger is for people
+/// (ADR-0051): an identifier or a slug once allocated is never allocated again, whatever later
+/// happens to the record file. Allocating from the files on disk reissued a deleted
+/// organisation's identifier to the next one enrolled, and every serial issued to the first then
+/// resolved to the second.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Allocation {
+    /// The identifier allocated.
+    pub id: CounterpartyId,
+    /// The slug it was allocated under, reserved with it.
+    pub slug: String,
+    /// ISO date of allocation.
+    pub allocated_on: String,
+    /// Operator who enrolled it.
+    pub by: String,
+    /// Digest of the allocation before this one.
+    pub prev_sha256: String,
+    /// Digest of this allocation, sealing it onto the chain.
+    pub entry_sha256: String,
+}
+
+impl crate::domain::chain::Chained for Allocation {
+    fn prev(&self) -> &str {
+        &self.prev_sha256
+    }
+    fn set_prev(&mut self, value: String) {
+        self.prev_sha256 = value;
+    }
+    fn digest_field(&self) -> &str {
+        &self.entry_sha256
+    }
+    fn set_digest_field(&mut self, value: String) {
+        self.entry_sha256 = value;
+    }
+    fn digest_key() -> &'static str {
+        "entry_sha256"
+    }
+    fn identity(&self) -> String {
+        self.id.to_string()
+    }
+}
+
 /// The next identifier after every one already used.
 ///
 /// # Errors

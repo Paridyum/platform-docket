@@ -2296,13 +2296,13 @@ fn cmd_counterparty(
             address,
             office,
         } => {
-            writer(operator)?;
+            let by = writer(operator)?;
             let facts = counterparty::Facts {
                 legal_name,
                 address,
                 office,
             };
-            let c = counterparty::enrol(paths, slug, facts)?;
+            let c = counterparty::enrol(paths, slug, facts, resolve_date(None)?, by)?;
             println!("{}  {}  recorded as {}", c.id, c.legal_name, c.slug);
         }
         CounterpartyCmd::List => {
@@ -2323,7 +2323,7 @@ fn cmd_counterparty(
             let doc = by_code
                 .get(code.as_str())
                 .with_context(|| format!("unknown document code {code:?}"))?;
-            let to = counterparty::read(paths, slug)?;
+            let to = counterparty::issuable(paths, slug)?;
             let company = company
                 .or_else(|| registry.default_company())
                 .unwrap_or("PAR");
@@ -2506,7 +2506,28 @@ fn cmd_serve(
 // exempted inside the test module, as elsewhere in this crate.
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use super::{Command, Mode, classify, unavailable_over_api};
+    use super::{
+        Command, CounterpartyCmd, Mode, classify, unavailable_on_pg, unavailable_over_api,
+    };
+
+    #[test]
+    fn counterparty_commands_are_refused_on_postgres_and_over_the_api() {
+        // DECISION-DEBT D-77: counterparty records live in the file store. Without these refusals
+        // `counterparty issue` against Postgres would seal a database register entry naming an
+        // organisation whose record is on one machine's local disk.
+        for what in [
+            CounterpartyCmd::List,
+            CounterpartyCmd::Issue {
+                slug: "x".to_owned(),
+                code: "ICL".to_owned(),
+                date: None,
+            },
+        ] {
+            let command = Command::Counterparty { what };
+            assert!(unavailable_on_pg(&command).is_some_and(|r| r.contains("file store")));
+            assert!(unavailable_over_api(&command).is_some());
+        }
+    }
 
     #[test]
     fn api_url_wins_over_a_database_url() {

@@ -1444,5 +1444,7 @@ against `DOCKET_DATABASE_URL` and over the API, with that reason, rather than wr
 served backend never reads.
 
 **Closes when:** a platform-tenancy migration adds `docket_counterparties` (tenant- and
-account-scoped like `docket_persons`), the record moves onto the `Store` port, and the refusal in
-`unavailable_on_pg` is removed.
+account-scoped like `docket_persons`) and an append-only table for the allocation ledger
+(`store/register/counterparties.jsonl`, which allocates every `PAR-O` identifier), both move onto
+the `Store` port, and the refusal in `unavailable_on_pg` is removed. A test fails if that refusal
+is removed before then.

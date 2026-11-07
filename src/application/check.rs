@@ -725,8 +725,41 @@ fn counterparties(items: &mut Vec<Finding>, paths: &Paths, registry: &Registry) 
         Ok(all) => all,
         Err(e) => return err(items, format!("{e:#}")),
     };
+    // The ledger is what allocates, so every record must be one it allocated, and every
+    // allocation must still have its record: a deleted record leaves serials naming nobody.
+    let ledger = match crate::application::counterparty::ledger(paths) {
+        Ok(ledger) => ledger,
+        Err(e) => return err(items, format!("{e:#}")),
+    };
+    match chain::verify(&ledger) {
+        Ok(faults) => faults
+            .iter()
+            .for_each(|f| err(items, format!("counterparty ledger {f}"))),
+        Err(e) => err(items, format!("counterparty ledger: {e:#}")),
+    }
+    for a in &ledger {
+        if !all.iter().any(|c| c.id == a.id && c.slug == a.slug) {
+            err(
+                items,
+                format!(
+                    "counterparty {}: {} was allocated to it but its record is gone",
+                    a.slug, a.id
+                ),
+            );
+        }
+    }
     let mut seen = BTreeSet::new();
     for c in &all {
+        if !ledger.iter().any(|a| a.id == c.id && a.slug == c.slug) {
+            err(
+                items,
+                format!(
+                    "counterparty {}: {} is in no allocation; the record was made by hand, \
+                     not by `docket counterparty new`",
+                    c.slug, c.id
+                ),
+            );
+        }
         for problem in c.problems() {
             err(items, format!("counterparty {problem}"));
         }
