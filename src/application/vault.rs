@@ -152,10 +152,10 @@ pub fn seal(
     let register = store.register()?;
     let mine: std::collections::BTreeSet<&str> = register
         .iter()
-        .filter(|e| e.person_id == who.person_id)
+        .filter(|e| e.is_for(&who.person_id))
         .map(|e| e.serial.as_str())
         .collect();
-    for entry in register.iter().filter(|e| e.person_id == who.person_id) {
+    for entry in register.iter().filter(|e| e.is_for(&who.person_id)) {
         if !blobs.exists(&entry.pdf_path)? {
             bail!(
                 "{} is registered but its bytes are missing from the blob store (key {})",
@@ -564,7 +564,7 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
         let Some(person) = register
             .iter()
             .find(|e| e.serial == sig.serial)
-            .map(|e| e.person_id.clone())
+            .and_then(|e| e.person_id.clone())
         else {
             continue;
         };
@@ -580,14 +580,19 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
     }
 
     for entry in register {
-        let dir = vault_dir(paths, &entry.person_id);
+        // The vault seals personal data so it can be shredded (ADR-0069). An organisation's
+        // document (RFC-0136) holds none, and has no person whose key could seal it.
+        let Some(person_id) = entry.person_id.clone() else {
+            continue;
+        };
+        let dir = vault_dir(paths, &person_id);
         let Some(name) = Path::new(&entry.pdf_path)
             .file_name()
             .and_then(|n| n.to_str())
         else {
             continue;
         };
-        if shredded.contains(entry.person_id.as_str()) {
+        if shredded.contains(person_id.as_str()) {
             continue;
         }
         if !dir.join(format!("{name}.age")).exists() {

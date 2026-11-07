@@ -536,7 +536,7 @@ fn sign_handler(ctx: &Context<'_>, req: &Request, slug: &str) -> Result<Response
     let register = ctx.store.register()?;
     let owned = register
         .iter()
-        .any(|e| e.serial == ask.serial && e.person_id == who.person_id);
+        .any(|e| e.serial == ask.serial && e.is_for(&who.person_id));
     if !owned {
         anyhow::bail!(
             "{} was not issued to {slug}; recording it here would file a signature \

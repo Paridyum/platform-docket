@@ -32,9 +32,20 @@ pub struct Entry {
     ///
     /// The authoritative link (ADR-0051). `slug` is kept alongside for human
     /// convenience and is never keyed off: it is a filename, not an identity.
-    pub person_id: crate::domain::identity::PersonId,
-    /// The engagement it was issued under.
-    pub engagement_id: crate::domain::identity::EngagementId,
+    ///
+    /// `None` only for a document issued to an organisation (RFC-0136), which names
+    /// `counterparty_id` instead. Every entry written before that existed holds one, and
+    /// serialises exactly as it always did, so its sealed digest is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person_id: Option<crate::domain::identity::PersonId>,
+    /// The engagement it was issued under. `None` exactly when `person_id` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engagement_id: Option<crate::domain::identity::EngagementId>,
+    /// The organisation it was issued to, where it was issued to one (RFC-0136).
+    ///
+    /// Absent from every person's entry, so their bytes and digests are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counterparty_id: Option<crate::domain::counterparty::CounterpartyId>,
     /// Slug at the time of issue, for human reference only.
     pub slug: String,
     /// Document id from the lifecycle.
@@ -85,6 +96,24 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// Whether this entry was issued to `person`. Never true of an organisation's entry.
+    #[must_use]
+    pub fn is_for(&self, person: &crate::domain::identity::PersonId) -> bool {
+        self.person_id.as_ref() == Some(person)
+    }
+
+    /// The identifier of whoever it was issued to: the person's, or the organisation's.
+    ///
+    /// For naming a blob folder or a report column, never for matching -- `is_for` matches.
+    #[must_use]
+    pub fn recipient(&self) -> &str {
+        match (&self.person_id, &self.counterparty_id) {
+            (Some(p), _) => p.as_str(),
+            (None, Some(c)) => c.as_str(),
+            (None, None) => "",
+        }
+    }
+
     /// The engine that produced this document.
     ///
     /// Entries written before engine detection existed carry none; they were
@@ -160,9 +189,11 @@ mod tests {
             code: "NDA".to_owned(),
             seq,
             year: 2026,
-            person_id: crate::domain::identity::PersonId::new(1).expect("valid"),
-            engagement_id: crate::domain::identity::EngagementId::new("PAR", "INT", 2026, 1)
-                .expect("valid"),
+            person_id: Some(crate::domain::identity::PersonId::new(1).expect("valid")),
+            engagement_id: Some(
+                crate::domain::identity::EngagementId::new("PAR", "INT", 2026, 1).expect("valid"),
+            ),
+            counterparty_id: None,
             slug: "asha-verma".to_owned(),
             document: "nda".to_owned(),
             title: "Non-Disclosure Agreement".to_owned(),
@@ -223,6 +254,43 @@ mod tests {
             verify_chain(&restored).expect("verifiable").is_empty(),
             "the seal did not survive the JSON round trip"
         );
+    }
+
+    #[test]
+    fn a_persons_entry_serialises_exactly_as_before_organisations_existed() {
+        // Every entry already sealed was written with these keys in this order. If a person's entry
+        // gained or reordered one, its digest would change and every chain on disk would break.
+        let json = serde_json::to_value(entry("PAR/NDA/2026/0001", 1)).expect("value");
+        let keys: Vec<&str> = json
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(keys.contains(&"person_id") && keys.contains(&"engagement_id"));
+        assert!(!keys.contains(&"counterparty_id"), "{keys:?}");
+    }
+
+    #[test]
+    fn an_organisations_entry_names_no_person_and_seals_onto_the_same_chain() {
+        // RFC-0136: one register for both kinds of recipient.
+        let mut chain = chain_of(2);
+        let org = crate::domain::counterparty::CounterpartyId::new(1).expect("id");
+        let mut e = entry("PAR/ICL/2026/0001", 1);
+        e.person_id = None;
+        e.engagement_id = None;
+        e.counterparty_id = Some(org.clone());
+        let sealed = e.seal(chain.last()).expect("seals");
+        assert_eq!(sealed.recipient(), org.as_str());
+        let person = crate::domain::identity::PersonId::new(1).expect("id");
+        assert!(!sealed.is_for(&person) && chain[0].is_for(&person));
+        let json = serde_json::to_string(&sealed).expect("json");
+        assert!(
+            !json.contains("person_id") && !json.contains("engagement_id"),
+            "{json}"
+        );
+        chain.push(serde_json::from_str(&json).expect("reads back"));
+        assert!(verify_chain(&chain).expect("verifiable").is_empty());
     }
 
     #[test]

@@ -74,10 +74,7 @@ pub fn build(store: &dyn Store, _registry: &Registry) -> Result<Vec<Line>> {
             end_date: person
                 .as_ref()
                 .and_then(|p| p.string("engagement.end_date").map(ToOwned::to_owned)),
-            documents: register
-                .iter()
-                .filter(|e| e.person_id == r.person_id)
-                .count(),
+            documents: register.iter().filter(|e| e.is_for(&r.person_id)).count(),
         });
     }
     Ok(out)
