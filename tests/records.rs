@@ -1436,8 +1436,14 @@ fn a_counterparty_record_holding_a_contact_person_is_reported_by_check() {
         address: "1 College Road, Dehradun",
         office: "The Registrar",
     };
-    platform_docket::application::counterparty::enrol(&paths, "example-university", facts)
-        .expect("enrolled");
+    platform_docket::application::counterparty::enrol(
+        &paths,
+        "example-university",
+        facts,
+        parse_iso("2026-11-07").expect("date"),
+        "rohan",
+    )
+    .expect("enrolled");
     let run = || {
         check::run(
             &FileStore::new(&paths),
@@ -1484,8 +1490,14 @@ fn example_counterparty(paths: &Paths) -> platform_docket::domain::counterparty:
         address: "1 College Road, Dehradun",
         office: "The Registrar",
     };
-    platform_docket::application::counterparty::enrol(paths, "example-university", facts)
-        .expect("enrolled")
+    platform_docket::application::counterparty::enrol(
+        paths,
+        "example-university",
+        facts,
+        parse_iso("2026-11-07").expect("date"),
+        "rohan",
+    )
+    .expect("enrolled")
 }
 
 #[test]
@@ -1792,4 +1804,31 @@ fn an_organisations_document_carries_the_issuing_companys_letterhead() {
     let refused =
         issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &doc, "ZZZ", date());
     assert!(format!("{:#}", refused.expect_err("refused")).contains("unknown company"));
+}
+
+#[test]
+fn check_reports_a_deleted_counterparty_record_and_one_made_by_hand() {
+    // The allocation ledger is the source; a record it did not allocate, or an allocation whose
+    // record is gone, is reported rather than trusted.
+    let sb = Sandbox::new();
+    let paths = sb.paths.clone();
+    let org = example_counterparty(&paths);
+    let found = |paths: &Paths, what: &str| {
+        check::run(
+            &FileStore::new(paths),
+            &FileBlobs::new(paths),
+            paths,
+            &registry(),
+        )
+        .expect("check runs")
+        .items
+        .iter()
+        .any(|f| f.blocking && f.message.contains(what))
+    };
+    let body = std::fs::read_to_string(paths.counterparty(&org.slug)).expect("record");
+    std::fs::write(paths.counterparty("hand-made"), &body).expect("copied by hand");
+    assert!(found(&paths, "made by hand"));
+    std::fs::remove_file(paths.counterparty("hand-made")).expect("tidy");
+    std::fs::remove_file(paths.counterparty(&org.slug)).expect("deleted");
+    assert!(found(&paths, "its record is gone"));
 }

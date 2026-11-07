@@ -308,6 +308,7 @@ const BUNDLED: &[&str] = &[
     "register/signatures.jsonl",
     "register/events.jsonl",
     "register/tombstones.jsonl",
+    "register/counterparties.jsonl",
 ];
 
 /// Encrypt the register and its companions into the uploaded path.
