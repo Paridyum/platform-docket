@@ -268,6 +268,54 @@ documents:
     retention: institution
     on_request: true
     requires_incorporation: true
+    # Negotiated per agreement and passed with --terms (review M5): the registered MOU states
+    # exactly what was agreed. Institution facts and offices only; no person's data.
+    terms:
+      - key: legal_description
+        purpose: >
+          How the institution is constituted, e.g. a university established under a named Act, or the society or trust behind it. Identifies the contracting entity and its capacity (COUNSEL Q11).
+      - key: acting_through
+        purpose: >
+          The body the Institution acts through, e.g. its Institution's Innovation Council. A body, never a person.
+      - key: term_months
+        purpose: >
+          How long the Agreement runs (clause 11).
+      - key: notice_days
+        purpose: >
+          Notice before termination takes effect (clause 11).
+      - key: logo_withdraw_days
+        purpose: >
+          Days to stop new uses once a Schedule B permission is withdrawn (clause 7).
+      - key: confidentiality_years
+        purpose: >
+          How long confidentiality survives the Agreement (clause 8).
+      - key: sessions
+        purpose: >
+          The talks and workshops planned (Schedule A).
+      - key: paridyum_contact_office
+        purpose: >
+          The Paridyum office that administers the Agreement (Schedule A). An office, never a person (ADR-0087).
+      - key: institution_contact_office
+        purpose: >
+          The Institution's office that administers it (Schedule A). An office, never a person.
+      - key: institution_contact_mailbox
+        purpose: >
+          That office's role mailbox, for notices. Never a person's own address.
+      - key: institution_signatory_office
+        purpose: >
+          The office of whoever signs for the Institution, printed as their designation. Their name is written by hand.
+      - key: paridyum_may_use
+        purpose: >
+          Which of the Institution's names or marks Paridyum may use (Schedule B). "None" is valid.
+      - key: paridyum_may_use_where
+        purpose: >
+          Where and how (Schedule B). STD-0021: never as social proof.
+      - key: institution_may_use
+        purpose: >
+          Which of Paridyum's names or marks the Institution may use (Schedule B). "None" is valid.
+      - key: institution_may_use_where
+        purpose: >
+          Where and how (Schedule B).
     note: >
       BINDING, so NOT ISSUABLE BEFORE INCORPORATION (RFC-0136 D7): `docket
       counterparty issue` refuses it while the issuing company's `cin` is null
