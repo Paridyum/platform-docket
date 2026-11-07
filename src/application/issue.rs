@@ -225,7 +225,17 @@ pub fn resolve_signatories(
                 .any(|s| &s.id == id && s.legal_name.eq_ignore_ascii_case(name))
         })
     };
+    substitute(registry, routed, is_subject, company)
+}
 
+/// Replace each routed signatory who is the subject, or whose office is vacant, with the next
+/// active signatory of `company` in registry order. See `resolve_signatories`.
+fn substitute(
+    registry: &Registry,
+    routed: &[String],
+    is_subject: impl Fn(&String) -> bool,
+    company: &str,
+) -> Vec<String> {
     // Whether this id still names someone who may sign.
     //
     // ROUTING NAMES AN OFFICE; ONLY THE REGISTER KNOWS WHO HOLDS IT. A document
@@ -356,6 +366,88 @@ pub fn one_with(
     let signatories = resolve_signatories(registry, person, document, company);
     refuse_if_misrouted(person, document, &signatories)?;
 
+    let recipient = Addressee {
+        slug: &person.slug,
+        id: who.person_id.as_str(),
+        described: format!("{} under engagement {}", who.person_id, who.engagement_id),
+        keywords: format!("{}; {}", who.person_id, who.engagement_id),
+    };
+    let entry = render_and_register(
+        store,
+        blobs,
+        paths,
+        registry,
+        &Issuance {
+            document,
+            date,
+            recipient: &recipient,
+            signatories: &signatories,
+        },
+        |serial| {
+            let mut defs =
+                definitions_for(registry, Some(person), Some(serial), date, Some(document));
+            override_signers(&mut defs, registry, &signatories);
+            add_history(&mut defs, store, person)?;
+            if let Some(extra) = extra {
+                defs.merge(extra);
+            }
+            Ok(defs)
+        },
+        |mut entry| {
+            entry.person_id = Some(who.person_id.clone());
+            entry.engagement_id = Some(who.engagement_id.clone());
+            entry
+        },
+    )?;
+
+    // The log carried access and separation but never issuance, so a person's
+    // history was missing the documents themselves.
+    crate::application::personnel::record_event(
+        store,
+        &who.person_id,
+        crate::domain::event::Kind::DocumentIssued,
+        Some(&format!("{} {}", document.code, entry.serial)),
+        by,
+        date,
+    )?;
+    Ok(entry)
+}
+
+/// Who a document is issued to, in the terms the register and the PDF metadata need.
+struct Addressee<'a> {
+    /// Slug at issue, which also feeds the verification code.
+    slug: &'a str,
+    /// The identifier naming the blob folder.
+    id: &'a str,
+    /// How the PDF's subject line names the recipient.
+    described: String,
+    /// The recipient's part of the PDF's keywords.
+    keywords: String,
+}
+
+/// The facts of one issuance that do not depend on who it is issued to.
+struct Issuance<'a> {
+    document: &'a Document,
+    date: time::Date,
+    recipient: &'a Addressee<'a>,
+    /// Resolved AFTER substitution, so the entry records who actually signed.
+    signatories: &'a [String],
+}
+
+/// Allocate the serial, render, keep the PDF and seal the register entry.
+///
+/// `build` makes the definitions once the serial is known; `name` fills in the recipient's
+/// identifiers on the otherwise complete entry.
+fn render_and_register(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    registry: &Registry,
+    job: &Issuance<'_>,
+    build: impl FnOnce(&Serial) -> Result<Definitions>,
+    name: impl FnOnce(Entry) -> Entry,
+) -> Result<Entry> {
+    let document = job.document;
     let template = paths.root.join(&document.template);
     if !template.exists() {
         bail!(
@@ -368,7 +460,7 @@ pub fn one_with(
     let format = registry
         .serial_format()
         .context("org.reference.format is unset; a serial cannot be allocated")?;
-    let year = date.year();
+    let year = job.date.year();
     let existing = store.register()?;
     let used: Vec<u32> = existing
         .iter()
@@ -387,47 +479,46 @@ pub fn one_with(
     // verification code printed on them would then be a claim that is not true.
     let files = crate::domain::template::closure(&paths.root, &template)?;
     let template_hash = sha256(&crate::domain::template::hashable(&files));
-    let issued_on = clock::to_iso(date)?;
+    let issued_on = clock::to_iso(job.date)?;
 
     // Recorded on the entry: a durable artifact says what produced it.
     let engine = typeset::detect()?;
     let engine_version = engine.version();
 
     let work = tempfile::tempdir().context("creating a working directory")?;
-    let mut defs = definitions_for(registry, Some(person), Some(&serial), date, Some(document));
-    override_signers(&mut defs, registry, &signatories);
+    let mut defs = build(&serial)?;
     defs.set(
         "dkDocVerify",
-        &serial::verification_code(serial.as_str(), &person.slug, &issued_on, &template_hash),
+        &serial::verification_code(
+            serial.as_str(),
+            job.recipient.slug,
+            &issued_on,
+            &template_hash,
+        ),
     );
-    add_history(&mut defs, store, person)?;
-    if let Some(extra) = extra {
-        defs.merge(extra);
-    }
     // Identify the file itself, not just its contents.
-    defs.set("dkDocTitle", &document.title);
-    defs.set(
-        "dkDocSubject",
-        &format!(
-            "{} issued to {} under engagement {} on {}",
-            serial, who.person_id, who.engagement_id, issued_on
+    let meta = typeset::Metadata {
+        title: document.title.clone(),
+        author: "Paridyum".to_owned(),
+        subject: format!(
+            "{serial} issued to {} on {issued_on}",
+            job.recipient.described
         ),
-    );
-    defs.set(
-        "dkDocKeywords",
-        &format!(
-            "Paridyum; {}; {}; {}; {}",
-            document.code, serial, who.person_id, who.engagement_id
+        keywords: format!(
+            "Paridyum; {}; {serial}; {}",
+            document.code, job.recipient.keywords
         ),
-    );
-    let meta = document_metadata(document, &serial, &who, &issued_on);
+    };
+    defs.set("dkDocTitle", &meta.title);
+    defs.set("dkDocSubject", &meta.subject);
+    defs.set("dkDocKeywords", &meta.keywords);
     let pdf = typeset::render(
         paths,
         &typeset::Job {
             template: &template,
             out_dir: work.path(),
             definitions: &defs,
-            date,
+            date: job.date,
             draft: false,
             metadata: meta,
         },
@@ -435,11 +526,11 @@ pub fn one_with(
 
     let bytes = fs::read(&pdf).with_context(|| format!("reading {}", pdf.display()))?;
     let file_name = format!("{}-{}.pdf", document.code, serial.file_stem());
-    // The blob KEY, named by the PERSON identifier, not the slug: this prefix becomes a bucket
+    // The blob KEY, named by the recipient's IDENTIFIER, not the slug: this prefix becomes a bucket
     // folder (or a cloud folder on the file store), and a folder named after a person discloses who
     // Paridyum engages to anyone who can read the listing (ADR-0051). The key is what the register
     // records as `pdf_path`, and it is frozen the first time it is written (design §11).
-    let stored = format!("issued/{}/{file_name}", who.person_id.as_str());
+    let stored = format!("issued/{}/{file_name}", job.recipient.id);
     blobs
         .put(&stored, &bytes)
         .with_context(|| format!("storing the issued PDF at {stored}"))?;
@@ -448,34 +539,31 @@ pub fn one_with(
     // where the Postgres store makes read-tail-seal-insert one atomic, fork-proof transaction and
     // the file store does the same single-writer (design §4). Sealing here and inserting separately
     // is exactly the fork the port exists to prevent.
-    let entry = register_entry(&RegisterEntry {
-        serial: &serial,
+    let entry = name(Entry {
+        serial: serial.to_string(),
+        code: document.code.clone(),
         seq,
         year,
-        person: &who,
-        document,
-        issued_on: &issued_on,
-        template_hash: &template_hash,
-        pdf_sha256: &sha256(&bytes),
-        stored: &stored,
-        engine: engine.as_str(),
-        engine_version: &engine_version,
-        signed_by: &signatories,
+        person_id: None,
+        engagement_id: None,
+        counterparty_id: None,
+        slug: job.recipient.slug.to_owned(),
+        document: document.id.clone(),
+        title: document.title.clone(),
+        kind: document.kind.as_str().to_owned(),
+        issued_on,
+        retention: document.retention.clone(),
+        signed_by: job.signatories.to_vec(),
+        template_sha256: template_hash,
+        pdf_sha256: sha256(&bytes),
+        pdf_path: stored,
+        texlive: typeset::TEXLIVE.to_owned(),
+        engine: Some(engine.as_str().to_owned()),
+        engine_version: Some(engine_version),
+        prev_sha256: String::new(),
+        entry_sha256: String::new(),
     });
-
-    let entry = store.append_register(entry)?;
-
-    // The log carried access and separation but never issuance, so a person's
-    // history was missing the documents themselves.
-    crate::application::personnel::record_event(
-        store,
-        &who.person_id,
-        crate::domain::event::Kind::DocumentIssued,
-        Some(&format!("{} {serial}", document.code)),
-        by,
-        date,
-    )?;
-    Ok(entry)
+    store.append_register(entry)
 }
 
 /// Overwrite the signature block with the signatories that actually signed.
@@ -490,78 +578,6 @@ fn override_signers(defs: &mut Definitions, registry: &Registry, signatories: &[
             defs.set(format!("dkSigner{n}Name"), &sig.legal_name);
             defs.set(format!("dkSigner{n}Designation"), &sig.designation);
         }
-    }
-}
-
-/// The facts a register entry is built from.
-///
-/// A struct rather than nine positional arguments: `clippy.toml` caps them at
-/// eight, and at nine the call site stops being readable anyway.
-struct RegisterEntry<'a> {
-    serial: &'a Serial,
-    seq: u32,
-    year: i32,
-    person: &'a crate::domain::identity::Record,
-    document: &'a Document,
-    issued_on: &'a str,
-    template_hash: &'a str,
-    pdf_sha256: &'a str,
-    stored: &'a str,
-    engine: &'a str,
-    engine_version: &'a str,
-    /// Resolved AFTER substitution, so the entry records who actually signed.
-    signed_by: &'a [String],
-}
-
-/// Build the register entry for one issuance, UNSEALED.
-///
-/// The seal is applied by the [`Store`] port's `append_register`, atomically against the committed
-/// tail of the chain (design §4), so this returns the entry with empty `prev`/`entry` digests.
-fn register_entry(f: &RegisterEntry<'_>) -> Entry {
-    Entry {
-        serial: f.serial.to_string(),
-        code: f.document.code.clone(),
-        seq: f.seq,
-        year: f.year,
-        person_id: Some(f.person.person_id.clone()),
-        engagement_id: Some(f.person.engagement_id.clone()),
-        counterparty_id: None,
-        slug: f.person.slug.clone(),
-        document: f.document.id.clone(),
-        title: f.document.title.clone(),
-        kind: f.document.kind.as_str().to_owned(),
-        issued_on: f.issued_on.to_owned(),
-        retention: f.document.retention.clone(),
-        signed_by: f.signed_by.to_vec(),
-        template_sha256: f.template_hash.to_owned(),
-        pdf_sha256: f.pdf_sha256.to_owned(),
-        pdf_path: f.stored.to_owned(),
-        texlive: typeset::TEXLIVE.to_owned(),
-        engine: Some(f.engine.to_owned()),
-        engine_version: Some(f.engine_version.to_owned()),
-        prev_sha256: String::new(),
-        entry_sha256: String::new(),
-    }
-}
-
-/// What the PDF says about itself, so a file out of the store is not anonymous.
-fn document_metadata(
-    document: &Document,
-    serial: &Serial,
-    who: &crate::domain::identity::Record,
-    issued_on: &str,
-) -> typeset::Metadata {
-    typeset::Metadata {
-        title: document.title.clone(),
-        author: "Paridyum".to_owned(),
-        subject: format!(
-            "{serial} issued to {} under engagement {} on {issued_on}",
-            who.person_id, who.engagement_id
-        ),
-        keywords: format!(
-            "Paridyum; {}; {serial}; {}; {}",
-            document.code, who.person_id, who.engagement_id
-        ),
     }
 }
 
