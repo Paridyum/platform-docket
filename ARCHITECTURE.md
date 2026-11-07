@@ -28,6 +28,7 @@ tests run in under a millisecond.
 | `domain/event` | the history of what happened to an engagement |
 | `domain/definitions` | flattening registry and person data into LaTeX definitions |
 | `domain/serial` | allocation and formatting of serial numbers |
+| `domain/counterparty` | the organisation a document is issued to, and the three facts held about it |
 | `domain/register` | the tamper-evident record, and its hash chain |
 | `domain/lifecycle` | which documents a person owes at each stage |
 | `domain/person` | one person's record, and what must hold before issuing |
