@@ -85,6 +85,12 @@ impl Paths {
         self.store.join("counterparties")
     }
 
+    /// The append-only ledger of counterparty identifiers allocated (RFC-0136, ADR-0051).
+    #[must_use]
+    pub fn counterparty_ledger(&self) -> PathBuf {
+        self.store.join("register").join("counterparties.jsonl")
+    }
+
     /// One counterparty's record.
     #[must_use]
     pub fn counterparty(&self, slug: &str) -> PathBuf {

@@ -489,9 +489,14 @@ fn an_organisation_counterparty_is_backed_up_and_restored_with_the_register() {
         address: "1 College Road, Dehradun",
         office: "The Registrar",
     };
-    let org =
-        platform_docket::application::counterparty::enrol(&lost.paths, "example-university", facts)
-            .expect("enrolled");
+    let org = platform_docket::application::counterparty::enrol(
+        &lost.paths,
+        "example-university",
+        facts,
+        parse_iso("2026-11-07").expect("date"),
+        "rohan",
+    )
+    .expect("enrolled");
     assert_eq!(
         node::classify(&lost.paths)
             .expect("classify")
@@ -507,4 +512,10 @@ fn an_organisation_counterparty_is_backed_up_and_restored_with_the_register() {
     let back = platform_docket::application::counterparty::read(&spare.paths, "example-university")
         .expect("restored");
     assert_eq!(back, org);
+    let ledger = platform_docket::application::counterparty::ledger(&spare.paths).expect("ledger");
+    assert_eq!(
+        ledger.len(),
+        1,
+        "the allocation ledger travels too, or ids could be reissued"
+    );
 }
