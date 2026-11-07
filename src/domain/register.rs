@@ -102,6 +102,35 @@ impl Entry {
         self.person_id.as_ref() == Some(person)
     }
 
+    /// Refuse an entry that does not name exactly one recipient.
+    ///
+    /// A person's entry names a person AND the engagement it was issued under; an organisation's
+    /// names its `counterparty_id`; never both, never neither (RFC-0136). Enforced where entries
+    /// are appended and where they are read, by both stores, so the shape is a rule rather than
+    /// the convention `render_and_register` happens to follow -- an entry naming nobody would
+    /// otherwise store its PDF at `issued//…`.
+    ///
+    /// # Errors
+    /// Fails, naming the serial, when the entry names nobody, both, or half a person.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let person = (self.person_id.is_some(), self.engagement_id.is_some());
+        match (person, self.counterparty_id.is_some()) {
+            ((true, true), false) | ((false, false), true) => Ok(()),
+            ((false, false), false) => anyhow::bail!(
+                "{}: names no recipient -- neither a person nor an organisation",
+                self.serial
+            ),
+            (_, true) => anyhow::bail!(
+                "{}: names both a person and an organisation; an entry has one recipient",
+                self.serial
+            ),
+            _ => anyhow::bail!(
+                "{}: a person's entry needs both person_id and engagement_id",
+                self.serial
+            ),
+        }
+    }
+
     /// The identifier of whoever it was issued to: the person's, or the organisation's.
     ///
     /// For naming a blob folder or a report column, never for matching -- `is_for` matches.
@@ -291,6 +320,55 @@ mod tests {
         );
         chain.push(serde_json::from_str(&json).expect("reads back"));
         assert!(verify_chain(&chain).expect("verifiable").is_empty());
+    }
+
+    /// Three sealed entries in the register's on-disk format as it stood before RFC-0136: one
+    /// legacy (no engine, no `signed_by`), one current, one with non-ASCII text.
+    const GOLDEN: &str = include_str!("../../tests/fixtures/register-v1.jsonl");
+
+    #[test]
+    fn entries_already_on_disk_still_verify_and_reserialise_byte_for_byte() {
+        // Pins the FORMAT, not just three key names: renaming or re-keying any field on write
+        // changes these bytes and these digests, and every register on disk would then fail to
+        // verify. A presence check on the recipient keys did not catch that; this does.
+        let entries: Vec<Entry> = GOLDEN
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("parses"))
+            .collect();
+        assert!(verify_chain(&entries).expect("verifiable").is_empty());
+        for (line, e) in GOLDEN.lines().zip(&entries) {
+            assert_eq!(serde_json::to_string(e).expect("json"), line);
+            e.validate().expect("a person's entry is valid");
+        }
+        assert_eq!(
+            entries.last().map(|e| e.entry_sha256.as_str()),
+            Some("668dcbea89ce59c3c108181409d109b592f0eae916fc63db963590db8431d8c7")
+        );
+    }
+
+    #[test]
+    fn an_entry_names_exactly_one_recipient() {
+        let person = entry("PAR/NDA/2026/0001", 1);
+        person.validate().expect("a person's entry");
+        let org = crate::domain::counterparty::CounterpartyId::new(1).expect("id");
+        let mut both = person.clone();
+        both.counterparty_id = Some(org.clone());
+        let mut neither = person.clone();
+        neither.person_id = None;
+        neither.engagement_id = None;
+        let mut half = person.clone();
+        half.engagement_id = None;
+        let mut organisation = neither.clone();
+        organisation.counterparty_id = Some(org);
+        organisation.validate().expect("an organisation's entry");
+        for (bad, why) in [
+            (both, "both"),
+            (neither, "no recipient"),
+            (half, "both person_id"),
+        ] {
+            let err = bad.validate().expect_err(why);
+            assert!(err.to_string().contains(why), "{err}");
+        }
     }
 
     #[test]

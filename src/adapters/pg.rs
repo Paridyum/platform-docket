@@ -637,11 +637,17 @@ impl Store for PgStore {
     }
 
     fn register(&self) -> Result<Vec<Entry>> {
-        self.runtime
-            .block_on(read_register(&self.pool, self.tenant, &self.correlation))
+        let entries =
+            self.runtime
+                .block_on(read_register(&self.pool, self.tenant, &self.correlation))?;
+        for e in &entries {
+            e.validate().context("docket_register")?;
+        }
+        Ok(entries)
     }
 
     fn append_register(&self, entry: Entry) -> Result<Entry> {
+        entry.validate()?;
         self.runtime.block_on(seal_and_append(
             &self.pool,
             self.tenant,
