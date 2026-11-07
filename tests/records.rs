@@ -1577,3 +1577,49 @@ fn check_refuses_an_organisations_document_shaped_for_a_person() {
         findings.items
     );
 }
+
+#[test]
+fn check_reports_an_entry_naming_nobody_and_one_naming_an_unrecorded_organisation() {
+    // Both are refused by the store on write; these arrive by hand edit or a restore.
+    use platform_docket::domain::counterparty::CounterpartyId;
+    use platform_docket::domain::register::Entry;
+    let golden = include_str!("fixtures/register-v1.jsonl");
+    let template: Entry =
+        serde_json::from_str(golden.lines().next().expect("line")).expect("an entry");
+    let run = |paths: &Paths| {
+        check::run(
+            &FileStore::new(paths),
+            &FileBlobs::new(paths),
+            paths,
+            &registry(),
+        )
+        .expect("check runs and reports, rather than aborting")
+    };
+    let write = |paths: &Paths, e: Entry| {
+        let sealed = e.seal(None).expect("seal");
+        store::append(paths, &sealed).expect("raw append");
+    };
+
+    let sb = Sandbox::new();
+    let mut org = template.clone();
+    org.person_id = None;
+    org.engagement_id = None;
+    org.counterparty_id = Some(CounterpartyId::new(7).expect("id"));
+    write(&sb.paths, org.clone());
+    assert!(
+        run(&sb.paths)
+            .items
+            .iter()
+            .any(|f| f.blocking && f.message.contains("which no counterparty record holds"))
+    );
+
+    let sb = Sandbox::new();
+    org.counterparty_id = None;
+    write(&sb.paths, org);
+    assert!(
+        run(&sb.paths)
+            .items
+            .iter()
+            .any(|f| f.blocking && f.message.contains("names no recipient"))
+    );
+}

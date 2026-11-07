@@ -160,9 +160,20 @@ pub fn run(
     gitignore(&mut items, paths, registry);
     catalogue(&mut items, registry);
     communications(&mut items, registry)?;
+    // The register first: an entry that does not name exactly one recipient makes it unreadable,
+    // and that is reported as a finding rather than aborting the run with nothing said.
+    let Some(entries) = register(&mut items, store, blobs, paths)? else {
+        items.sort();
+        items.reverse();
+        return Ok(Findings {
+            items,
+            documents: by_code.len(),
+            stages: registry.lifecycle.stages.len(),
+            entries: 0,
+        });
+    };
     people(&mut items, store, paths, registry)?;
     counterparties(&mut items, paths, registry);
-    let entries = register(&mut items, store, blobs)?;
     archive_index(&mut items, store, paths, registry)?;
     team_export(&mut items, paths)?;
     vault(&mut items, store, paths)?;
@@ -631,9 +642,40 @@ fn class_templates_are_not_ignored(
     }
 }
 
-/// The chain is unbroken and every issued PDF still matches its hash.
-fn register(items: &mut Vec<Finding>, store: &dyn Store, blobs: &dyn Blobs) -> Result<usize> {
-    let entries = store.register()?;
+/// The chain is unbroken, every issued PDF still matches its hash, and every organisation an
+/// entry names still has its record. `None` when the register cannot be read at all.
+fn register(
+    items: &mut Vec<Finding>,
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+) -> Result<Option<usize>> {
+    let entries = match store.register() {
+        Ok(entries) => entries,
+        Err(e) => {
+            err(items, format!("register: {e:#}"));
+            return Ok(None);
+        }
+    };
+    let held: BTreeSet<String> = crate::application::counterparty::list(paths)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| c.id.to_string())
+        .collect();
+    for e in &entries {
+        if let Some(id) = &e.counterparty_id
+            && !held.contains(id.as_str())
+        {
+            err(
+                items,
+                format!(
+                    "{}: issued to {id}, which no counterparty record holds; the serial names \
+                     an organisation docket can no longer say anything about",
+                    e.serial
+                ),
+            );
+        }
+    }
     for fault in verify_chain(&entries)? {
         err(items, fault.to_string());
     }
@@ -657,7 +699,7 @@ fn register(items: &mut Vec<Finding>, store: &dyn Store, blobs: &dyn Blobs) -> R
             );
         }
     }
-    Ok(entries.len())
+    Ok(Some(entries.len()))
 }
 
 /// Every organisation counterparty record loads, holds its three facts, and has an identifier of
