@@ -119,7 +119,7 @@ pub fn report(
             State::NotApplicable
         } else if let Some(e) = register
             .iter()
-            .find(|e| e.person_id == who.person_id && e.code == code)
+            .find(|e| e.is_for(&who.person_id) && e.code == code)
         {
             // A document that is owed a signature and has none is not done.
             if !doc.needs_countersignature()

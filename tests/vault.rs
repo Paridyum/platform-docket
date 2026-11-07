@@ -174,7 +174,7 @@ fn a_sealed_document_is_ciphertext_and_opens_back_to_the_original() {
     let entry = store::register(&sb.paths)
         .expect("register")
         .into_iter()
-        .find(|e| e.person_id == who.person_id)
+        .find(|e| e.is_for(&who.person_id))
         .expect("one entry");
     let name = std::path::Path::new(&entry.pdf_path)
         .file_name()
@@ -283,7 +283,7 @@ fn an_erased_persons_document_still_verifies_from_their_own_copy() {
     let entry = store::register(&sb.paths)
         .expect("register")
         .into_iter()
-        .find(|e| e.person_id == who.person_id)
+        .find(|e| e.is_for(&who.person_id))
         .expect("one entry");
 
     // Their copy, kept somewhere docket will never reach.
@@ -414,7 +414,7 @@ fn the_register_backup_restores_verifiability_from_the_estate_key_alone() {
     let expected = store::register(&sb.paths)
         .expect("register")
         .into_iter()
-        .find(|e| e.person_id == who.person_id)
+        .find(|e| e.is_for(&who.person_id))
         .expect("one entry");
 
     let written = vault::back_up_register(&sb.paths, &sb.estate).expect("backs up");
@@ -508,7 +508,7 @@ fn a_signed_scan_is_sealed_and_erased_with_everything_else() {
     let entry = store::register(&sb.paths)
         .expect("register")
         .into_iter()
-        .find(|e| e.person_id == who.person_id)
+        .find(|e| e.is_for(&who.person_id))
         .expect("one entry");
 
     let scan = sb.paths.store.parent().expect("a parent").join("scan.pdf");

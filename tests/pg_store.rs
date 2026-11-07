@@ -35,8 +35,11 @@ fn entry(seq: u32) -> Entry {
         code: "NDA".to_owned(),
         seq,
         year: 2026,
-        person_id: PersonId::new(1).expect("a valid person id"),
-        engagement_id: EngagementId::new("PAR", "INT", 2026, 1).expect("a valid engagement id"),
+        person_id: Some(PersonId::new(1).expect("a valid person id")),
+        engagement_id: Some(
+            EngagementId::new("PAR", "INT", 2026, 1).expect("a valid engagement id"),
+        ),
+        counterparty_id: None,
         slug: "asha-verma".to_owned(),
         document: "nda".to_owned(),
         title: "Non-Disclosure Agreement".to_owned(),

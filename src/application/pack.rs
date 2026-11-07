@@ -139,7 +139,7 @@ pub fn grouped(
     .collect();
 
     for e in store.register()? {
-        if e.person_id != who.person_id {
+        if !e.is_for(&who.person_id) {
             continue;
         }
         // The cover sheet describes the pack; it is not an item in it.

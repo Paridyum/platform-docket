@@ -95,7 +95,7 @@ pub fn record(
             // signature leaves, so it must be as durable as the register that names it.
             let key = format!(
                 "scans/{}/{}-signed.{ext}",
-                entry.person_id.as_str(),
+                entry.recipient(),
                 serial.replace('/', "-")
             );
             blobs
@@ -118,20 +118,23 @@ pub fn record(
         entry_sha256: String::new(),
     })?;
 
-    // The event log carries the history; the ledger carries the evidence.
-    crate::application::personnel::record_event(
-        store,
-        &entry.person_id,
-        Kind::DocumentSigned,
-        Some(serial),
-        recorded_by,
-        received_on,
-    )?;
+    // The event log carries the history; the ledger carries the evidence. The log is a person's
+    // engagement history, so an organisation's document (RFC-0136) has the ledger alone.
+    if let Some(person_id) = &entry.person_id {
+        crate::application::personnel::record_event(
+            store,
+            person_id,
+            Kind::DocumentSigned,
+            Some(serial),
+            recorded_by,
+            received_on,
+        )?;
+    }
 
     let _ = registry;
     Ok(Signed {
         record: sealed,
-        person_id: entry.person_id.to_string(),
+        person_id: entry.recipient().to_owned(),
         title: entry.title.clone(),
     })
 }
@@ -153,7 +156,7 @@ pub fn outstanding(
     Ok(store
         .register()?
         .into_iter()
-        .filter(|e| &e.person_id == person_id)
+        .filter(|e| e.is_for(person_id))
         .filter(|e| {
             by_code
                 .get(e.code.as_str())
