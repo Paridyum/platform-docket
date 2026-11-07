@@ -4,9 +4,10 @@ use crate::adapters::blobs::Blobs;
 use crate::adapters::store::Store;
 use crate::adapters::{clock, registry::Registry, typeset};
 use crate::config::Paths;
+use crate::domain::counterparty::Counterparty;
 use crate::domain::definitions::Definitions;
 use crate::domain::escape;
-use crate::domain::lifecycle::Document;
+use crate::domain::lifecycle::{Document, Recipient};
 use crate::domain::person::{Person, blockers};
 use crate::domain::register::{Entry, sha256};
 use crate::domain::serial::{self, Serial, next_seq};
@@ -287,6 +288,14 @@ fn substitute(
 /// Fails if the document is not declared for this person's class, or if no signatory
 /// other than the subject exists to sign it.
 fn refuse_if_misrouted(person: &Person, document: &Document, signatories: &[String]) -> Result<()> {
+    // An empty `classes` applies to every class, so an organisation's document has to be refused
+    // by what it is rather than by the class list (RFC-0136).
+    if document.recipient == Recipient::Organisation {
+        bail!(
+            "{}: issued to an organisation, not to a person; use `docket counterparty issue`",
+            document.code
+        );
+    }
     if !document.applies_to(person.class()) {
         bail!(
             "{}: not issued to a person of class {:?}; the registry declares it for {:?}",
@@ -411,6 +420,98 @@ pub fn one_with(
         date,
     )?;
     Ok(entry)
+}
+
+/// Issue one document to an organisation counterparty (RFC-0136).
+///
+/// THE SAME PATH AS A PERSON'S from the serial onwards: one register, one serial format, signing
+/// by `signatories.yaml` in the company's fallback order. What differs is only who it is issued
+/// to -- the entry names the organisation's `PAR-O` identifier and no person or engagement, and
+/// nothing is written to the event log, which is a person's engagement history.
+///
+/// # Errors
+/// Fails if the document is not declared for an organisation, the record is incomplete, no
+/// signatory is available, or rendering or recording fails.
+// The same collaborators as `one_with`, with the company in place of the extra definitions.
+#[allow(clippy::too_many_arguments)]
+pub fn to_counterparty(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    registry: &Registry,
+    counterparty: &Counterparty,
+    document: &Document,
+    company: &str,
+    date: time::Date,
+) -> Result<Entry> {
+    if document.recipient != Recipient::Organisation {
+        bail!(
+            "{}: issued to a person, not to an organisation; use `docket issue`",
+            document.code
+        );
+    }
+    if let Some(problem) = counterparty.problems().into_iter().next() {
+        bail!(
+            "{}: refused, the counterparty record is incomplete: {problem}",
+            document.code
+        );
+    }
+    let signatories = counterparty_signatories(registry, document, company);
+    if signatories.is_empty() && !document.signed_by.is_empty() {
+        bail!(
+            "{}: no active signatory of {company} is available",
+            document.code
+        );
+    }
+
+    let recipient = Addressee {
+        slug: &counterparty.slug,
+        id: counterparty.id.as_str(),
+        described: counterparty.id.to_string(),
+        keywords: counterparty.id.to_string(),
+    };
+    render_and_register(
+        store,
+        blobs,
+        paths,
+        registry,
+        &Issuance {
+            document,
+            date,
+            recipient: &recipient,
+            signatories: &signatories,
+        },
+        |serial| {
+            let mut defs = definitions_for(registry, None, Some(serial), date, Some(document));
+            override_signers(&mut defs, registry, &signatories);
+            counterparty_definitions(&mut defs, counterparty);
+            Ok(defs)
+        },
+        |mut entry| {
+            entry.counterparty_id = Some(counterparty.id.clone());
+            entry
+        },
+    )
+}
+
+/// Who signs a document issued to an organisation, for `company`.
+///
+/// No subject to substitute out: an organisation is never one of Paridyum's signatories. A vacant
+/// office still falls through to the next active signatory of the company, as for a person.
+pub fn counterparty_signatories(
+    registry: &Registry,
+    document: &Document,
+    company: &str,
+) -> Vec<String> {
+    substitute(registry, &document.signed_by, |_| false, company)
+}
+
+/// The counterparty's three facts, as the commands a template reads: `\dkCLegalName`,
+/// `\dkCAddress`, `\dkCOffice`.
+pub fn counterparty_definitions(defs: &mut Definitions, counterparty: &Counterparty) {
+    defs.set("dkCLegalName", &counterparty.legal_name);
+    defs.set("dkCAddress", &counterparty.address);
+    defs.set("dkCOffice", &counterparty.office);
 }
 
 /// Who a document is issued to, in the terms the register and the PDF metadata need.
