@@ -51,3 +51,14 @@ classes:
       references, which must stay verifiable whenever someone presents
       one. Register metadata is retained even when the underlying personal
       data is erased.
+
+  - class: counterparty
+    from: never
+    keep_for: for as long as any document issued to the organisation is retained
+    basis: >
+      Governs an organisation counterparty record (RFC-0136), not a document.
+      It holds an organisation's legal name, its address and the office that
+      receives documents -- no person's data -- and it is what a register
+      entry's counterparty identifier resolves to. Deleting it while a document
+      issued to that organisation is still retained would leave a serial that
+      names nobody.

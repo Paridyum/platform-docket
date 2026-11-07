@@ -1434,3 +1434,15 @@ pod: write, read and delete of `docket/_probe/s3-wiring`. The closes-when issuan
 because issuing writes a person record and person writes answer 503 until the backup gate opens.
 The first issuance after the gate opens is the proof, and this entry closes then.
 
+
+## D-77 — Organisation counterparties live in the file store only  (OPEN 2026-11-07)
+
+RFC-0136 open question 3 added the organisation counterparty: the university, incubator or company
+a document is issued to. Its record is `store/counterparties/<slug>.yaml`, beside the register its
+entries resolve to. The Postgres store has no table for it, so `docket counterparty` is refused
+against `DOCKET_DATABASE_URL` and over the API, with that reason, rather than writing to a disk the
+served backend never reads.
+
+**Closes when:** a platform-tenancy migration adds `docket_counterparties` (tenant- and
+account-scoped like `docket_persons`), the record moves onto the `Store` port, and the refusal in
+`unavailable_on_pg` is removed.

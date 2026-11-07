@@ -474,3 +474,37 @@ fn push_refuses_plaintext_and_uploads_nothing() {
         "the destination was written to despite the refusal"
     );
 }
+
+#[test]
+fn an_organisation_counterparty_is_backed_up_and_restored_with_the_register() {
+    // RFC-0136: an organisation's register entry resolves to its record, so the record must reach
+    // a cold spare in the same bundle, or the spare holds serials that name nobody.
+    if skip("an_organisation_counterparty_is_backed_up_and_restored_with_the_register") {
+        return;
+    }
+    let lost = Node::new_with_own_key();
+    lost.add("aditya");
+    let facts = platform_docket::application::counterparty::Facts {
+        legal_name: "Example University",
+        address: "1 College Road, Dehradun",
+        office: "The Registrar",
+    };
+    let org =
+        platform_docket::application::counterparty::enrol(&lost.paths, "example-university", facts)
+            .expect("enrolled");
+    assert_eq!(
+        node::classify(&lost.paths)
+            .expect("classify")
+            .iter()
+            .find(|i| i.name == "counterparties")
+            .map(|i| i.disposition),
+        Some(node::Disposition::ViaBundle)
+    );
+    vault::back_up_register(&lost.paths, &lost.estate).expect("backup");
+
+    let spare = Node::new().with_key(&lost.estate);
+    node::restore(&node::bundle_path(&lost.paths), &spare.estate, &spare.paths).expect("restore");
+    let back = platform_docket::application::counterparty::read(&spare.paths, "example-university")
+        .expect("restored");
+    assert_eq!(back, org);
+}

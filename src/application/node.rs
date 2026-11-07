@@ -61,6 +61,9 @@ fn declared() -> BTreeMap<&'static str, Disposition> {
     m.insert("register", Disposition::ViaBundle);
     m.insert("issued", Disposition::ViaBundle);
     m.insert("scans", Disposition::ViaBundle);
+    // Organisation counterparties (RFC-0136): what an organisation's register entry resolves to,
+    // so it travels in the same bundle as the register.
+    m.insert("counterparties", Disposition::ViaBundle);
     // Per-person keys. ADR-0069: a restorable key is a key nobody can prove
     // was destroyed, and a versioned store retains what it is told to delete.
     m.insert("keys", Disposition::Never);

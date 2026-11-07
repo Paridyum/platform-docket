@@ -76,6 +76,21 @@ impl Paths {
         self.people.join(format!("{slug}.yaml"))
     }
 
+    /// Organisation counterparty records (RFC-0136).
+    ///
+    /// In the store beside the register its entries resolve to, so a backup or a restore carries
+    /// both together, and gitignored with it.
+    #[must_use]
+    pub fn counterparties(&self) -> PathBuf {
+        self.store.join("counterparties")
+    }
+
+    /// One counterparty's record.
+    #[must_use]
+    pub fn counterparty(&self, slug: &str) -> PathBuf {
+        self.counterparties().join(format!("{slug}.yaml"))
+    }
+
     /// A registry file by bare name, e.g. `org`.
     #[must_use]
     pub fn registry(&self, name: &str) -> PathBuf {

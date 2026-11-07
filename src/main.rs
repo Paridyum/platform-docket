@@ -15,8 +15,8 @@ use platform_docket::adapters::pg::{self, PgStore};
 use platform_docket::adapters::store::{FileStore, Store};
 use platform_docket::adapters::{oidc, registry::Registry, token, typeset};
 use platform_docket::application::{
-    archive, browse, check, comms, enrol, issue, next, node, pack, personnel, roster, sign, status,
-    vault, verify,
+    archive, browse, check, comms, counterparty, enrol, issue, next, node, pack, personnel, roster,
+    sign, status, vault, verify,
 };
 use platform_docket::config::Paths;
 use platform_docket::domain::address;
@@ -193,6 +193,11 @@ enum Command {
         #[command(subcommand)]
         what: StoreCmd,
     },
+    /// Record or list the organisations documents are issued to (RFC-0136).
+    Counterparty {
+        #[command(subcommand)]
+        what: CounterpartyCmd,
+    },
     /// Show the two addresses a person should be provisioned.
     Addresses {
         /// Person slug.
@@ -340,6 +345,7 @@ const fn unavailable_over_api(command: &Command) -> Option<&'static str> {
         | Command::Team
         | Command::Vault { .. }
         | Command::Store { .. }
+        | Command::Counterparty { .. }
         | Command::Addresses { .. }
         | Command::Reengage { .. }
         | Command::Event { .. }
@@ -918,6 +924,10 @@ fn unavailable_on_pg(command: &Command) -> Option<&'static str> {
              not on disk. Change the stage from the served backend, or run advance offline \
              against the file store (unset DOCKET_DATABASE_URL).",
         ),
+        Command::Counterparty { .. } => Some(
+            "counterparty records live in the file store until a platform-tenancy migration adds \
+             a table for them; run this offline against the file store (unset DOCKET_DATABASE_URL).",
+        ),
         Command::Erase { .. } => Some(
             "erase re-seals the event log by rewriting it, which the Postgres append-only trigger \
              forbids without migration 0007 (D-60). Honour this erasure by running `docket erase` \
@@ -958,6 +968,7 @@ fn writes(command: &Command) -> bool {
         // rather than wholesale, because locking the source store to restore
         // into a spare would refuse the one operation a spare exists for.
         Command::Store { what } => matches!(what, StoreCmd::Restore { .. } | StoreCmd::Push { .. }),
+        Command::Counterparty { what } => !matches!(what, CounterpartyCmd::List),
 
         // Writers. `Team` and `Index` are here because both record a receipt
         // beside their output; `Vault` because seal, shred, backup and escrow
@@ -1117,6 +1128,7 @@ fn route(
         Command::Addresses { slug } => cmd_addresses(store, &slug, company),
         Command::Vault { what } => cmd_vault(store, blobs, paths, &what),
         Command::Store { what } => cmd_store(paths, &what),
+        Command::Counterparty { what } => cmd_counterparty(paths, &what, operator),
         Command::Retention { date } => cmd_retention(store, registry, date.as_deref()),
         other => route_person(other, store, blobs, paths, registry, operator, company),
     }
@@ -1754,6 +1766,27 @@ enum StoreCmd {
     },
 }
 
+/// What to do with organisation counterparties.
+#[derive(clap::Subcommand)]
+enum CounterpartyCmd {
+    /// Record an organisation and allocate its identifier. It holds these three facts only.
+    New {
+        /// Slug to file the record under: lowercase, hyphenated.
+        slug: String,
+        /// The organisation's legal name, as it names itself.
+        #[arg(long)]
+        legal_name: String,
+        /// Its address.
+        #[arg(long)]
+        address: String,
+        /// The office that receives documents, e.g. "The Registrar". Never a person's name.
+        #[arg(long)]
+        office: String,
+    },
+    /// List every recorded organisation.
+    List,
+}
+
 /// What to do with the vault.
 #[derive(clap::Subcommand)]
 enum VaultCmd {
@@ -2233,6 +2266,43 @@ fn cmd_record(
         eprintln!("  {v}");
     }
     Ok(ExitCode::from(1))
+}
+
+fn cmd_counterparty(
+    paths: &Paths,
+    what: &CounterpartyCmd,
+    operator: Option<&str>,
+) -> Result<ExitCode> {
+    match what {
+        CounterpartyCmd::New {
+            slug,
+            legal_name,
+            address,
+            office,
+        } => {
+            writer(operator)?;
+            let facts = counterparty::Facts {
+                legal_name,
+                address,
+                office,
+            };
+            let c = counterparty::enrol(paths, slug, facts)?;
+            println!("{}  {}  recorded as {}", c.id, c.legal_name, c.slug);
+        }
+        CounterpartyCmd::List => {
+            println!("{:<16} {:<24} {:<32} OFFICE", "ID", "SLUG", "LEGAL NAME");
+            for c in counterparty::list(paths)? {
+                println!(
+                    "{:<16} {:<24} {:<32} {}",
+                    c.id.as_str(),
+                    c.slug,
+                    c.legal_name,
+                    c.office
+                );
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn cmd_roster(store: &dyn Store, registry: &Registry, standing: Option<&str>) -> Result<ExitCode> {

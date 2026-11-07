@@ -38,6 +38,7 @@ tests run in under a millisecond.
 | `adapters/clock` | supplying today's date, injectably |
 | `application/personnel` | creating, describing and retiring a record |
 | `application/roster` | the register of everyone engaged |
+| `application/counterparty` | enrolling and listing organisation counterparties |
 
 ## Three chains, one implementation
 
