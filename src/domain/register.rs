@@ -102,13 +102,8 @@ impl Entry {
         self.person_id.as_ref() == Some(person)
     }
 
-    /// Refuse an entry that does not name exactly one recipient.
-    ///
-    /// A person's entry names a person AND the engagement it was issued under; an organisation's
-    /// names its `counterparty_id`; never both, never neither (RFC-0136). Enforced where entries
-    /// are appended and where they are read, by both stores, so the shape is a rule rather than
-    /// the convention `render_and_register` happens to follow -- an entry naming nobody would
-    /// otherwise store its PDF at `issued//…`.
+    /// Refuse an entry not naming exactly one recipient: a person AND their engagement, or a
+    /// `counterparty_id` (RFC-0136). Both stores enforce it on append and on read.
     ///
     /// # Errors
     /// Fails, naming the serial, when the entry names nobody, both, or half a person.
