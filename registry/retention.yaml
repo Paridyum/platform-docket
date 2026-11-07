@@ -62,3 +62,13 @@ classes:
       entry's counterparty identifier resolves to. Deleting it while a document
       issued to that organisation is still retained would leave a serial that
       names nobody.
+
+  - class: institution
+    from: issue
+    keep_for: 8 years after issue
+    basis: >
+      A document issued to an organisation (RFC-0136). An organisation has no
+      engagement to end, so a period counted from one would never start and
+      the document would never be reviewed; this one runs from issue. Eight
+      years mirrors `contract`, and the same caveat applies: confirm the
+      limitation period with counsel before it is relied on.
