@@ -1792,13 +1792,18 @@ enum CounterpartyCmd {
         /// Counterparty slug.
         slug: String,
     },
-    /// Delete an organisation's vault, PDFs and executed scans; the register survives.
+    /// Delete one organisation document's PDF, scan and sealed copies; the register survives.
     Shred {
         /// Counterparty slug.
         slug: String,
-        /// Confirms the deletion is intended. Required.
+        /// The serial whose retention has ended, or that a request covers.
+        serial: Option<String>,
+        /// Confirms deleting that one document.
         #[arg(long)]
         confirm: bool,
+        /// Every document AND the key instead: repeat the slug here to mean it.
+        #[arg(long, value_name = "SLUG")]
+        all: Option<String>,
         /// Date of deletion, ISO. Defaults to today.
         #[arg(long)]
         date: Option<String>,
@@ -2346,19 +2351,26 @@ fn cmd_counterparty(
         }
         CounterpartyCmd::Shred {
             slug,
+            serial,
             confirm,
+            all,
             date,
         } => {
             let by = writer(operator)?;
-            if !confirm {
-                bail!(
-                    "this deletes {slug}'s vault, issued PDFs and executed scans for good; \
-                     pass --confirm"
-                );
-            }
             let to = counterparty::read(paths, slug)?;
             let when = resolve_date(date.as_deref())?;
-            let tombstone = vault::shred_counterparty(store, blobs, paths, &to.id, when, by)?;
+            let tombstone = match (serial, all) {
+                (Some(serial), None) if *confirm => vault::shred_counterparty_document(
+                    store, blobs, paths, &to.id, serial, when, by,
+                )?,
+                (None, Some(again)) if again == slug => {
+                    vault::shred_counterparty(store, blobs, paths, &to.id, when, by)?
+                }
+                _ => bail!(
+                    "name ONE serial with --confirm, whose retention has ended or that a request \
+                     covers; or --all {slug} to delete every document {slug} holds and its key"
+                ),
+            };
             println!("{}: shredded, {} vault object(s)", to.id, tombstone.objects);
         }
         CounterpartyCmd::Issue { slug, code, date } => {

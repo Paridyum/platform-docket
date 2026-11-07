@@ -104,8 +104,8 @@ email or phone — the record refuses them.
 - [ ] When a signed copy comes back: `docket sign <serial> --scan …`, then
       `docket counterparty seal <slug>`. The scan carries the signatory's name and
       signature — personal data — so it goes into the vault like a person's
-- [ ] When its retention ends (`docket retention`): `docket counterparty shred
-      <slug> --confirm`
+- [ ] When a document's retention ends (`docket retention`): `docket counterparty
+      shred <slug> <serial> --confirm` — that document only, never the others
 - [ ] **Not the MOU, yet.** `docket counterparty issue <slug> MOU` is the binding
       Memorandum of Understanding, and it is refused until PARIDYUM is incorporated
       and `registry/org.yaml` records its `cin` and `registered_office`. That
