@@ -185,12 +185,22 @@ organisation's record stay, so a copy the institution holds still verifies.
 | `… is refused against Postgres` | counterparties live in the file store (D-77) | run it offline against the file store |
 | `no active signatory of PAR` | every office the letter routes to is vacant | an officer must be appointed first (RFC-0042) |
 | `MOU: refused -- … is not incorporated` | the binding MOU waits for a CIN (RFC-0136 D7) | issue ICL instead; the MOU becomes issuable when `org.yaml` records `cin` and `registered_office` |
+| `MOU: … pass --terms <file>` | the MOU's negotiated terms are part of the document | write the terms file below and pass it |
+| `term "…" is not declared for this document` | the terms file holds a key the MOU does not take | remove it; a person's name or email never goes in it |
 
-**The MOU, after incorporation.** `docket counterparty issue <slug> MOU`. Its term,
-notice period, sessions and Schedule B are ruled lines agreed with the institution
-and completed before signature; the institution's signatory and contact are written
-in by hand, so docket holds no such person's details until the executed copy comes
-back. Record its return with `docket sign --scan`, then `docket counterparty seal`.
+**The MOU, after incorporation.** Agree its terms with the institution, write them to a
+file, and issue with it:
+
+    docket counterparty issue <slug> MOU --terms mou-terms.yaml
+
+The file holds exactly the keys `registry/lifecycle.yaml` declares under the MOU's
+`terms`, each with its purpose: the institution's legal description and the body it
+acts through, term and notice periods, sessions, the contact offices and the
+institution's role mailbox, the signatory's office, and Schedule B. Anything missing,
+empty or extra is refused before a serial is used, so the registered MOU states what
+was agreed — it is never a blank form. Contacts are offices; the signatory's name is
+written by hand at signature. Record its return with `docket sign --scan`, then
+`docket counterparty seal`.
 
 ---
 

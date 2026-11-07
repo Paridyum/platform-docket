@@ -1448,3 +1448,14 @@ account-scoped like `docket_persons`) and an append-only table for the allocatio
 (`store/register/counterparties.jsonl`, which allocates every `PAR-O` identifier), both move onto
 the `Store` port, and the refusal in `unavailable_on_pg` is removed. A test fails if that refusal
 is removed before then.
+
+## D-78 — The MOU's retention runs from issue, not from the end of its term  (OPEN 2026-11-07, counsel)
+
+`institution` keeps an organisation's documents 8 years **from issue**, because an organisation
+has no engagement end for `contract` to count from. For the binding MOU the limitation clock runs
+from breach or from the end of the term, so an MOU with a five-year term would come up for review
+three years after it ended. Raised by the RFC-0136 review (m6).
+
+**Closes when:** counsel states the period, and either an agreement-end epoch is added to
+`retention.yaml` (the term is now a declared MOU term, so the end date is knowable) or the MOU gets
+a class of its own.

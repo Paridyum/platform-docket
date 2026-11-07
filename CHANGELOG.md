@@ -17,7 +17,13 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 - **The institution MOU, refused before incorporation** (RFC-0136 D7). MOU is declared
   `requires_incorporation: true`, and issuance refuses it while the issuing company's `cin` is null
   in `org.yaml` -- before a serial is spent. The template also reads `\dkOrgCin` and the new
-  `registered_office` bare, so it cannot render until both are recorded.
+  `registered_office` bare, so it cannot render until both are recorded. Its negotiated terms --
+  term, notice, sessions, contact offices, Schedule B, the institution's legal description -- are
+  declared under `terms` and passed with `--terms <file>`, validated strictly before a serial is
+  used, so the registered MOU is never a blank form.
+- **An organisation's executed copy is sealed and can be deleted** (RFC-0136, REQ-0003):
+  `docket counterparty seal` and `docket counterparty shred`. Identifiers come from an append-only
+  allocation ledger and are never reissued.
 
 - **A tenant's own members are served** (ADR-0127 D2, PLAN-TENANT-HOSTS D1). With `DOCKET_TENANT_ISSUER`
   set, a token from the tenant instance is verified against that instance's keys, audienced for the
