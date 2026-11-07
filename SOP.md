@@ -171,6 +171,13 @@ for whoever signs it to fill in by hand.
 | `issued to a person, not to an organisation` | that code is a person's document | use `docket issue` for people; only ICL goes to an organisation |
 | `… is refused against Postgres` | counterparties live in the file store (D-77) | run it offline against the file store |
 | `no active signatory of PAR` | every office the letter routes to is vacant | an officer must be appointed first (RFC-0042) |
+| `MOU: refused -- … is not incorporated` | the binding MOU waits for a CIN (RFC-0136 D7) | issue ICL instead; the MOU becomes issuable when `org.yaml` records `cin` and `registered_office` |
+
+**The MOU, after incorporation.** `docket counterparty issue <slug> MOU`. Its term,
+notice period, sessions and Schedule B are ruled lines agreed with the institution
+and completed before signature; the institution's signatory and contact are written
+in by hand, so no person at the institution is ever recorded. Record its return with
+`docket sign` as for any signed document.
 
 ---
 

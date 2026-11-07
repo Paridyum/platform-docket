@@ -374,6 +374,7 @@ pub fn one_with(
         .unwrap_or_else(|| registry.default_company().unwrap_or("PAR"));
     let signatories = resolve_signatories(registry, person, document, company);
     refuse_if_misrouted(person, document, &signatories)?;
+    refuse_before_incorporation(registry, document, company)?;
 
     let recipient = Addressee {
         slug: &person.slug,
@@ -450,6 +451,7 @@ pub fn to_counterparty(
             document.code
         );
     }
+    refuse_before_incorporation(registry, document, company)?;
     if let Some(problem) = counterparty.problems().into_iter().next() {
         bail!(
             "{}: refused, the counterparty record is incomplete: {problem}",
@@ -492,6 +494,36 @@ pub fn to_counterparty(
             entry
         },
     )
+}
+
+/// Refuse a binding agreement for a company that is not yet incorporated (RFC-0136 D7).
+///
+/// Keyed on `cin` in `registry/org.yaml`, the fact incorporation produces. Checked before a serial
+/// exists, in both issuance paths, so a refusal leaves nothing in the register.
+///
+/// # Errors
+/// Fails when `document.requires_incorporation` and the company's `cin` is null or empty.
+pub fn refuse_before_incorporation(
+    registry: &Registry,
+    document: &Document,
+    company: &str,
+) -> Result<()> {
+    let cin = registry
+        .company(Some(company))
+        .and_then(|c| c.get("cin"))
+        .and_then(serde_yaml::Value::as_str)
+        .map(str::trim)
+        .filter(|c| !c.is_empty());
+    if document.requires_incorporation && cin.is_none() {
+        bail!(
+            "{}: refused -- {} is binding, and {company} is not incorporated: its `cin` is null \
+             in registry/org.yaml. A binding agreement needs a party able to hold its obligations \
+             (RFC-0136 D7). Issue the non-binding letter (ICL) until the CIN is recorded.",
+            document.code,
+            document.title
+        );
+    }
+    Ok(())
 }
 
 /// Who signs a document issued to an organisation, for `company`.

@@ -14,6 +14,10 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
   `recipient: organisation`, and only such a kind is issued to one, by `docket counterparty issue`:
   same register, same serial format, signed by `signatories.yaml`. The first is ICL, the non-binding
   Letter of Collaboration. File store only for now (D-77).
+- **The institution MOU, refused before incorporation** (RFC-0136 D7). MOU is declared
+  `requires_incorporation: true`, and issuance refuses it while the issuing company's `cin` is null
+  in `org.yaml` -- before a serial is spent. The template also reads `\dkOrgCin` and the new
+  `registered_office` bare, so it cannot render until both are recorded.
 
 - **A tenant's own members are served** (ADR-0127 D2, PLAN-TENANT-HOSTS D1). With `DOCKET_TENANT_ISSUER`
   set, a token from the tenant instance is verified against that instance's keys, audienced for the
