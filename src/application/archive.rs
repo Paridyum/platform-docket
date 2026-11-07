@@ -125,10 +125,7 @@ fn roster_csv(
                 .unwrap_or_default()
                 .to_owned()
         };
-        let docs = register
-            .iter()
-            .filter(|e| e.person_id == r.person_id)
-            .count();
+        let docs = register.iter().filter(|e| e.is_for(&r.person_id)).count();
         out.push_str(&row(&[
             r.person_id.as_str(),
             r.engagement_id.as_str(),
@@ -182,8 +179,10 @@ fn documents_csv(
             &e.code,
             &e.title,
             &e.kind,
-            e.person_id.as_str(),
-            e.engagement_id.as_str(),
+            // An organisation's entry (RFC-0136) names its PAR-O identifier here and no
+            // engagement; a person's row is byte-for-byte what it always was.
+            e.recipient(),
+            e.engagement_id.as_ref().map_or("", |g| g.as_str()),
             &e.issued_on,
             &e.retention,
             &e.pdf_path,
@@ -317,7 +316,7 @@ pub fn retention_due(
         if elapsed > days {
             due.push(Overdue {
                 serial: e.serial.clone(),
-                person_id: e.person_id.to_string(),
+                person_id: e.recipient().to_owned(),
                 class: class.class.clone(),
                 keep_for: class.keep_for.trim().to_owned(),
                 basis: basis.to_owned(),
@@ -344,7 +343,7 @@ fn engagement_end(
     // deletion in the middle of an internship.
     ledger
         .iter()
-        .filter(|r| r.person_id == entry.person_id)
+        .filter(|r| entry.is_for(&r.person_id))
         .filter(|r| matches!(r.standing, Standing::Separated | Standing::Erased))
         .map(|r| r.standing_changed_on.clone())
         .next()

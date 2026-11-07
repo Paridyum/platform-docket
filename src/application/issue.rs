@@ -133,7 +133,7 @@ pub fn add_history(defs: &mut Definitions, store: &dyn Store, person: &Person) -
     let who = crate::application::personnel::identify(store, &person.slug).ok();
     let mine: Vec<&Entry> = issued
         .iter()
-        .filter(|e| who.as_ref().is_some_and(|w| e.person_id == w.person_id))
+        .filter(|e| who.as_ref().is_some_and(|w| e.is_for(&w.person_id)))
         .collect();
     let mut docs = String::new();
     for e in &mine {
@@ -523,8 +523,9 @@ fn register_entry(f: &RegisterEntry<'_>) -> Entry {
         code: f.document.code.clone(),
         seq: f.seq,
         year: f.year,
-        person_id: f.person.person_id.clone(),
-        engagement_id: f.person.engagement_id.clone(),
+        person_id: Some(f.person.person_id.clone()),
+        engagement_id: Some(f.person.engagement_id.clone()),
+        counterparty_id: None,
         slug: f.person.slug.clone(),
         document: f.document.id.clone(),
         title: f.document.title.clone(),
@@ -577,7 +578,7 @@ pub fn outstanding(
     let by_code = registry.lifecycle.by_code()?;
     let already: Vec<&str> = issued
         .iter()
-        .filter(|e| e.person_id == who.person_id)
+        .filter(|e| e.is_for(&who.person_id))
         .map(|e| e.code.as_str())
         .collect();
     let mut out = Vec::new();

@@ -382,7 +382,7 @@ pub fn dossier(
     let documents = store
         .register()?
         .into_iter()
-        .filter(|e| e.person_id == identity.person_id)
+        .filter(|e| e.is_for(&identity.person_id))
         .map(|e| (e.code, e.serial, e.issued_on))
         .collect();
 
@@ -621,7 +621,7 @@ pub fn unmet_gates(
             .map_or_else(|| code.clone(), |d| d.title.clone());
         match register
             .iter()
-            .find(|e| e.person_id == record.person_id && &e.code == code)
+            .find(|e| e.is_for(&record.person_id) && &e.code == code)
         {
             None => out.push(Gate {
                 code: code.clone(),
@@ -717,10 +717,10 @@ pub fn erase(
     let register = store.register()?;
     let mine: std::collections::BTreeSet<&str> = register
         .iter()
-        .filter(|e| e.person_id == person_id)
+        .filter(|e| e.is_for(&person_id))
         .map(|e| e.serial.as_str())
         .collect();
-    for entry in register.iter().filter(|e| e.person_id == person_id) {
+    for entry in register.iter().filter(|e| e.is_for(&person_id)) {
         blobs
             .delete(&entry.pdf_path)
             .with_context(|| format!("erasing the issued PDF for {}", entry.serial))?;

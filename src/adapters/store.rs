@@ -179,6 +179,7 @@ impl Store for FileStore<'_> {
     }
 
     fn append_register(&self, entry: Entry) -> Result<Entry> {
+        entry.validate()?;
         // The register's seal lived in the caller (issue.rs) and the append was of a pre-sealed
         // entry; behind the port the seal moves here so both stores do read-seal-append the same way.
         let existing = register(self.paths)?;
@@ -264,6 +265,9 @@ pub fn register(paths: &Paths) -> Result<Vec<Entry>> {
         }
         let entry: Entry = serde_json::from_str(line)
             .with_context(|| format!("{}: line {} is not a valid entry", path.display(), i + 1))?;
+        entry
+            .validate()
+            .with_context(|| format!("{}: line {}", path.display(), i + 1))?;
         out.push(entry);
     }
     Ok(out)
@@ -417,8 +421,9 @@ mod tests {
             code: "NDA".to_owned(),
             seq,
             year: 2026,
-            person_id: PersonId::new(1).expect("id"),
-            engagement_id: EngagementId::new("PAR", "INT", 2026, 1).expect("id"),
+            person_id: Some(PersonId::new(1).expect("id")),
+            engagement_id: Some(EngagementId::new("PAR", "INT", 2026, 1).expect("id")),
+            counterparty_id: None,
             slug: "asha-verma".to_owned(),
             document: "nda".to_owned(),
             title: "Non-Disclosure Agreement".to_owned(),
@@ -475,6 +480,27 @@ mod tests {
             prev_sha256: String::new(),
             entry_sha256: String::new(),
         }
+    }
+
+    #[test]
+    fn an_entry_naming_no_recipient_is_refused_on_append_and_on_read() {
+        // RFC-0136: exactly one of a person or an organisation, enforced by the store rather
+        // than left to the code that happens to build entries correctly today.
+        let (_dir, paths) = store_dir();
+        let store = FileStore::new(&paths);
+        let mut nobody = entry(1);
+        nobody.person_id = None;
+        nobody.engagement_id = None;
+        assert!(store.append_register(nobody.clone()).is_err());
+        assert!(
+            store.register().expect("read").is_empty(),
+            "nothing appended"
+        );
+
+        // Written past the port, as a hand edit or another tool would: reading refuses it too.
+        super::append(&paths, &nobody.seal(None).expect("seal")).expect("raw append");
+        let err = store.register().expect_err("refused on read");
+        assert!(format!("{err:#}").contains("names no recipient"), "{err:#}");
     }
 
     #[test]

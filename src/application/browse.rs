@@ -162,7 +162,7 @@ pub fn draw_person(
     let register = store.register()?;
     let mine: Vec<_> = register
         .iter()
-        .filter(|e| e.person_id == who.person_id)
+        .filter(|e| e.is_for(&who.person_id))
         .collect();
 
     writeln!(out, "\nDOCUMENTS ({})", mine.len())?;

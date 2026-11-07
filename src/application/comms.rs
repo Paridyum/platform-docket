@@ -231,7 +231,7 @@ pub fn due(
             // the operator is about to attach it to a real email.
             let issued = register
                 .iter()
-                .find(|e| e.person_id == who.person_id && &e.code == code);
+                .find(|e| e.is_for(&who.person_id) && &e.code == code);
             let serial = if let Some(e) = issued {
                 e.serial.clone()
             } else {
