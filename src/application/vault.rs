@@ -1,10 +1,14 @@
-//! The encrypted archive: one key per person, so erasure has a mechanism.
+//! The encrypted archive: one key per recipient, so erasure has a mechanism.
+//!
+//! A recipient is a person, or an organisation counterparty (RFC-0136): an organisation's executed
+//! scan carries its signatory's name and signature, which is personal data, so it is sealed and
+//! shredded by exactly the mechanism a person's is.
 
 use crate::adapters::blobs::Blobs;
 use crate::adapters::store::Store;
 use crate::adapters::{clock, crypt};
 use crate::config::Paths;
-use crate::domain::identity::PersonId;
+use crate::domain::counterparty::CounterpartyId;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
@@ -14,8 +18,8 @@ use std::path::{Path, PathBuf};
 /// Where a person's ciphertext lives. Named by the opaque identifier (ADR-0051), because this
 /// directory becomes a cloud folder and a listing named after people discloses who Paridyum
 /// engages to anyone who can read it.
-fn vault_dir(paths: &Paths, person: &PersonId) -> PathBuf {
-    paths.store.join("vault").join(person.as_str())
+fn vault_dir(paths: &Paths, recipient: &str) -> PathBuf {
+    paths.store.join("vault").join(recipient)
 }
 
 /// Where a person's key lives.
@@ -23,11 +27,8 @@ fn vault_dir(paths: &Paths, person: &PersonId) -> PathBuf {
 /// **NEVER SYNCED AND NEVER IN GIT.** Both retain what you delete from them, so a key inside
 /// either cannot be destroyed — and destroying it is the entire erasure mechanism (ADR-0069 D3).
 /// `store/` is gitignored, and only `store/vault/` is uploaded.
-fn key_path(paths: &Paths, person: &PersonId) -> PathBuf {
-    paths
-        .store
-        .join("keys")
-        .join(format!("{}.age", person.as_str()))
+fn key_path(paths: &Paths, recipient: &str) -> PathBuf {
+    paths.store.join("keys").join(format!("{recipient}.age"))
 }
 
 /// What a shredding leaves behind.
@@ -84,8 +85,8 @@ fn tombstone_path(paths: &Paths) -> PathBuf {
 ///
 /// # Errors
 /// Fails if `age` is unavailable or the key cannot be written.
-fn person_identity(paths: &Paths, person: &PersonId, estate: &Path) -> Result<String> {
-    let path = key_path(paths, person);
+fn person_identity(paths: &Paths, recipient: &str, estate: &Path) -> Result<String> {
+    let path = key_path(paths, recipient);
 
     if path.exists() {
         let sealed = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
@@ -139,9 +140,44 @@ pub fn seal(
 ) -> Result<Sealed> {
     crypt::detect()?;
     let who = crate::application::personnel::identify_at(store, slug, company)?;
-    let identity = person_identity(paths, &who.person_id, estate)?;
+    seal_into(store, blobs, paths, who.person_id.as_str(), estate, |e| {
+        e.is_for(&who.person_id)
+    })
+}
+
+/// Encrypt everything issued to an organisation counterparty into its vault (RFC-0136).
+///
+/// The same mechanism as a person's, keyed by the `PAR-O` identifier: the PDFs so a lost node
+/// does not lose them, and above all the executed scans, which carry the institution signatory's
+/// name and signature and are the only evidence an agreement was made.
+///
+/// # Errors
+/// As `seal`.
+pub fn seal_counterparty(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    counterparty: &CounterpartyId,
+    estate: &Path,
+) -> Result<Sealed> {
+    crypt::detect()?;
+    seal_into(store, blobs, paths, counterparty.as_str(), estate, |e| {
+        e.counterparty_id.as_ref() == Some(counterparty)
+    })
+}
+
+/// Seal every entry `mine` selects, and its scan, into `recipient`'s vault.
+fn seal_into(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    recipient_id: &str,
+    estate: &Path,
+    mine: impl Fn(&crate::domain::register::Entry) -> bool,
+) -> Result<Sealed> {
+    let identity = person_identity(paths, recipient_id, estate)?;
     let recipient = recipient_in(&identity)?;
-    let dir = vault_dir(paths, &who.person_id);
+    let dir = vault_dir(paths, recipient_id);
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let mut out = Sealed::default();
@@ -150,12 +186,12 @@ pub fn seal(
     // sealed `.age` object stays on `Paths` — it is the ciphertext/erasure layer, and its key must be
     // local for `shred` to destroy it (DECISION-DEBT notes moving it to the bucket).
     let register = store.register()?;
-    let mine: std::collections::BTreeSet<&str> = register
+    let serials: std::collections::BTreeSet<&str> = register
         .iter()
-        .filter(|e| e.is_for(&who.person_id))
+        .filter(|e| mine(e))
         .map(|e| e.serial.as_str())
         .collect();
-    for entry in register.iter().filter(|e| e.is_for(&who.person_id)) {
+    for entry in register.iter().filter(|e| mine(e)) {
         if !blobs.exists(&entry.pdf_path)? {
             bail!(
                 "{} is registered but its bytes are missing from the blob store (key {})",
@@ -178,7 +214,7 @@ pub fn seal(
     // listing, because the blob port has no listing and the ledger is the authoritative record of
     // which scans exist.
     for sig in store.signatures()? {
-        if !mine.contains(sig.serial.as_str()) {
+        if !serials.contains(sig.serial.as_str()) {
             continue;
         }
         if let Some(key) = sig.scan_path.as_deref() {
@@ -223,15 +259,15 @@ pub fn open(
 ) -> Result<Vec<u8>> {
     crypt::detect()?;
     let who = crate::application::personnel::identify_at(store, slug, company)?;
-    if !key_path(paths, &who.person_id).exists() {
+    if !key_path(paths, who.person_id.as_str()).exists() {
         bail!(
             "{slug} has no vault key. If they were erased this is expected and permanent: the \
              key was destroyed, which is what erasure means here. `docket verify` still works \
              against a copy they present."
         );
     }
-    let identity = person_identity(paths, &who.person_id, estate)?;
-    let object = vault_dir(paths, &who.person_id).join(name);
+    let identity = person_identity(paths, who.person_id.as_str(), estate)?;
+    let object = vault_dir(paths, who.person_id.as_str()).join(name);
     let sealed = fs::read(&object).with_context(|| format!("reading {}", object.display()))?;
     crypt::decrypt(&identity, &sealed)
 }
@@ -247,13 +283,13 @@ pub fn open(
 /// Fails if the tombstone cannot be written. **The tombstone is written before the key is
 /// destroyed**, so a crash between them leaves a tombstone with a surviving key — recoverable
 /// and visible — rather than a destroyed key nothing recorded.
-pub fn shred(paths: &Paths, person: &PersonId, date: time::Date, by: &str) -> Result<Tombstone> {
-    let dir = vault_dir(paths, person);
+pub fn shred(paths: &Paths, recipient: &str, date: time::Date, by: &str) -> Result<Tombstone> {
+    let dir = vault_dir(paths, recipient);
     let objects = fs::read_dir(&dir).map_or(0, |entries| entries.flatten().count());
-    let key = key_path(paths, person);
+    let key = key_path(paths, recipient);
 
     let stone = Tombstone {
-        person_id: person.as_str().to_owned(),
+        person_id: recipient.to_owned(),
         shredded_on: clock::to_iso(date)?,
         by: by.to_owned(),
         objects,
@@ -268,6 +304,44 @@ pub fn shred(paths: &Paths, person: &PersonId, date: time::Date, by: &str) -> Re
         fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
     }
     Ok(stone)
+}
+
+/// Delete what docket holds of an organisation's documents: its vault key and ciphertext, and the
+/// plaintext PDFs and executed scans (RFC-0136, REQ-0003).
+///
+/// THE DELETION MECHANISM FOR THE INSTITUTION SIGNATORY'S DATA, which arrives on the executed
+/// scan. Run when the documents' retention ends or on a request docket must honour. Like a
+/// person's erasure: the tombstone first, then the key, then the plaintext; the register and the
+/// counterparty record (an organisation's facts, not a person's) are untouched, so a copy the
+/// institution presents still verifies.
+///
+/// # Errors
+/// Fails if the tombstone cannot be written, or the register or a blob cannot be read or deleted.
+pub fn shred_counterparty(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
+    paths: &Paths,
+    counterparty: &CounterpartyId,
+    date: time::Date,
+    by: &str,
+) -> Result<Tombstone> {
+    let tombstone = shred(paths, counterparty.as_str(), date, by)?;
+    let register = store.register()?;
+    let theirs: Vec<_> = register
+        .iter()
+        .filter(|e| e.counterparty_id.as_ref() == Some(counterparty))
+        .collect();
+    for e in &theirs {
+        blobs.delete(&e.pdf_path)?;
+    }
+    for sig in store.signatures()? {
+        if let Some(key) = sig.scan_path.as_deref()
+            && theirs.iter().any(|e| e.serial == sig.serial)
+        {
+            blobs.delete(key)?;
+        }
+    }
+    Ok(tombstone)
 }
 
 fn append_tombstone(paths: &Paths, stone: &Tombstone) -> Result<()> {
@@ -565,7 +639,7 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
         let Some(person) = register
             .iter()
             .find(|e| e.serial == sig.serial)
-            .and_then(|e| e.person_id.clone())
+            .map(|e| e.recipient().to_owned())
         else {
             continue;
         };
@@ -581,11 +655,9 @@ pub fn unsealed(store: &dyn Store, paths: &Paths) -> Result<Vec<String>> {
     }
 
     for entry in register {
-        // The vault seals personal data so it can be shredded (ADR-0069). An organisation's
-        // document (RFC-0136) holds none, and has no person whose key could seal it.
-        let Some(person_id) = entry.person_id.clone() else {
-            continue;
-        };
+        // A person's or an organisation's (RFC-0136): an organisation's executed scan holds its
+        // signatory's personal data, and its PDF is lost with the node unless it is sealed.
+        let person_id = entry.recipient().to_owned();
         let dir = vault_dir(paths, &person_id);
         let Some(name) = Path::new(&entry.pdf_path)
             .file_name()

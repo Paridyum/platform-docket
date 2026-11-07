@@ -1787,6 +1787,22 @@ enum CounterpartyCmd {
     },
     /// List every recorded organisation.
     List,
+    /// Encrypt an organisation's issued PDFs and executed scans into the vault.
+    Seal {
+        /// Counterparty slug.
+        slug: String,
+    },
+    /// Delete an organisation's vault, PDFs and executed scans; the register survives.
+    Shred {
+        /// Counterparty slug.
+        slug: String,
+        /// Confirms the deletion is intended. Required.
+        #[arg(long)]
+        confirm: bool,
+        /// Date of deletion, ISO. Defaults to today.
+        #[arg(long)]
+        date: Option<String>,
+    },
     /// Issue a document declared `recipient: organisation` to a recorded organisation.
     Issue {
         /// Counterparty slug.
@@ -2316,6 +2332,34 @@ fn cmd_counterparty(
                     c.office
                 );
             }
+        }
+        CounterpartyCmd::Seal { slug } => {
+            let estate = platform_docket::adapters::crypt::estate_identity()?;
+            let to = counterparty::read(paths, slug)?;
+            let out = vault::seal_counterparty(store, blobs, paths, &to.id, &estate)?;
+            println!(
+                "{}: {} sealed, {} already present",
+                to.id,
+                out.written.len(),
+                out.skipped
+            );
+        }
+        CounterpartyCmd::Shred {
+            slug,
+            confirm,
+            date,
+        } => {
+            let by = writer(operator)?;
+            if !confirm {
+                bail!(
+                    "this deletes {slug}'s vault, issued PDFs and executed scans for good; \
+                     pass --confirm"
+                );
+            }
+            let to = counterparty::read(paths, slug)?;
+            let when = resolve_date(date.as_deref())?;
+            let tombstone = vault::shred_counterparty(store, blobs, paths, &to.id, when, by)?;
+            println!("{}: shredded, {} vault object(s)", to.id, tombstone.objects);
         }
         CounterpartyCmd::Issue { slug, code, date } => {
             writer(operator)?;
