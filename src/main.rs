@@ -1812,6 +1812,9 @@ enum CounterpartyCmd {
         /// Issue date, ISO. Defaults to today.
         #[arg(long)]
         date: Option<String>,
+        /// The negotiated terms, as YAML, for a document that declares them (the MOU).
+        #[arg(long)]
+        terms: Option<PathBuf>,
     },
 }
 
@@ -2361,7 +2364,12 @@ fn cmd_counterparty(
             let tombstone = vault::shred_counterparty(store, blobs, paths, &to.id, when, by)?;
             println!("{}: shredded, {} vault object(s)", to.id, tombstone.objects);
         }
-        CounterpartyCmd::Issue { slug, code, date } => {
+        CounterpartyCmd::Issue {
+            slug,
+            code,
+            date,
+            terms,
+        } => {
             writer(operator)?;
             let by_code = registry.lifecycle.by_code()?;
             let doc = by_code
@@ -2372,7 +2380,23 @@ fn cmd_counterparty(
                 .or_else(|| registry.default_company())
                 .unwrap_or("PAR");
             let when = resolve_date(date.as_deref())?;
-            let e = issue::to_counterparty(store, blobs, paths, registry, &to, doc, company, when)?;
+            let terms = terms
+                .as_deref()
+                .map(|p| {
+                    std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
+                })
+                .transpose()?;
+            let e = issue::to_counterparty(
+                store,
+                blobs,
+                paths,
+                registry,
+                &to,
+                doc,
+                company,
+                when,
+                terms.as_deref(),
+            )?;
             println!(
                 "{}  {}  to {} ({})",
                 e.serial, e.title, to.legal_name, to.id
@@ -2565,6 +2589,7 @@ mod tests {
                 slug: "x".to_owned(),
                 code: "ICL".to_owned(),
                 date: None,
+                terms: None,
             },
         ] {
             let command = Command::Counterparty { what };
