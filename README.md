@@ -136,6 +136,9 @@ owes its own documents, cumulatively.
 | `docket onboard <slug>` | issue everything the current stage owes |
 | `docket issue <slug> <CODE>` | issue one document with a serial |
 | `docket render <slug> <CODE>` | draft: watermarked `DRAFT`, `NOT ISSUED`, unregistered |
+| `docket counterparty new <slug> --legal-name … --address … --office …` | record an organisation a document is issued to (RFC-0136): those three facts only |
+| `docket counterparty list` | every organisation recorded |
+| `docket counterparty issue <slug> <CODE>` | issue an organisation's document (ICL now; MOU after incorporation) |
 | `docket verify <serial> [--file X]` | is this PDF the one that was issued? |
 | `docket check` | validate registries, templates, records, register chain |
 

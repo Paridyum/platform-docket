@@ -101,6 +101,10 @@ email or phone — the record refuses them.
 - [ ] `docket counterparty issue <slug> ICL` — the non-binding Letter of
       Collaboration, signed by the Director
 - [ ] Send the PDF from `store/issued/PAR-O-…/` yourself; nothing is sent for you
+- [ ] **Not the MOU, yet.** `docket counterparty issue <slug> MOU` is the binding
+      Memorandum of Understanding, and it is refused until PARIDYUM is incorporated
+      and `registry/org.yaml` records its `cin` and `registered_office`. That
+      refusal is the rule, not a fault: use the letter until then.
 
 ## Periodically
 

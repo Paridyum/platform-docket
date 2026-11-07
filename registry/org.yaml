@@ -40,8 +40,13 @@ companies:
     legal_status: Incorporation in Process
 
     # Populated when incorporation completes; `legal_status` changes then too.
+    # `cin` is also the gate on a binding agreement with an organisation: a kind
+    # declaring `requires_incorporation` (the institution MOU) is refused while it
+    # is null, and the MOU renders `registered_office`, which no company has before
+    # it is incorporated (RFC-0136 D7).
     cin: null
     incorporated_on: null
+    registered_office: null
 
     # Governing-law clause in the NDA, IP Assignment and Internship Agreement.
     # The source .docx files all read "[City, State, India]".
@@ -100,6 +105,7 @@ companies:
     legal_status: Incorporation in Process
     cin: null
     incorporated_on: null
+    registered_office: null
 
     jurisdiction:
       country: India
@@ -163,6 +169,7 @@ companies:
     legal_status: Incorporation in Process
     cin: null
     incorporated_on: null
+    registered_office: null
 
     jurisdiction:
       country: India
