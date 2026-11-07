@@ -1,0 +1,127 @@
+% Letter of Collaboration to an Institution (NON-BINDING). RFC-0136 D1, D7.
+%
+% Issued to an ORGANISATION COUNTERPARTY, not to a person (`recipient: organisation` in
+% registry/lifecycle.yaml): `docket counterparty issue <slug> ICL`. The addressee block reads the
+% counterparty's three facts -- \dkCOffice, \dkCLegalName, \dkCAddress -- and nothing about any
+% person at the institution is held. The optional acknowledgement block is ruled lines, filled in
+% by hand by whoever signs it.
+%
+% From knowledge docs/2026-11-07-personas-and-paridyum-in/08-paperwork/04, with the IIC/E-cell
+% "body" placeholders folded into the receiving office and the institution's name, because a
+% counterparty holds those three facts and no others.
+%
+% DRAFT FOR REVIEW BY QUALIFIED COUNSEL (06-counsel-brief.md Q11-Q13). Not legal advice. Do not
+% issue to an institution before that review; HR-CHECKLIST.md states the order.
+%
+% WHY THESE TERMS. No money and no student data either way, no logo use without permission, no
+% exclusivity, "being built" tense: BET-0010, RFC-0127 D4/D7, REQ-0003, STD-0021, RFC-0130 D7.
+% Deliberately non-binding: PARIDYUM's CIN is null (registry/org.yaml), so it cannot yet hold the
+% obligations a binding instrument creates. The binding form is the MOU, which waits for that.
+\documentclass{paridyum}
+\begin{document}
+
+\paridyumletterhead
+\paridyumdateref{\dkDocDate}{\dkDocRef}
+\paridyumverifiable{\dkDocVerify}
+
+\textbf{\dkCOffice} \\
+\dkCLegalName \\
+\dkCAddress
+
+\vspace{0.9em}
+\textbf{Subject: Letter of collaboration --- talks and workshops for student founders}
+
+\vspace{0.7em}
+Dear Sir or Madam,
+
+\vspace{0.4em}
+Thank you for speaking with us. This letter sets out what \textbf{\dkOrgName} would like to offer
+the students of \dkCLegalName, and what we would ask in return. It is a statement of intent, not a
+contract.
+
+\section*{1. About Paridyum}
+Paridyum is a technology venture building a platform on which a person can set up and run a
+business. It is being built: we describe what exists, and we do not describe as available what
+is not.
+
+Paridyum is currently undergoing incorporation as a private limited company under the Companies
+Act, 2013. Nothing in this letter is a representation that Paridyum has already been
+incorporated as a separate legal entity.
+
+\section*{2. What Paridyum offers}
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item \textbf{Talks and workshops} for students who want to run a business --- for example,
+          on choosing a legal form, handling money, GST thresholds, and setting up a business
+          online --- at dates agreed between us. Our speakers describe Paridyum as it is today.
+    \item \textbf{Written material} the institution may reuse with its students, such as slides
+          or a one-page guide. It carries no tracking links.
+    \item \textbf{The same terms as anyone else.} Students and the institution's own ventures may
+          create organisations at paridyum.in on Paridyum's standard terms, in their own right.
+          Nothing about the institution changes those terms, and no student is offered anything
+          more, or less, because of this letter.
+\end{itemize}
+
+\section*{3. What we ask of the institution}
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item A slot in the institution's calendar for each talk or workshop, and a room or an online
+          meeting for it.
+    \item A contact for arranging dates, by email to the address below.
+\end{itemize}
+
+\vspace{0.5em}
+\begin{infobox}
+\textbf{What neither side will do}\\[0.5em]
+\begin{itemize}[leftmargin=*, noitemsep]
+    \item \textbf{No money changes hands, in either direction.} Paridyum pays no sponsorship or
+          fee, and charges none. Paridyum offers no prizes in credits, free months or capacity.
+    \item \textbf{No student data is shared, ever, in either direction.} Paridyum will not ask
+          for, accept, or keep any list of students, attendees, registrants or their contact
+          details. Paridyum will not collect sign-ups at a session. A student who wants to use
+          Paridyum goes to paridyum.in themselves.
+    \item \textbf{No use of the other's name or logo without separate written permission.}
+          Paridyum will not use the institution's name, logo or emblem, and the institution will
+          not use Paridyum's, except as each side separately permits in writing.
+    \item \textbf{No exclusivity.} Either side may work with anyone else.
+\end{itemize}
+\end{infobox}
+
+\section*{4. Students under 18}
+Paridyum's service is for people aged 18 and over. Sessions under this letter are for students
+of the institution in its higher-education programmes. Paridyum will not run sessions at
+schools under this letter.
+% src: REQ-0038 item 1; RFC-0134 D9, D12. COUNSEL Q7.
+
+\section*{5. Ending it}
+Either side may end this collaboration at any time by email to the other, without giving a
+reason. Paridyum's address for this is \dkOrgEmail. Nothing survives the end except the
+commitments in the box above about student data and the use of names and logos.
+
+\section*{6. Not a contract}
+This letter records what each side intends. It does not create legal obligations, and neither
+side may rely on it as a contract. If either side later wants binding terms, they will be in a
+separate written agreement, which Paridyum can enter into only after its incorporation is
+complete.
+
+\vspace{0.7em}
+If this is acceptable, please reply by email to \dkOrgEmail{} confirming it, with a contact for
+scheduling. You may also confirm the authenticity of this letter using the reference and code
+printed at the foot of this page.
+
+\vspace{1.2em}
+Yours faithfully,
+
+\vspace{1.2em}
+\paridyumsignblock
+
+\vspace{1.5em}
+\textbf{Acknowledged for \dkCLegalName} \textit{(optional; an email reply is enough)}
+
+\vspace{0.5em}
+\begin{tabularx}{\linewidth}{@{}F{3.4cm}X@{}}
+Name:        & \dkblank[6cm] \\[1em]
+Designation: & \dkblank[6cm] \\[1em]
+Signature:   & \dkblank[6cm] \\[1em]
+Date:        & \dkblank[6cm]
+\end{tabularx}
+
+\end{document}

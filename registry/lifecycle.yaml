@@ -241,6 +241,22 @@ documents:
       Addressed to the institution, not the intern. Owed only where the
       institution asks for one, which the onboarding form records.
 
+  - code: ICL
+    id: institution-collaboration-letter
+    recipient: organisation
+    title: Letter of Collaboration (Institution)
+    template: templates/letter/institution-collaboration.tex
+    kind: issued
+    signed_by: [director]
+    retention: institution
+    on_request: true
+    note: >
+      ISSUED TO AN ORGANISATION, not to a person (RFC-0136 D7): `docket
+      counterparty issue <slug> ICL`. Non-binding, so it may be issued before
+      incorporation -- but not before counsel has reviewed the wording
+      (HR-CHECKLIST.md). Signed by the Director, as the business letter is;
+      a vacant office falls through in the register's order (ADR-0077 D4).
+
   - code: PUB
     id: publicity-consent
     classes: [intern]

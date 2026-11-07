@@ -1470,7 +1470,7 @@ fn a_counterparty_record_holding_a_contact_person_is_reported_by_check() {
 /// A document declared for an organisation, built as the registry would declare one (RFC-0136).
 fn organisation_document(extra: &str) -> platform_docket::domain::lifecycle::Document {
     serde_yaml::from_str(&format!(
-        "code: ICL\nid: test-collaboration\ntitle: Test Letter\n\
+        "code: TST\nid: test-collaboration\ntitle: Test Letter\n\
          template: templates/letter/business-communication.tex\nkind: issued\n\
          recipient: organisation\nsigned_by: [director]\nretention: permanent\n\
          on_request: true\n{extra}"
@@ -1572,8 +1572,100 @@ fn check_refuses_an_organisations_document_shaped_for_a_person() {
         findings
             .items
             .iter()
-            .any(|f| f.blocking && f.message.contains("ICL: issued to an organisation")),
+            .any(|f| f.blocking && f.message.contains("TST: issued to an organisation")),
         "{:?}",
         findings.items
     );
+}
+
+/// Every command `template` dereferences without a `\dkfill` fallback that an organisation
+/// counterparty's issuance would leave undefined. Needs no typesetter.
+fn undefined_for_a_counterparty(code: &str) -> Vec<String> {
+    use platform_docket::application::issue;
+    use platform_docket::domain::template::closure;
+    let reg = registry();
+    let doc = reg
+        .lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == code)
+        .expect("declared");
+    let body = closure(&root(), &root().join(&doc.template))
+        .expect("template files")
+        .into_iter()
+        .map(|(_, bytes)| String::from_utf8_lossy(&bytes).into_owned())
+        .collect::<String>()
+        .lines()
+        // A comment is not rendered; `\%` is a literal percent sign and is.
+        .map(|l| l.replace("\\%", "").split('%').next().unwrap_or("").to_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let sb = Sandbox::new();
+    let mut defs = issue::definitions_for(&reg, None, None, date(), Some(doc));
+    issue::counterparty_definitions(&mut defs, &example_counterparty(&sb.paths));
+    // Every `\dk...` command, not only the `\dkP` ones `required_commands` scans for: this
+    // template's data is the organisation's `\dkC...` and the company's `\dkOrg...`.
+    let mut found: Vec<String> = body
+        .split("\\dk")
+        .skip(1)
+        .map(|rest| {
+            let name: String = rest
+                .chars()
+                .take_while(char::is_ascii_alphanumeric)
+                .collect();
+            format!("dk{name}")
+        })
+        .filter(|c| !["dkfill", "dkblank"].contains(&c.as_str()))
+        .filter(|c| defs.get(c).is_none())
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+#[test]
+fn the_collaboration_letter_needs_nothing_an_organisation_does_not_supply() {
+    // A field the counterparty cannot supply would stop pdflatex at issuance -- or, worse, tempt
+    // someone to add a contact person's name to the record to make it render.
+    assert!(
+        undefined_for_a_counterparty("ICL").is_empty(),
+        "{:?}",
+        undefined_for_a_counterparty("ICL")
+    );
+}
+
+#[test]
+fn a_collaboration_letter_issued_to_an_organisation_registers_and_verifies() {
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::{issue, verify};
+    if skip_without_typesetter(
+        "a_collaboration_letter_issued_to_an_organisation_registers_and_verifies",
+    ) {
+        return;
+    }
+    let sb = Sandbox::new();
+    let store = FileStore::new(&sb.paths);
+    let blobs = FileBlobs::new(&sb.paths);
+    let reg = registry();
+    let org = example_counterparty(&sb.paths);
+    let icl = reg
+        .lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == "ICL")
+        .expect("ICL");
+    let e = issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, icl, "PAR", date())
+        .expect("issued");
+    assert_eq!(e.serial, "PAR/ICL/2026/0001");
+    assert_eq!(e.counterparty_id.as_ref(), Some(&org.id));
+    assert!(e.person_id.is_none() && e.engagement_id.is_none());
+    assert_eq!(e.signed_by, ["director"]);
+    let checked = verify::verify(
+        &blobs,
+        &store.register().expect("register"),
+        &e.serial,
+        None,
+    )
+    .expect("verifies");
+    assert!(checked.matches());
 }

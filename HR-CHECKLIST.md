@@ -87,6 +87,21 @@ One command per document, on the day it arrives — not in a batch later.
 - [ ] `docket emails <slug> --only completion`
 - [ ] `docket index`
 
+## Writing to an institution (RFC-0136)
+
+A university, incubator or company is an **organisation counterparty**, not a
+person. Docket records three facts about it and nothing else: its legal name,
+its address, and the office that receives the letter. Never a contact's name,
+email or phone — the record refuses them.
+
+- [ ] Counsel has reviewed the Letter of Collaboration's wording (COUNSEL
+      Q11–Q13). Until then, do not issue it.
+- [ ] `docket counterparty new <slug> --legal-name "…" --address "…"
+      --office "…"`, with the facts taken from the institution's own reply
+- [ ] `docket counterparty issue <slug> ICL` — the non-binding Letter of
+      Collaboration, signed by the Director
+- [ ] Send the PDF from `store/issued/PAR-O-…/` yourself; nothing is sent for you
+
 ## Periodically
 
 - [ ] `docket check` — after any change to a record or the registry

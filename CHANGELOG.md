@@ -7,6 +7,14 @@ Format: [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) ·
 
 ### Added
 
+- **Documents can be issued to an organisation** (RFC-0136 D7, open question 3 resolved
+  2026-11-07). A university, incubator or company is an organisation counterparty: `docket
+  counterparty new` records its legal name, address and receiving office -- nothing else, and a
+  record holding more does not load -- under a `PAR-O-…` identifier. A document kind declares
+  `recipient: organisation`, and only such a kind is issued to one, by `docket counterparty issue`:
+  same register, same serial format, signed by `signatories.yaml`. The first is ICL, the non-binding
+  Letter of Collaboration. File store only for now (D-77).
+
 - **A tenant's own members are served** (ADR-0127 D2, PLAN-TENANT-HOSTS D1). With `DOCKET_TENANT_ISSUER`
   set, a token from the tenant instance is verified against that instance's keys, audienced for the
   docket project that `paridyum.resolve_surface(<X-Forwarded-Host>, 'docket')` names, issued in that
