@@ -1542,7 +1542,17 @@ fn an_organisations_document_is_never_issued_to_a_person_nor_the_reverse() {
         .find(|d| d.code == "NDA")
         .expect("NDA")
         .clone();
-    let to_org = issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &nda, "PAR", date());
+    let to_org = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        &nda,
+        "PAR",
+        date(),
+        None,
+    );
     assert!(format!("{:#}", to_org.expect_err("refused")).contains("issued to a person"));
     assert!(
         store.register().expect("register").is_empty(),
@@ -1666,8 +1676,18 @@ fn a_collaboration_letter_issued_to_an_organisation_registers_and_verifies() {
         .iter()
         .find(|d| d.code == "ICL")
         .expect("ICL");
-    let e = issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, icl, "PAR", date())
-        .expect("issued");
+    let e = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        icl,
+        "PAR",
+        date(),
+        None,
+    )
+    .expect("issued");
     assert_eq!(e.serial, "PAR/ICL/2026/0001");
     assert_eq!(e.counterparty_id.as_ref(), Some(&org.id));
     assert!(e.person_id.is_none() && e.engagement_id.is_none());
@@ -1700,8 +1720,17 @@ fn the_mou_is_refused_while_the_company_has_no_cin_and_only_for_that() {
         .find(|d| d.code == "MOU")
         .expect("MOU")
         .clone();
-    let refused =
-        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &mou, "PAR", date());
+    let refused = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        &mou,
+        "PAR",
+        date(),
+        None,
+    );
     let why = format!("{:#}", refused.expect_err("refused before incorporation"));
     assert!(
         why.contains("not incorporated") && why.contains("cin"),
@@ -1721,9 +1750,17 @@ fn the_mou_is_refused_while_the_company_has_no_cin_and_only_for_that() {
     par["cin"] = serde_yaml::Value::from("U00000UT2026PTC000000");
     // Past the guard: without a typesetter it now fails at rendering, and with one the template
     // still stops on the unrecorded registered office -- either way not on the guard.
-    if let Err(e) =
-        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &mou, "PAR", date())
-    {
+    if let Err(e) = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        &mou,
+        "PAR",
+        date(),
+        None,
+    ) {
         assert!(!format!("{e:#}").contains("not incorporated"), "{e:#}");
     }
 }
@@ -1801,8 +1838,17 @@ fn an_organisations_document_carries_the_issuing_companys_letterhead() {
 
     let store = FileStore::new(&sb.paths);
     let blobs = FileBlobs::new(&sb.paths);
-    let refused =
-        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &doc, "ZZZ", date());
+    let refused = issue::to_counterparty(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &org,
+        &doc,
+        "ZZZ",
+        date(),
+        None,
+    );
     assert!(format!("{:#}", refused.expect_err("refused")).contains("unknown company"));
 }
 
