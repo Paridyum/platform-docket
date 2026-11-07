@@ -334,6 +334,28 @@ pub fn back_up_register(paths: &Paths, estate: &Path) -> Result<Vec<String>> {
         written.push(flat);
     }
 
+    // Organisation counterparty records (RFC-0136), one file each, named `counterparties-<slug>`
+    // so `node::restore` puts them back under `counterparties/` by its first-hyphen rule.
+    let mut records: Vec<_> = match fs::read_dir(paths.counterparties()) {
+        Ok(dir) => dir.filter_map(|e| e.ok().map(|e| e.path())).collect(),
+        Err(_) => Vec::new(),
+    };
+    records.sort();
+    for source in records
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "yaml"))
+    {
+        let Some(file) = source.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let plain = fs::read(source).with_context(|| format!("reading {}", source.display()))?;
+        let flat = format!("counterparties-{file}");
+        let target = dir.join(format!("{flat}.age"));
+        fs::write(&target, crypt::encrypt(&recipient, &plain)?)
+            .with_context(|| format!("writing {}", target.display()))?;
+        written.push(flat);
+    }
+
     if written.is_empty() {
         bail!("nothing to back up: the store holds no register yet");
     }

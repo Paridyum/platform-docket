@@ -1423,3 +1423,46 @@ fn next_says_nothing_remains_for_an_erased_person() {
         "there is no command for an erased person"
     );
 }
+
+#[test]
+fn a_counterparty_record_holding_a_contact_person_is_reported_by_check() {
+    // RFC-0136: an organisation counterparty holds its legal name, address and receiving office,
+    // and nothing else. A contact's email typed into the record by hand is over-collection, and
+    // `check` must say so rather than the record quietly carrying it.
+    let sb = Sandbox::new();
+    let paths = sb.paths.clone();
+    let facts = platform_docket::application::counterparty::Facts {
+        legal_name: "Example University",
+        address: "1 College Road, Dehradun",
+        office: "The Registrar",
+    };
+    platform_docket::application::counterparty::enrol(&paths, "example-university", facts)
+        .expect("enrolled");
+    let run = || {
+        check::run(
+            &FileStore::new(&paths),
+            &FileBlobs::new(&paths),
+            &paths,
+            &registry(),
+        )
+        .expect("check runs")
+    };
+    assert!(
+        !run()
+            .items
+            .iter()
+            .any(|f| f.blocking && f.message.contains("counterparty")),
+        "a well-formed record is clean"
+    );
+
+    let file = paths.counterparty("example-university");
+    let body = std::fs::read_to_string(&file).expect("record");
+    std::fs::write(&file, format!("{body}contact_email: someone@example.edu\n")).expect("edit");
+    assert!(
+        run()
+            .items
+            .iter()
+            .any(|f| f.blocking && f.message.contains("holds only")),
+        "the hand-added contact is reported"
+    );
+}
