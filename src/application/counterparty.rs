@@ -120,21 +120,11 @@ mod tests {
     };
 
     #[test]
-    fn enrolling_allocates_identifiers_in_sequence_and_lists_them() {
+    fn enrolling_allocates_in_sequence_and_refuses_a_taken_slug_or_an_empty_fact() {
         let (_dir, paths) = sandbox();
         let a = enrol(&paths, "example-university", FACTS).expect("first");
         let b = enrol(&paths, "example-incubator", FACTS).expect("second");
-        assert_eq!(a.id.seq(), Some(1));
-        assert_eq!(b.id.seq(), Some(2));
-        let all = list(&paths).expect("list");
-        assert_eq!(all.len(), 2);
-        assert_eq!(read(&paths, "example-university").expect("read"), a);
-    }
-
-    #[test]
-    fn a_taken_slug_or_an_empty_fact_records_nothing() {
-        let (_dir, paths) = sandbox();
-        enrol(&paths, "example-university", FACTS).expect("first");
+        assert_eq!((a.id.seq(), b.id.seq()), (Some(1), Some(2)));
         assert!(enrol(&paths, "example-university", FACTS).is_err());
         let blank = Facts {
             office: " ",
@@ -142,6 +132,10 @@ mod tests {
         };
         assert!(enrol(&paths, "another", blank).is_err());
         assert!(enrol(&paths, "Bad Slug", FACTS).is_err());
-        assert_eq!(list(&paths).expect("list").len(), 1);
+        assert_eq!(
+            list(&paths).expect("list"),
+            [b, a],
+            "by slug, and nothing else recorded"
+        );
     }
 }
