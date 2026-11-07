@@ -45,18 +45,7 @@ pub fn definitions_for(
     let mut defs = Definitions::new();
 
     if let Some(org) = registry.org_node() {
-        defs.absorb("dkOrg", org);
-    }
-    // The class reads these short names for the letterhead.
-    for (from, to) in [
-        ("dkOrgName", "dkOrgName"),
-        ("dkOrgTagline", "dkTagline"),
-        ("dkOrgAddress", "dkAddress"),
-        ("dkOrgEmail", "dkEmail"),
-        ("dkOrgWeb", "dkWeb"),
-        ("dkOrgLegalStatus", "dkLegalStatus"),
-    ] {
-        defs.alias(from, to);
+        absorb_company(&mut defs, org);
     }
 
     if let Some(doc) = document {
@@ -118,6 +107,21 @@ pub fn definitions_for(
     // that looks checkable.
     defs.set("dkDocVerify", "NOT ISSUED");
     defs
+}
+
+/// One company's facts as `\dkOrg…`, plus the short names the class reads for the letterhead.
+fn absorb_company(defs: &mut Definitions, company: &serde_yaml::Value) {
+    defs.absorb("dkOrg", company);
+    for (from, to) in [
+        ("dkOrgName", "dkOrgName"),
+        ("dkOrgTagline", "dkTagline"),
+        ("dkOrgAddress", "dkAddress"),
+        ("dkOrgEmail", "dkEmail"),
+        ("dkOrgWeb", "dkWeb"),
+        ("dkOrgLegalStatus", "dkLegalStatus"),
+    ] {
+        defs.alias(from, to);
+    }
 }
 
 /// Add what the register and the event log already know about this person.
@@ -458,6 +462,13 @@ pub fn to_counterparty(
             document.code
         );
     }
+    if registry.company(Some(company)).is_none() {
+        bail!(
+            "{}: unknown company {company:?}; registry/org.yaml declares {}",
+            document.code,
+            registry.company_codes().join(" ")
+        );
+    }
     let signatories = counterparty_signatories(registry, document, company);
     if signatories.is_empty() && !document.signed_by.is_empty() {
         bail!(
@@ -484,10 +495,15 @@ pub fn to_counterparty(
             signatories: &signatories,
         },
         |serial| {
-            let mut defs = definitions_for(registry, None, Some(serial), date, Some(document));
-            override_signers(&mut defs, registry, &signatories);
-            counterparty_definitions(&mut defs, counterparty);
-            Ok(defs)
+            organisation_definitions(
+                registry,
+                counterparty,
+                document,
+                company,
+                Some(serial),
+                date,
+                &signatories,
+            )
         },
         |mut entry| {
             entry.counterparty_id = Some(counterparty.id.clone());
@@ -524,6 +540,37 @@ pub fn refuse_before_incorporation(
         );
     }
     Ok(())
+}
+
+/// Everything an organisation's document is rendered against, as issued by `company`.
+///
+/// THE ISSUING COMPANY'S letterhead, name and CIN, not the default company's: a PCY agreement
+/// printing PAR as the party, over PCY's signatory, would be a document naming the wrong party.
+/// The default company's `dkOrg…` values are dropped before the issuing one's are absorbed, so
+/// none of them can survive into the other's document.
+///
+/// # Errors
+/// Fails if `company` is not declared in `registry/org.yaml`.
+// Each argument is an independent fact of one issuance.
+#[allow(clippy::too_many_arguments)]
+pub fn organisation_definitions(
+    registry: &Registry,
+    counterparty: &Counterparty,
+    document: &Document,
+    company: &str,
+    reference: Option<&Serial>,
+    date: time::Date,
+    signatories: &[String],
+) -> Result<Definitions> {
+    let node = registry
+        .company(Some(company))
+        .with_context(|| format!("unknown company {company:?}"))?;
+    let mut defs = definitions_for(registry, None, reference, date, Some(document));
+    defs.forget_prefix("dkOrg");
+    absorb_company(&mut defs, node);
+    override_signers(&mut defs, registry, signatories);
+    counterparty_definitions(&mut defs, counterparty);
+    Ok(defs)
 }
 
 /// Who signs a document issued to an organisation, for `company`.

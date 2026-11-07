@@ -1771,3 +1771,25 @@ fn check_reports_an_entry_naming_nobody_and_one_naming_an_unrecorded_organisatio
             .any(|f| f.blocking && f.message.contains("names no recipient"))
     );
 }
+
+#[test]
+fn an_organisations_document_carries_the_issuing_companys_letterhead() {
+    // Review m4: `--company PCY` chose PCY's signatory but printed the default company as the
+    // party. And an undeclared company is named as such, not as a missing signatory.
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let reg = registry();
+    let org = example_counterparty(&sb.paths);
+    let doc = organisation_document("");
+    let defs = issue::organisation_definitions(&reg, &org, &doc, "PCY", None, date(), &[])
+        .expect("PCY is declared");
+    assert_eq!(defs.get("dkOrgName"), Some("PARIDYUM CYBER"));
+    assert_eq!(defs.get("dkCLegalName"), Some("Example University"));
+    assert!(issue::organisation_definitions(&reg, &org, &doc, "ZZZ", None, date(), &[]).is_err());
+
+    let store = FileStore::new(&sb.paths);
+    let blobs = FileBlobs::new(&sb.paths);
+    let refused =
+        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &doc, "ZZZ", date());
+    assert!(format!("{:#}", refused.expect_err("refused")).contains("unknown company"));
+}
