@@ -57,7 +57,7 @@ pub fn enrol(paths: &Paths, slug: &str, facts: Facts<'_>) -> Result<Counterparty
     }
     fs::create_dir_all(paths.counterparties())
         .with_context(|| format!("creating {}", paths.counterparties().display()))?;
-    fs::write(&path, record.to_yaml()).with_context(|| format!("writing {}", path.display()))?;
+    fs::write(&path, record.to_yaml()?).with_context(|| format!("writing {}", path.display()))?;
     Ok(record)
 }
 
