@@ -2304,6 +2304,12 @@ fn cmd_record(
     Ok(ExitCode::from(1))
 }
 
+/// The `--terms` file's text, where one was given.
+fn read_terms(path: Option<&Path>) -> Result<Option<String>> {
+    path.map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display())))
+        .transpose()
+}
+
 fn cmd_counterparty(
     store: &dyn Store,
     blobs: &dyn Blobs,
@@ -2392,12 +2398,7 @@ fn cmd_counterparty(
                 .or_else(|| registry.default_company())
                 .unwrap_or("PAR");
             let when = resolve_date(date.as_deref())?;
-            let terms = terms
-                .as_deref()
-                .map(|p| {
-                    std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
-                })
-                .transpose()?;
+            let terms = read_terms(terms.as_deref())?;
             let e = issue::to_counterparty(
                 store,
                 blobs,
