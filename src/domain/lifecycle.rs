@@ -42,6 +42,17 @@ pub enum Condition {
     InstitutionRequiresNoc,
 }
 
+/// Who a document is issued to (RFC-0136).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Recipient {
+    /// A person, under an engagement. Every document before RFC-0136, hence the default.
+    #[default]
+    Person,
+    /// An organisation counterparty: a university, an incubator, a company.
+    Organisation,
+}
+
 /// One document the system knows how to produce.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Document {
@@ -64,6 +75,10 @@ pub struct Document {
     pub classes: Vec<String>,
     /// How the document is handled.
     pub kind: Kind,
+    /// Who it is issued to. Only a document declaring `organisation` may be issued to an
+    /// organisation counterparty, and such a document is never issued to a person.
+    #[serde(default)]
+    pub recipient: Recipient,
     /// Retention class name.
     pub retention: String,
     #[serde(default)]

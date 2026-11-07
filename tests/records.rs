@@ -1467,6 +1467,117 @@ fn a_counterparty_record_holding_a_contact_person_is_reported_by_check() {
     );
 }
 
+/// A document declared for an organisation, built as the registry would declare one (RFC-0136).
+fn organisation_document(extra: &str) -> platform_docket::domain::lifecycle::Document {
+    serde_yaml::from_str(&format!(
+        "code: ICL\nid: test-collaboration\ntitle: Test Letter\n\
+         template: templates/letter/business-communication.tex\nkind: issued\n\
+         recipient: organisation\nsigned_by: [director]\nretention: permanent\n\
+         on_request: true\n{extra}"
+    ))
+    .expect("declaration parses")
+}
+
+fn example_counterparty(paths: &Paths) -> platform_docket::domain::counterparty::Counterparty {
+    let facts = platform_docket::application::counterparty::Facts {
+        legal_name: "Example University",
+        address: "1 College Road, Dehradun",
+        office: "The Registrar",
+    };
+    platform_docket::application::counterparty::enrol(paths, "example-university", facts)
+        .expect("enrolled")
+}
+
+#[test]
+fn an_organisations_document_is_never_issued_to_a_person_nor_the_reverse() {
+    // Refused before a serial is allocated: the register is append-only, so a document issued to
+    // the wrong kind of recipient could never be taken back.
+    use platform_docket::adapters::store::Store as _;
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let store = FileStore::new(&sb.paths);
+    let blobs = FileBlobs::new(&sb.paths);
+    let reg = registry();
+    personnel::create(
+        &store,
+        &sb.paths,
+        &reg,
+        "asha-verma",
+        "intern",
+        "PAR",
+        date(),
+        "rohan",
+    )
+    .expect("creates");
+    let person = store.person("asha-verma").expect("record");
+    let to_person = issue::one(
+        &store,
+        &blobs,
+        &sb.paths,
+        &reg,
+        &person,
+        &organisation_document(""),
+        date(),
+        "rohan",
+    );
+    assert!(format!("{:#}", to_person.expect_err("refused")).contains("organisation"));
+
+    let org = example_counterparty(&sb.paths);
+    let nda = reg
+        .lifecycle
+        .documents
+        .iter()
+        .find(|d| d.code == "NDA")
+        .expect("NDA")
+        .clone();
+    let to_org = issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &nda, "PAR", date());
+    assert!(format!("{:#}", to_org.expect_err("refused")).contains("issued to a person"));
+    assert!(
+        store.register().expect("register").is_empty(),
+        "nothing was recorded"
+    );
+}
+
+#[test]
+fn an_organisations_document_is_signed_by_office_and_a_vacant_one_falls_through() {
+    // Signing resolves through signatories.yaml exactly as for a person (ADR-0077 D4, ADR-0087):
+    // the Director signs, and if that office is vacant the next active signatory does.
+    use platform_docket::application::issue::counterparty_signatories;
+    let doc = organisation_document("");
+    let mut reg = registry();
+    assert_eq!(counterparty_signatories(&reg, &doc, "PAR"), ["director"]);
+    for s in &mut reg.signatories {
+        if s.id == "director" {
+            s.active = false;
+        }
+    }
+    assert_eq!(counterparty_signatories(&reg, &doc, "PAR"), ["ceo"]);
+}
+
+#[test]
+fn check_refuses_an_organisations_document_shaped_for_a_person() {
+    let sb = Sandbox::new();
+    let mut reg = registry();
+    reg.lifecycle
+        .documents
+        .push(organisation_document("classes: [intern]\n"));
+    let findings = check::run(
+        &FileStore::new(&sb.paths),
+        &FileBlobs::new(&sb.paths),
+        &sb.paths,
+        &reg,
+    )
+    .expect("check runs");
+    assert!(
+        findings
+            .items
+            .iter()
+            .any(|f| f.blocking && f.message.contains("ICL: issued to an organisation")),
+        "{:?}",
+        findings.items
+    );
+}
+
 #[test]
 fn check_reports_an_entry_naming_nobody_and_one_naming_an_unrecorded_organisation() {
     // Both are refused by the store on write; these arrive by hand edit or a restore.
@@ -1511,4 +1622,26 @@ fn check_reports_an_entry_naming_nobody_and_one_naming_an_unrecorded_organisatio
             .iter()
             .any(|f| f.blocking && f.message.contains("names no recipient"))
     );
+}
+
+#[test]
+fn an_organisations_document_carries_the_issuing_companys_letterhead() {
+    // Review m4: `--company PCY` chose PCY's signatory but printed the default company as the
+    // party. And an undeclared company is named as such, not as a missing signatory.
+    use platform_docket::application::issue;
+    let sb = Sandbox::new();
+    let reg = registry();
+    let org = example_counterparty(&sb.paths);
+    let doc = organisation_document("");
+    let defs = issue::organisation_definitions(&reg, &org, &doc, "PCY", None, date(), &[])
+        .expect("PCY is declared");
+    assert_eq!(defs.get("dkOrgName"), Some("PARIDYUM CYBER"));
+    assert_eq!(defs.get("dkCLegalName"), Some("Example University"));
+    assert!(issue::organisation_definitions(&reg, &org, &doc, "ZZZ", None, date(), &[]).is_err());
+
+    let store = FileStore::new(&sb.paths);
+    let blobs = FileBlobs::new(&sb.paths);
+    let refused =
+        issue::to_counterparty(&store, &blobs, &sb.paths, &reg, &org, &doc, "ZZZ", date());
+    assert!(format!("{:#}", refused.expect_err("refused")).contains("unknown company"));
 }

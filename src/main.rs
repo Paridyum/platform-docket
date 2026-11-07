@@ -1128,7 +1128,9 @@ fn route(
         Command::Addresses { slug } => cmd_addresses(store, &slug, company),
         Command::Vault { what } => cmd_vault(store, blobs, paths, &what),
         Command::Store { what } => cmd_store(paths, &what),
-        Command::Counterparty { what } => cmd_counterparty(paths, &what, operator),
+        Command::Counterparty { what } => {
+            cmd_counterparty(store, blobs, paths, registry, &what, operator, company)
+        }
         Command::Retention { date } => cmd_retention(store, registry, date.as_deref()),
         other => route_person(other, store, blobs, paths, registry, operator, company),
     }
@@ -1785,6 +1787,16 @@ enum CounterpartyCmd {
     },
     /// List every recorded organisation.
     List,
+    /// Issue a document declared `recipient: organisation` to a recorded organisation.
+    Issue {
+        /// Counterparty slug.
+        slug: String,
+        /// Document code, e.g. ICL.
+        code: String,
+        /// Issue date, ISO. Defaults to today.
+        #[arg(long)]
+        date: Option<String>,
+    },
 }
 
 /// What to do with the vault.
@@ -2269,9 +2281,13 @@ fn cmd_record(
 }
 
 fn cmd_counterparty(
+    store: &dyn Store,
+    blobs: &dyn Blobs,
     paths: &Paths,
+    registry: &Registry,
     what: &CounterpartyCmd,
     operator: Option<&str>,
+    company: Option<&str>,
 ) -> Result<ExitCode> {
     match what {
         CounterpartyCmd::New {
@@ -2300,6 +2316,23 @@ fn cmd_counterparty(
                     c.office
                 );
             }
+        }
+        CounterpartyCmd::Issue { slug, code, date } => {
+            writer(operator)?;
+            let by_code = registry.lifecycle.by_code()?;
+            let doc = by_code
+                .get(code.as_str())
+                .with_context(|| format!("unknown document code {code:?}"))?;
+            let to = counterparty::read(paths, slug)?;
+            let company = company
+                .or_else(|| registry.default_company())
+                .unwrap_or("PAR");
+            let when = resolve_date(date.as_deref())?;
+            let e = issue::to_counterparty(store, blobs, paths, registry, &to, doc, company, when)?;
+            println!(
+                "{}  {}  to {} ({})",
+                e.serial, e.title, to.legal_name, to.id
+            );
         }
     }
     Ok(ExitCode::SUCCESS)

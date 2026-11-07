@@ -52,6 +52,12 @@ impl Definitions {
         }
     }
 
+    /// Drop every definition whose name starts with `prefix`.
+    pub fn forget_prefix(&mut self, prefix: &str) {
+        self.values.retain(|k, _| !k.starts_with(prefix));
+        self.flags.retain(|k, _| !k.starts_with(prefix));
+    }
+
     /// Number of defined values, excluding flags.
     #[must_use]
     pub fn len(&self) -> usize {
