@@ -14,7 +14,6 @@
 use crate::domain::identity::check_character;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use std::fmt::Write as _;
 
 /// Width of the sequence inside a counterparty identifier.
 const DIGITS: usize = 6;
@@ -154,26 +153,31 @@ impl Counterparty {
         .collect()
     }
 
-    /// The record as written to disk, each field with its purpose beside it.
-    #[must_use]
-    pub fn to_yaml(&self) -> String {
-        let mut out = String::from(
+    /// The record as written to disk, under a header stating what each field is for.
+    ///
+    /// **Serialised by `serde_yaml`, never by hand.** Rust's `{:?}` escaping is not YAML's: it
+    /// writes a Devanagari vowel sign or a decomposed accent as `\u{…}`, which YAML cannot read,
+    /// and one such record made every later `counterparty` command and `docket check` fail.
+    /// The bytes are parsed back before they are returned, so a record that would not load is
+    /// refused here rather than written.
+    ///
+    /// # Errors
+    /// Fails if the record cannot be serialised, or would not read back unchanged.
+    pub fn to_yaml(&self) -> Result<String> {
+        let body = serde_yaml::to_string(self).context("serialising a counterparty record")?;
+        let out = format!(
             "# An organisation counterparty (RFC-0136). Written by `docket counterparty new`.\n\
-             # It holds these three facts and nothing else: a field added here is a record\n\
-             # that no longer loads. Never add a person's name, email or phone.\n",
+             # It holds three facts and nothing else; a field added here is a record that no\n\
+             # longer loads. Never add a person's name, email or phone.\n\
+             #   legal_name  names the party on the document\n\
+             #   address     where the document is addressed\n\
+             #   office      the office that receives it -- an office, never a person\n\
+             {body}"
         );
-        let _ = writeln!(out, "version: {}", self.version);
-        let _ = writeln!(out, "id: {}", self.id);
-        let _ = writeln!(out, "# Names the party on the document.");
-        let _ = writeln!(out, "legal_name: {:?}", self.legal_name);
-        let _ = writeln!(out, "# Where the document is addressed.");
-        let _ = writeln!(out, "address: {:?}", self.address);
-        let _ = writeln!(
-            out,
-            "# The office that receives it. An office, never a person."
-        );
-        let _ = writeln!(out, "office: {:?}", self.office);
-        out
+        if Self::parse(&self.slug, &out)? != *self {
+            bail!("{}: the record would not read back unchanged", self.slug);
+        }
+        Ok(out)
     }
 }
 
@@ -221,14 +225,42 @@ mod tests {
     #[test]
     fn a_written_record_reads_back_unchanged() {
         let record = sample();
-        let back = Counterparty::parse("example-university", &record.to_yaml()).expect("parses");
+        let back = Counterparty::parse("example-university", &record.to_yaml().expect("yaml"))
+            .expect("parses");
         assert_eq!(back, record);
+    }
+
+    #[test]
+    fn any_text_an_institution_writes_its_name_in_reads_back_unchanged() {
+        // Each of these broke the hand-rolled writer: Devanagari vowel signs and viramas, an
+        // accent pasted decomposed (NFD) from a PDF, a zero-width space, and YAML's own syntax.
+        for name in [
+            "भारतीय प्रौद्योगिकी संस्थान रुड़की",
+            "Universite\u{301} de Montre\u{301}al",
+            "Zero\u{200b}Width",
+            "Name: with \"quotes\", 'apostrophes' and # hashes",
+            "yes",
+            "null",
+            "- leading dash",
+            "Two\nlines",
+        ] {
+            let mut record = sample();
+            record.legal_name = name.to_owned();
+            record.address = format!("{name}, Dehradun");
+            record.office = format!("Registrar: {name}");
+            let yaml = record.to_yaml().expect("serialises");
+            let back = Counterparty::parse("example-university", &yaml).expect(name);
+            assert_eq!(back, record, "{name:?}");
+        }
     }
 
     #[test]
     fn a_contact_person_added_by_hand_is_refused_rather_than_kept() {
         // The whole point of the decision: no person's data rides along with an organisation.
-        let body = format!("{}contact_email: someone@example.edu\n", sample().to_yaml());
+        let body = format!(
+            "{}contact_email: someone@example.edu\n",
+            sample().to_yaml().expect("yaml")
+        );
         assert!(Counterparty::parse("example-university", &body).is_err());
     }
 
